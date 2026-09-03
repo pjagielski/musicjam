@@ -14,3 +14,10 @@ java {
         languageVersion = JavaLanguageVersion.of(25)
     }
 }
+
+tasks.register<JavaExec>("sequencerDemo") {
+    group = "workshop"
+    description = "Step 1: hand a MIDI file to javax.sound.midi's Sequencer and let it play."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "pl.livecoding.musicjam.step1.SequencerDemo"
+}
