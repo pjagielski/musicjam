@@ -23,4 +23,9 @@ public final class Sample {
     float valueAt(int frame) {
         return mono[frame];
     }
+
+    /** Defensive copy, for callers outside this package that render their own mix. */
+    public float[] copyMono() {
+        return Arrays.copyOf(mono, mono.length);
+    }
 }
