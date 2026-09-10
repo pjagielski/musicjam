@@ -39,12 +39,7 @@ tasks.register<JavaExec>("naivePlayerDemo") {
 
 tasks.register<JavaExec>("beat") {
     group = "workshop"
-    description = "Beat.java: blokowy renderer perkusji plus melodia z pliku MIDI."
+    description = "Beat.java: blokowy renderer perkusji z samples/ plus melodia z pliku MIDI."
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass = "pl.livecoding.musicjam.Beat"
-    standardInput = System.`in`
-    // -Dsynth, -Dmid.* i -Dmel.* podane przy gradlew maja dojsc do forkowanej JVM
-    listOf("synth", "mid", "mid.track", "mid.fromBar", "mid.bars", "mel.hold").forEach { key ->
-        System.getProperty(key)?.let { systemProperty(key, it) }
-    }
 }
