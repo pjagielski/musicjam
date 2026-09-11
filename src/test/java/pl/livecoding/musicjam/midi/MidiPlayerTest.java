@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -43,6 +44,34 @@ class MidiPlayerTest {
                 "ON 60 100", "OFF 60",
                 "ON 64 90", "OFF 64"
         ), played);
+    }
+
+    @Test
+    void startsEveryLoopWhereTheAudioItFollowsHasGotTo() throws InterruptedException {
+        var noteOns = Collections.synchronizedList(new ArrayList<Long>());
+        var audioLag = new AtomicLong();
+        NoteOutput output = new NoteOutput() {
+            @Override
+            public void noteOn(int pitch, int velocity) {
+                noteOns.add(System.nanoTime());
+                // the audio stalls for 100 ms during the first loop, and stays that far behind
+                audioLag.set(TimeUnit.MILLISECONDS.toNanos(100));
+            }
+
+            @Override
+            public void noteOff(int pitch) {
+            }
+        };
+        var notes = List.of(new Note(0.0, new Voice.Pitch(60), 0.5, 100 / 127f));
+        long started = System.nanoTime();
+
+        try (var player = MidiPlayer.forOutput(output)) {
+            // 300 BPM: a one-beat loop lasts 200 ms
+            player.playLoop(notes, 300, 1.0, 3, () -> System.nanoTime() - started - audioLag.get(), 0L);
+        }
+
+        assertEquals(300, (noteOns.get(1) - noteOns.get(0)) / 1e6, 40);
+        assertEquals(200, (noteOns.get(2) - noteOns.get(1)) / 1e6, 40);
     }
 
     @Test

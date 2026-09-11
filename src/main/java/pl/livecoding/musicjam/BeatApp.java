@@ -1,7 +1,9 @@
 package pl.livecoding.musicjam;
 
 import pl.livecoding.musicjam.audio.AudioEngine;
+import pl.livecoding.musicjam.audio.NoteListener;
 import pl.livecoding.musicjam.audio.SampleBank;
+import pl.livecoding.musicjam.midi.ExternalMidiOutput;
 import pl.livecoding.musicjam.midi.MidiFileReader;
 import pl.livecoding.musicjam.midi.MidiPlayer;
 import pl.livecoding.musicjam.model.Drum;
@@ -23,6 +25,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -34,6 +37,8 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class BeatApp {
     private static final double BEATS_PER_BAR = 4.0;
     private static final Path SAMPLE_DIRECTORY = Path.of("samples");
+    /** How long an external synth takes to sound a note: measured for Surge XT on the default Windows device. */
+    public static final int EXTERNAL_SYNTH_LATENCY_MILLIS = 37;
     private static final Map<String, PitchSynth> SYNTHS = Map.of(
             "anthem", new AnthemLeadSynth(),
             "pad", new WidePadSynth(),
@@ -47,6 +52,11 @@ public final class BeatApp {
     );
 
     private BeatApp() {
+    }
+
+    /** The named drum patterns a jam can pair with its melody ({@code drums=} in a config). */
+    public static Map<String, List<DrumTrack>> drumPatterns() {
+        return DRUM_PATTERNS;
     }
 
     public static void main(String[] args) throws Exception {
@@ -109,7 +119,11 @@ public final class BeatApp {
                 melodyTrack.notes().size(), melodyTrack.patternLengthBeats());
 
         if (request.midiDevice() != null) {
-            playJamWithExternalMelody(song, bpm, program, request);
+            if (request.midiSync().equals("live")) {
+                playJamLive(song, program, request);
+            } else {
+                playJamWithExternalMelody(song, bpm, program, request);
+            }
             return;
         }
 
@@ -124,6 +138,10 @@ public final class BeatApp {
      * (36, 38, 42, ...) only sound like drums on GM channel 10; sent on the melody's channel with
      * the melody's patch they're just very low pitched notes of that patch. So drums keep playing
      * natively through {@link AudioEngine}, on their own thread, alongside the MIDI melody.
+     *
+     * <p>That is two clocks, and a stall on either side (a GC pause, a busy machine) would part them
+     * for good. So the melody follows the drums: at the start of every loop {@link MidiPlayer} asks
+     * them how much has been heard, and schedules that loop from there.
      */
     private static void playJamWithExternalMelody(Song song, double bpm, int program, PhraseRequest request)
             throws Exception {
@@ -132,20 +150,26 @@ public final class BeatApp {
         List<Note> melodyNotes = notes.stream().filter(note -> note.voice() instanceof Voice.Pitch).toList();
         List<Note> drumNotes = notes.stream().filter(note -> note.voice() instanceof Drum).toList();
 
-        System.out.printf("  wyjscie: MIDI urzadzenie \"%s\" (melodia), perkusja lokalnie%n", request.midiDevice());
+        System.out.printf("  wyjscie: MIDI urzadzenie \"%s\" (melodia, korekta co petle), perkusja lokalnie%n",
+                request.midiDevice());
 
+        AudioEngine drums = new AudioEngine(SampleBank.load(SAMPLE_DIRECTORY, AudioEngine.DEFAULT_SAMPLE_RATE));
         AtomicReference<Exception> drumFailure = new AtomicReference<>();
         Thread drumThread = Thread.ofVirtual().start(() -> {
             try {
-                SampleBank samples = SampleBank.load(SAMPLE_DIRECTORY, AudioEngine.DEFAULT_SAMPLE_RATE);
-                new AudioEngine(samples).play(drumNotes, bpm, totalBeats, request.loops());
+                drums.play(drumNotes, bpm, totalBeats, request.loops());
             } catch (Exception exception) {
                 drumFailure.set(exception);
             }
         });
 
         try (MidiPlayer player = MidiPlayer.openDevice(request.midiDevice(), 0, program)) {
-            player.playLoop(melodyNotes, bpm, totalBeats, request.loops());
+            // the first loop is timed from the drums too, so wait until they can be heard
+            while (drums.heardNanos() == 0 && drumThread.isAlive()) {
+                Thread.sleep(1);
+            }
+            player.playLoop(melodyNotes, bpm, totalBeats, request.loops(),
+                    drums::heardNanos, TimeUnit.MILLISECONDS.toNanos(EXTERNAL_SYNTH_LATENCY_MILLIS));
         } finally {
             drumThread.join();
         }
@@ -154,7 +178,40 @@ public final class BeatApp {
         }
     }
 
-    private static PitchSynth resolveSynth(String name) {
+    /**
+     * The same jam through {@link AudioEngine#playLive}, as in the studio: drums and melody come from
+     * one loop on one clock, the audio device's, and each MIDI note goes out when the device reaches
+     * its frame - so they stay together note by note, not just from one loop to the next.
+     */
+    private static void playJamLive(Song song, int program, PhraseRequest request) throws Exception {
+        System.out.printf("  wyjscie: MIDI urzadzenie \"%s\" (melodia, LiveSession), perkusja lokalnie%n",
+                request.midiDevice());
+
+        AudioEngine engine = new AudioEngine(SampleBank.load(SAMPLE_DIRECTORY, AudioEngine.DEFAULT_SAMPLE_RATE));
+        AudioEngine.Jam jam = new AudioEngine.Jam(song, resolveSynth(request.synth()));
+        long millis = Math.round(request.loops() * PatternCompiler.totalBeats(song) * 60_000 / song.bpm());
+        try (ExternalMidiOutput midi = ExternalMidiOutput.open(request.midiDevice(), 0, program);
+             AudioEngine.LiveSession session = engine.playLive(() -> jam, melodyListener(midi))) {
+            session.setExternalLatencyMillis(EXTERNAL_SYNTH_LATENCY_MILLIS);
+            Thread.sleep(millis);
+        }
+    }
+
+    public static NoteListener melodyListener(ExternalMidiOutput output) {
+        return new NoteListener() {
+            @Override
+            public void noteOn(int midiNote, int velocity) {
+                output.noteOn(midiNote, velocity);
+            }
+
+            @Override
+            public void noteOff(int midiNote) {
+                output.noteOff(midiNote);
+            }
+        };
+    }
+
+    public static PitchSynth resolveSynth(String name) {
         PitchSynth synth = SYNTHS.get(name.toLowerCase());
         if (synth == null) {
             throw new IllegalArgumentException("Unknown synth \"" + name + "\", expected one of " + SYNTHS.keySet());
@@ -162,11 +219,16 @@ public final class BeatApp {
         return synth;
     }
 
-    private static MelodyTrack loadMelodyTrack(Sequence sequence, PhraseRequest request) {
-        double startBeat = request.startBar() * BEATS_PER_BAR;
-        double patternLength = request.bars() * BEATS_PER_BAR;
+    public static MelodyTrack loadMelodyTrack(Sequence sequence, PhraseRequest request) {
+        return loadMelodyTrack(sequence, request.trackIndex(), request.startBar(), request.bars());
+    }
+
+    /** A window of {@code bars} bars from {@code startBar} on; {@code bars} may be a fraction of a bar. */
+    public static MelodyTrack loadMelodyTrack(Sequence sequence, int trackIndex, int startBar, double bars) {
+        double startBeat = startBar * BEATS_PER_BAR;
+        double patternLength = bars * BEATS_PER_BAR;
         double endBeat = startBeat + patternLength;
-        List<Note> notes = MidiFileReader.readTrack(sequence, request.trackIndex()).stream()
+        List<Note> notes = MidiFileReader.readTrack(sequence, trackIndex).stream()
                 .filter(note -> note.beat() >= startBeat && note.beat() < endBeat)
                 .map(note -> new Note(note.beat() - startBeat, note.voice(), note.durationBeats(), note.velocity()))
                 .toList();
@@ -245,8 +307,12 @@ public final class BeatApp {
                   synth=anthem
                   drums=shape
                   midiDevice=loopMIDI
+                  midiSync=loop
 
                 Wzorce perkusji ("drums" w pliku .properties, nie ma jako argument CLI): shape (domyslny), worry, dre, giorgio
+
+                Melodia przez MIDI ("midiSync"): loop (domyslny) - MidiPlayer co petle dogania perkusje,
+                live - perkusja i melodia w jednej LiveSession, korekta przy kazdej nucie
 
                 To samo programistycznie: PhraseRequest.forFile("plik.mid").track(1).fromBar(0)
                   .bars(2).loops(4).synth("anthem").playJam();

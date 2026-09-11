@@ -1,6 +1,7 @@
 package pl.livecoding.musicjam.audio;
 
 import pl.livecoding.musicjam.model.Drum;
+import pl.livecoding.musicjam.model.Envelope;
 import pl.livecoding.musicjam.model.Note;
 import pl.livecoding.musicjam.model.PatternCompiler;
 import pl.livecoding.musicjam.model.Song;
@@ -14,10 +15,19 @@ import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.SourceDataLine;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 public final class AudioEngine {
     public static final int DEFAULT_SAMPLE_RATE = 44_100;
@@ -31,6 +41,9 @@ public final class AudioEngine {
     private final int sampleRate;
     private final int blockSize;
     private final int maxVoices;
+    // the line play() is writing to, so that heardNanos() can tell another thread how far it has got
+    private volatile SourceDataLine playing;
+    private volatile long heardFrames;
 
     public AudioEngine(SampleBank samples) {
         this(samples, DEFAULT_SAMPLE_RATE, DEFAULT_BLOCK_SIZE, DEFAULT_MAX_VOICES);
@@ -100,13 +113,42 @@ public final class AudioEngine {
         try (SourceDataLine line = AudioSystem.getSourceDataLine(format)) {
             line.open(format, blockSize * CHANNELS * 2 * 4);
             line.start();
-            while (session.hasMore()) {
-                int frames = session.renderNext(mix);
-                int bytes = encodePcm16(mix, frames, pcm);
-                writeFully(line, pcm, bytes);
+            playing = line;
+            try {
+                while (session.hasMore()) {
+                    int frames = session.renderNext(mix);
+                    int bytes = encodePcm16(mix, frames, pcm);
+                    writeFully(line, pcm, bytes);
+                }
+                line.drain();
+            } finally {
+                heardFrames = line.getLongFramePosition();
+                playing = null;
             }
-            line.drain();
         }
+    }
+
+    /**
+     * How much of what {@link #play} is playing has been heard so far, in nanoseconds of audio: the
+     * clock for a MIDI player that has to keep in time with it. 0 until playback starts.
+     */
+    public long heardNanos() {
+        SourceDataLine line = playing;
+        long frames = line != null ? line.getLongFramePosition() : heardFrames;
+        return frames * 1_000_000_000L / sampleRate;
+    }
+
+    /**
+     * Plays a jam that can change while it plays. Each loop is compiled from whatever {@code jam}
+     * returns just before that loop starts - song and synth alike - so edits land on the next loop
+     * boundary, with the same sample accuracy as {@link #play}. When {@code externalMelody} is not
+     * null, the melody's notes go there instead of through the synth, each one sent when the audio
+     * device reaches its frame, less {@link LiveSession#setExternalLatencyMillis the synth's latency},
+     * so an external synth stays in time with the drums.
+     */
+    public LiveSession playLive(Supplier<Jam> jam, NoteListener externalMelody)
+            throws LineUnavailableException {
+        return new LiveSession(jam, externalMelody);
     }
 
     private static int encodePcm16(float[] mix, int frames, byte[] pcm) {
@@ -152,6 +194,7 @@ public final class AudioEngine {
         private final Transport transport;
         private final PitchSynth synth;
         private final Map<SynthKey, Sample> synthCache = new HashMap<>();
+        private final Map<ShapeKey, Sample> shapeCache = new HashMap<>();
         private final double patternLengthBeats;
         private final int loops;
         private final long totalFrames;
@@ -166,7 +209,7 @@ public final class AudioEngine {
             this.patternLengthBeats = patternLengthBeats;
             this.loops = loops;
             this.barHits = notes.stream()
-                    .map(note -> new BarHit(note.beat(), sampleFor(note.voice(), note.durationBeats()), note.velocity()))
+                    .map(note -> new BarHit(note.beat(), sampleFor(note), note.velocity()))
                     .toArray(BarHit[]::new);
             totalFrames = transport.frameAtBeat(loops * patternLengthBeats);
             voices = new VoiceSlot[maxVoices];
@@ -175,11 +218,11 @@ public final class AudioEngine {
             }
         }
 
-        private Sample sampleFor(Voice voice, double durationBeats) {
-            return switch (voice) {
-                case Drum drum -> samples.sample(drum);
+        private Sample sampleFor(Note note) {
+            return switch (note.voice()) {
+                case Drum drum -> drumSample(drum, note, transport, shapeCache);
                 case Voice.Pitch pitch -> {
-                    int frameCount = (int) transport.frameAtBeat(durationBeats);
+                    int frameCount = (int) transport.frameAtBeat(note.durationBeats());
                     yield synthCache.computeIfAbsent(new SynthKey(pitch.midiNote(), frameCount),
                             key -> synth.render(key.midiNote(), key.frameCount(), sampleRate));
                 }
@@ -198,25 +241,17 @@ public final class AudioEngine {
 
             while (hasNextEvent() && nextEventFrame() < blockEnd) {
                 long eventFrame = nextEventFrame();
-                renderVoices(mix, position, segmentStart, eventFrame);
+                renderVoices(voices, mix, position, segmentStart, eventFrame);
                 do {
                     BarHit hit = barHits[nextHit];
-                    allocateVoice(eventFrame).trigger(hit.sample, eventFrame, hit.velocity);
+                    allocateVoice(voices, eventFrame).trigger(hit.sample, eventFrame, hit.velocity);
                     advanceEvent();
                 } while (hasNextEvent() && nextEventFrame() == eventFrame);
                 segmentStart = eventFrame;
             }
-            renderVoices(mix, position, segmentStart, blockEnd);
+            renderVoices(voices, mix, position, segmentStart, blockEnd);
             position = blockEnd;
             return frames;
-        }
-
-        private void renderVoices(float[] mix, long blockStart, long fromFrame, long toFrame) {
-            for (VoiceSlot voice : voices) {
-                if (voice.active) {
-                    voice.render(mix, blockStart, fromFrame, toFrame);
-                }
-            }
         }
 
         private boolean hasNextEvent() {
@@ -236,17 +271,269 @@ public final class AudioEngine {
             }
         }
 
-        private VoiceSlot allocateVoice(long atFrame) {
-            VoiceSlot shortest = voices[0];
-            for (VoiceSlot voice : voices) {
-                if (!voice.active) {
-                    return voice;
+    }
+
+    private static void renderVoices(VoiceSlot[] voices, float[] mix, long blockStart, long fromFrame, long toFrame) {
+        for (VoiceSlot voice : voices) {
+            if (voice.active) {
+                voice.render(mix, blockStart, fromFrame, toFrame);
+            }
+        }
+    }
+
+    private static VoiceSlot allocateVoice(VoiceSlot[] voices, long atFrame) {
+        VoiceSlot shortest = voices[0];
+        for (VoiceSlot voice : voices) {
+            if (!voice.active) {
+                return voice;
+            }
+            if (voice.remainingFrames(atFrame) < shortest.remainingFrames(atFrame)) {
+                shortest = voice;
+            }
+        }
+        return shortest;
+    }
+
+    LiveRenderer liveRenderer(Supplier<Jam> jams, Consumer<ExternalNote> externalMelody) {
+        return new LiveRenderer(jams, externalMelody);
+    }
+
+    /** What is audible right now: the song of the loop being heard, and how far into that loop. */
+    public record Position(Song song, double beat, double lengthBeats) {
+    }
+
+    /** One loop's worth of what to play live: the song, and the synth its melody is rendered with. */
+    public record Jam(Song song, PitchSynth synth) {
+    }
+
+    private record LiveSynthKey(PitchSynth synth, int midiNote, int frameCount) {
+    }
+
+    record ExternalNote(long frame, boolean on, int midiNote, int velocity) {
+    }
+
+    private record LiveHit(long frame, Sample sample, float gain) {
+    }
+
+    private record LoopMark(long startFrame, Song song, double lengthBeats) {
+    }
+
+    private record Loops(LoopMark previous, LoopMark current) {
+    }
+
+    /**
+     * Renders an endless song block by block. A loop is compiled from whatever the supplier returns
+     * when the block about to be rendered reaches that loop's first frame; within the loop every hit
+     * is placed at its exact frame, as in {@link RenderSession}. The render position never resets,
+     * so a loop at a new tempo starts exactly where the previous one ended.
+     */
+    final class LiveRenderer {
+        private final Supplier<Jam> jams;
+        private final Consumer<ExternalNote> externalMelody;
+        private final Map<LiveSynthKey, Sample> synthCache = new HashMap<>();
+        private final Map<ShapeKey, Sample> shapeCache = new HashMap<>();
+        private final VoiceSlot[] voices = new VoiceSlot[maxVoices];
+        private final ArrayDeque<LiveHit> hits = new ArrayDeque<>();
+        private volatile Loops loops = new Loops(null, null);
+        private long position;
+        private long nextLoopStart;
+
+        private LiveRenderer(Supplier<Jam> jams, Consumer<ExternalNote> externalMelody) {
+            this.jams = jams;
+            this.externalMelody = externalMelody;
+            for (int i = 0; i < voices.length; i++) {
+                voices[i] = new VoiceSlot();
+            }
+        }
+
+        void renderNext(float[] mix) {
+            Arrays.fill(mix, 0.0f);
+            long blockEnd = position + blockSize;
+            while (nextLoopStart < blockEnd) {
+                compileNextLoop();
+            }
+            long segmentStart = position;
+            while (!hits.isEmpty() && hits.peekFirst().frame() < blockEnd) {
+                long frame = hits.peekFirst().frame();
+                renderVoices(voices, mix, position, segmentStart, frame);
+                do {
+                    LiveHit hit = hits.pollFirst();
+                    allocateVoice(voices, frame).trigger(hit.sample(), frame, hit.gain());
+                } while (!hits.isEmpty() && hits.peekFirst().frame() == frame);
+                segmentStart = frame;
+            }
+            renderVoices(voices, mix, position, segmentStart, blockEnd);
+            position = blockEnd;
+        }
+
+        Position positionAt(long frame) {
+            Loops snapshot = loops;
+            LoopMark mark = snapshot.current() != null && frame >= snapshot.current().startFrame()
+                    ? snapshot.current()
+                    : snapshot.previous();
+            if (mark == null) {
+                return null;
+            }
+            double beat = (frame - mark.startFrame()) * mark.song().bpm() / 60.0 / sampleRate;
+            return new Position(mark.song(), Math.max(0.0, beat), mark.lengthBeats());
+        }
+
+        private void compileNextLoop() {
+            Jam jam = jams.get();
+            Song song = jam.song();
+            Transport transport = new Transport(song.bpm(), sampleRate);
+            double lengthBeats = PatternCompiler.totalBeats(song);
+            long loopStart = nextLoopStart;
+            for (Note note : PatternCompiler.compile(song)) {
+                // a hit past the loop end would land after the next loop's first hits and break their order
+                if (note.velocity() <= 0.0f || note.beat() >= lengthBeats) {
+                    continue;
                 }
-                if (voice.remainingFrames(atFrame) < shortest.remainingFrames(atFrame)) {
-                    shortest = voice;
+                long frame = loopStart + transport.frameAtBeat(note.beat());
+                if (externalMelody != null && note.voice() instanceof Voice.Pitch pitch) {
+                    long offFrame = loopStart + transport.frameAtBeat(note.beat() + note.durationBeats());
+                    // velocity 0 on a note-on would be read as a note-off by the receiving synth
+                    int velocity = Math.max(1, Math.round(note.velocity() * 127.0f));
+                    externalMelody.accept(new ExternalNote(frame, true, pitch.midiNote(), velocity));
+                    externalMelody.accept(new ExternalNote(offFrame, false, pitch.midiNote(), 0));
+                } else {
+                    hits.addLast(new LiveHit(frame, sampleFor(note, transport, jam.synth()), note.velocity()));
                 }
             }
-            return shortest;
+            nextLoopStart = loopStart + Math.max(1L, transport.frameAtBeat(lengthBeats));
+            loops = new Loops(loops.current(), new LoopMark(loopStart, song, lengthBeats));
+        }
+
+        private Sample sampleFor(Note note, Transport transport, PitchSynth synth) {
+            return switch (note.voice()) {
+                case Drum drum -> drumSample(drum, note, transport, shapeCache);
+                case Voice.Pitch pitch -> {
+                    int frameCount = (int) transport.frameAtBeat(note.durationBeats());
+                    yield synthCache.computeIfAbsent(new LiveSynthKey(synth, pitch.midiNote(), frameCount),
+                            key -> synth.render(key.midiNote(), key.frameCount(), sampleRate));
+                }
+            };
+        }
+    }
+
+    /** A {@link LiveRenderer} playing to the default audio device until {@link #close()}. */
+    public final class LiveSession implements AutoCloseable {
+        private final LiveRenderer renderer;
+        private final SourceDataLine line;
+        private final NoteListener externalMelody;
+        private final PriorityBlockingQueue<ExternalNote> pendingMelody = new PriorityBlockingQueue<>(
+                64, Comparator.comparingLong(ExternalNote::frame).thenComparing(ExternalNote::on));
+        private final AtomicReference<Throwable> failure = new AtomicReference<>();
+        private final Thread renderThread;
+        private final Thread melodyThread;
+        private volatile boolean running = true;
+        private volatile double externalLatencyMillis;
+
+        private LiveSession(Supplier<Jam> jams, NoteListener externalMelody)
+                throws LineUnavailableException {
+            this.externalMelody = externalMelody;
+            this.renderer = new LiveRenderer(jams, externalMelody == null ? null : pendingMelody::add);
+            AudioFormat format = new AudioFormat(sampleRate, 16, CHANNELS, true, false);
+            this.line = AudioSystem.getSourceDataLine(format);
+            // Twice the buffer play() uses: a loop that brings a new tempo renders its synth notes
+            // on the audio thread, and the extra headroom keeps that from reaching the speakers.
+            line.open(format, blockSize * CHANNELS * 2 * 8);
+            line.start();
+            this.renderThread = Thread.ofPlatform().name("live-render").daemon().start(this::render);
+            this.melodyThread = externalMelody == null
+                    ? null
+                    : Thread.ofPlatform().name("live-melody").daemon().start(this::sendMelody);
+        }
+
+        public Position position() {
+            return renderer.positionAt(line.getLongFramePosition());
+        }
+
+        /**
+         * How long the external synth takes to sound a note it has received - its own audio buffer.
+         * Melody notes are sent that much before their frame, so they are heard with the drums.
+         */
+        public void setExternalLatencyMillis(double millis) {
+            externalLatencyMillis = millis;
+        }
+
+        public Optional<Throwable> failure() {
+            return Optional.ofNullable(failure.get());
+        }
+
+        @Override
+        public void close() {
+            running = false;
+            join(renderThread);
+            join(melodyThread);
+            line.stop();
+            line.flush();
+            line.close();
+        }
+
+        private void render() {
+            float[] mix = new float[blockSize * CHANNELS];
+            byte[] pcm = new byte[blockSize * CHANNELS * 2];
+            try {
+                while (running) {
+                    renderer.renderNext(mix);
+                    writeFully(line, pcm, encodePcm16(mix, blockSize, pcm));
+                }
+            } catch (RuntimeException exception) {
+                failure.compareAndSet(null, exception);
+                running = false;
+            }
+        }
+
+        private void sendMelody() {
+            Set<Integer> sounding = new HashSet<>();
+            PlaybackClock clock = new PlaybackClock(line::getLongFramePosition, System::nanoTime, sampleRate);
+            try {
+                while (running) {
+                    ExternalNote next = pendingMelody.peek();
+                    long leadFrames = Math.round(externalLatencyMillis * sampleRate / 1000.0);
+                    if (next == null || next.frame() - leadFrames > clock.frameNow()) {
+                        Thread.sleep(1);
+                        continue;
+                    }
+                    ExternalNote note = pendingMelody.poll();
+                    if (note.on()) {
+                        externalMelody.noteOn(note.midiNote(), note.velocity());
+                        sounding.add(note.midiNote());
+                    } else {
+                        externalMelody.noteOff(note.midiNote());
+                        sounding.remove(note.midiNote());
+                    }
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } catch (RuntimeException exception) {
+                failure.compareAndSet(null, exception);
+                running = false;
+            } finally {
+                releaseAll(sounding);
+            }
+        }
+
+        private void releaseAll(Set<Integer> sounding) {
+            for (int pitch : sounding) {
+                try {
+                    externalMelody.noteOff(pitch);
+                } catch (RuntimeException ignored) {
+                    // Best effort: the device may already be gone.
+                }
+            }
+        }
+
+        private void join(Thread thread) {
+            if (thread == null) {
+                return;
+            }
+            try {
+                thread.join();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 
@@ -254,6 +541,20 @@ public final class AudioEngine {
     }
 
     private record SynthKey(int midiNote, int frameCount) {
+    }
+
+    private record ShapeKey(Drum drum, Envelope envelope, int heldFrames) {
+    }
+
+    /** A drum's sample, shaped by its note's envelope when it has one, rendered once per shape. */
+    private Sample drumSample(Drum drum, Note note, Transport transport, Map<ShapeKey, Sample> cache) {
+        Envelope envelope = note.envelope();
+        if (!envelope.shapes()) {
+            return samples.sample(drum);
+        }
+        int heldFrames = envelope.releaseSeconds() > 0.0 ? (int) transport.frameAtBeat(note.durationBeats()) : -1;
+        return cache.computeIfAbsent(new ShapeKey(drum, envelope, heldFrames),
+                key -> samples.sample(drum).shaped(envelope, key.heldFrames(), sampleRate));
     }
 
     private static final class VoiceSlot {

@@ -15,7 +15,22 @@ java {
     }
 }
 
+// JavaFX nie jest czescia JDK. Artefakty sa per platforma, a Gradle nie rozwiazuje profili
+// Mavena, ktorymi openjfx wybiera klasyfikator - stad jawna lista modulow z klasyfikatorem.
+val javafxVersion = "21.0.12"
+val javafxPlatform = System.getProperty("os.name").lowercase().let { os ->
+    val arm = System.getProperty("os.arch").contains("aarch64")
+    when {
+        os.contains("win") -> "win"
+        os.contains("mac") -> if (arm) "mac-aarch64" else "mac"
+        else -> if (arm) "linux-aarch64" else "linux"
+    }
+}
+
 dependencies {
+    listOf("base", "graphics", "controls").forEach {
+        implementation("org.openjfx:javafx-$it:$javafxVersion:$javafxPlatform")
+    }
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
@@ -42,4 +57,11 @@ tasks.register<JavaExec>("beat") {
     description = "Beat.java: blokowy renderer perkusji z samples/ plus melodia z pliku MIDI."
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass = "pl.livecoding.musicjam.Beat"
+}
+
+tasks.register<JavaExec>("studio") {
+    group = "workshop"
+    description = "BeatStudio: okno JavaFX do edycji jamu na zywo."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "pl.livecoding.musicjam.studio.StudioLauncher"
 }

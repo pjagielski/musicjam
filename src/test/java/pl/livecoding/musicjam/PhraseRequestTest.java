@@ -24,6 +24,7 @@ class PhraseRequestTest {
         assertEquals(4, request.loops());
         assertEquals("anthem", request.synth());
         assertNull(request.midiDevice());
+        assertEquals("loop", request.midiSync());
     }
 
     @Test
@@ -35,6 +36,7 @@ class PhraseRequestTest {
                 .loops(8)
                 .synth("pad")
                 .midiDevice("loopMIDI")
+                .midiSync("live")
                 .build();
 
         assertEquals(3, request.trackIndex());
@@ -43,6 +45,7 @@ class PhraseRequestTest {
         assertEquals(8, request.loops());
         assertEquals("pad", request.synth());
         assertEquals("loopMIDI", request.midiDevice());
+        assertEquals("live", request.midiSync());
     }
 
     @Test
@@ -51,6 +54,12 @@ class PhraseRequestTest {
                 () -> PhraseRequest.forFile("song.mid").bars(0).build());
         assertThrows(IllegalArgumentException.class,
                 () -> PhraseRequest.forFile("song.mid").loops(-1).build());
+    }
+
+    @Test
+    void rejectsUnknownMidiSync() {
+        assertThrows(IllegalArgumentException.class,
+                () -> PhraseRequest.forFile("song.mid").midiSync("sometimes").build());
     }
 
     @Test
@@ -64,6 +73,7 @@ class PhraseRequestTest {
                 loops=8
                 synth=pad
                 midiDevice=loopMIDI
+                midiSync=live
                 """);
 
         PhraseRequest request = PhraseRequest.fromPropertiesFile(config);
@@ -75,6 +85,7 @@ class PhraseRequestTest {
         assertEquals(8, request.loops());
         assertEquals("pad", request.synth());
         assertEquals("loopMIDI", request.midiDevice());
+        assertEquals("live", request.midiSync());
     }
 
     @Test

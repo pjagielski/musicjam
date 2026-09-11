@@ -22,6 +22,10 @@ java src/main/java/pl/livecoding/musicjam/midi/ListMidiDevices.java
 # Step 3 builds on MidiFileReader/NaivePlayer (real app code, not dependency-free), so it needs
 # the project's classpath — a small Gradle task instead of source-launch:
 .\gradlew.bat naivePlayerDemo --args="src/main/resources/shape.mid 1 0 2 4"
+
+# A window for changing the jam while it plays (JavaFX, fetched by Gradle like any dependency):
+.\gradlew.bat studio
+.\gradlew.bat studio --args="--config src/main/resources/jam.properties"
 ```
 
 macOS/Linux:
@@ -93,6 +97,7 @@ At 120 BPM a sixteenth note lasts 5512.5 frames at 44.1 kHz. `Transport` calcula
 - `pl.livecoding.musicjam.audio` — `AudioEngine` and everything it needs to render `Note`s to PCM: `Transport`, `Sample`, `SampleBank`, `DrumSamples`, `RenderedAudio`, WAV I/O
 - `pl.livecoding.musicjam.midi` — reading MIDI files (`MidiFileReader`) and playing `Note`s out over MIDI (`NoteOutput`, `MidiNoteOutput`, `ExternalMidiOutput`, `MidiPlayer`, `NaivePlayer`, `TimingReport`), plus the workshop path's runnable steps (`SequencerDemo`, `InspectMidi`, `ListMidiDevices`, `NaivePlayerDemo`)
 - `pl.livecoding.musicjam.synth` — `PitchSynth` and its novasaw-derived implementations (`NovasawSynth`, `AnthemLeadSynth`, `TrancePluckSynth`, `WidePadSynth`)
+- `pl.livecoding.musicjam.studio` — `BeatStudio`, the JavaFX window over `AudioEngine.playLive`, and `StudioLauncher`, its entry point
 
 See `CONTEXT.md` for the vocabulary behind these names (why `Phrase` isn't `Melody`, why there are two "players", etc.) — worth reading before renaming anything.
 
@@ -150,6 +155,7 @@ loops=4
 synth=pad
 drums=shape
 midiDevice=loopMIDI
+midiSync=loop
 ```
 
 ```powershell
@@ -158,9 +164,57 @@ midiDevice=loopMIDI
 
 `src/main/resources/` has one ready-made `.properties` file per workshop fixture, each pointing at a melody window and drum pattern (`BeatApp.DRUM_PATTERNS`) transcribed from (or, for `giorgio`, invented for) that same file: `jam.properties`/`worry.properties` (`shape.mid`/`Don't_You_Worry_Child.mid`), `dre.properties` (`Still_Dre.mid`), `giorgio.properties` (`GiorgiobyMoroder.mid`, which has no drum track in its source MIDI, so its pattern is a plain four-on-the-floor rather than a transcription).
 
-`ListMidiDevices.java` prints every `MidiDevice` Java Sound can see, so you can find the exact name after setting up the virtual cable. Only the melody layer is redirected — `Drum.gmPercussionNote()` values only mean "drum" on GM channel 10, so drums keep rendering natively through `AudioEngine` on their own thread while the melody goes out over `MidiPlayer`/`NoteOutput` (`ExternalMidiOutput`, a sibling of `MidiNoteOutput` that sends raw `ShortMessage`s to any `MidiDevice.Receiver` instead of a `Synthesizer`'s `MidiChannel`) — same absolute-time thread scheduling as before, just pointed at a real device instead of Gervill. `ExternalMidiOutput` also registers a JVM shutdown hook that sends "All Sound Off" (CC 120), so killing the app (Ctrl+C) doesn't leave a note stuck ringing on the external synth. Verified against Surge XT over loopMIDI.
+`ListMidiDevices.java` prints every `MidiDevice` Java Sound can see, so you can find the exact name after setting up the virtual cable. Only the melody layer is redirected — `Drum.gmPercussionNote()` values only mean "drum" on GM channel 10, so drums keep rendering natively through `AudioEngine` on their own thread while the melody goes out over `MidiPlayer`/`NoteOutput` (`ExternalMidiOutput`, a sibling of `MidiNoteOutput` that sends raw `ShortMessage`s to any `MidiDevice.Receiver` instead of a `Synthesizer`'s `MidiChannel`) — pointed at a real device instead of Gervill. `ExternalMidiOutput` also registers a JVM shutdown hook that sends "All Sound Off" (CC 120), so killing the app (Ctrl+C) doesn't leave a note stuck ringing on the external synth. Verified against Surge XT over loopMIDI.
+
+The drums play on the audio device's clock and the melody on `System.nanoTime()`, and a stall on either side — a GC pause, a busy machine, samples loading slowly — would leave them apart for the rest of the jam. So the melody follows the drums, in one of two ways picked with `midiSync`:
+
+- `loop` (the default): `MidiPlayer` still schedules notes by `System.nanoTime()`, but at the start of every loop it asks `AudioEngine.heardNanos()` how much of the drums has been heard, works out when they started, and schedules that loop from there. A stall is caught up with at the next loop.
+- `live`: drums and melody play through `AudioEngine.playLive`, the same `LiveSession` as the studio, and each MIDI note goes out when the audio device reaches its frame, so a stall is caught up with note by note.
+
+Either way the melody goes out `BeatApp.EXTERNAL_SYNTH_LATENCY_MILLIS` (37 ms) early, the time Surge XT took to sound a note on the default Windows device.
 
 `shapeDrumTracks()`'s pattern (kick on beats 1 & 3, snare on 2 & 4, syncopated closed-hat in between) is transcribed from bar 3 onward of `shape.mid`'s "Electric Drum Kit" track — the intro bars are sparse, so extracting from bar 1 gave an empty pattern.
+
+## Studio: change the jam while it plays
+
+`BeatStudio` opens the jam `BeatApp` would play from a `.properties` file, in a window where it keeps playing while you change it. It starts with a four-bar loop and the drums drawn from the code in the editor (see "Live coding in the studio" below); picking a jam preset brings in that jam's own drums and loop length:
+
+- a step grid per drum track — click a cell to cycle rest → `x` → `X` → `o`; the highlighted column is the step you are hearing,
+- jam presets: every `jam*.properties` next to the starting config; picking one loads its MIDI file and melody window, the file's tempo, its drum pattern and its synth,
+- tempo, and the loop length, from 32 bars down to 1/16 of a bar for a hard stutter; the melody window is re-read from the MIDI file, and the drum bar is cut off where the loop ends,
+- melody on/off and volume,
+- an external MIDI device: once connected, the melody can be routed to it, and the filter slider sends a control change — CC 74 by default, which most synths map to cutoff; others need MIDI learn. An external synth sounds a note only after its own audio buffer, so the melody is sent early by the synth latency slider; 37 ms is what Surge XT needed on the default Windows device, and it depends on the synth's buffer size.
+
+Every change lands on the next loop boundary rather than immediately: `AudioEngine.playLive` compiles each loop from whatever `Song` the window last published, so within a loop every hit is still placed at its exact sample frame. The status line says when an edit is waiting for the loop to come round; shorten the loop if that wait is too long.
+
+Routed to an external synth, melody notes are not scheduled by a sleeping thread as in `BeatApp`'s MIDI mode: the audio thread queues each note with its frame, and it is sent when the audio device's playback position reaches that frame, so the synth and the drums share one clock.
+
+## Live coding in the studio
+
+Under the grid the studio has a code editor. Press Ctrl+Enter (or "Uruchom") and the code is drawn into the grid, one row for each sound in each layer, and played from there:
+
+```js
+$: stack(
+    s("bd(3,8,5)"),
+    s("[~ sd]*2").gain(1.25),
+    s("hh*16").gain("[0.2 0.1]*8"),
+    s("[~ oh ~ oh]*2").gain(0.45).rel(0.1).dec(0.2)
+  )
+```
+
+It is a small language in the style of Strudel, written for this project: a subset, not Strudel itself.
+
+- `s("...")` (or `sound`) is a mini-notation pattern of drum names: `bd`, `sd`, `hh`, `oh`, `cp`. Steps separated by spaces share one cycle, and one cycle is one bar. `~` is a rest, `[ ]` groups steps into one, `,` inside brackets layers sequences, `*n` plays a step n times within its slot, and `(k,n)` or `(k,n,r)` spreads k hits evenly over n slots (Bjorklund), rotated r slots to the left.
+- `stack(...)` plays patterns together, and so do several `$:` blocks.
+- `.gain(0.5)` takes a number, `.gain("[0.2 0.1]*8")` a pattern read wherever the sound pattern plays; anything above 1 is capped at 1.
+- `.dec(seconds)` and `.rel(seconds)` shape the sample itself: a decay to silence, and a fade-out once the step has ended. The shaping happens before playback, so it works the same on the synthesized drums and on WAV files.
+- `//` comments out the rest of a line, which is the quickest way to mute a layer; Ctrl+/ comments or uncomments every line the cursor or selection is on.
+
+A new pattern starts with the next loop, like every other edit. Code with a mistake is not applied: the error shows its line and column, and the previous pattern keeps playing.
+
+The grid shows what the code plays, with each step's gain as its colour, and a row gets more than 16 steps when the code subdivides further (`[sd sd sd]` draws six). Clicking a step tweaks that drawing, not the code: the tweak plays until the code is run again, which draws the grid afresh. Picking a jam preset replaces the grid with that jam's drums.
+
+`LiveCode.notes` is the same move as `PatternCompiler` and `MidiFileReader` make: a third way of producing `Note`s, this time from text typed while the music plays.
 
 ## Platform threads versus virtual threads
 

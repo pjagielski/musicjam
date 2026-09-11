@@ -2,10 +2,15 @@ package pl.livecoding.musicjam.model;
 
 import java.util.Objects;
 
-public record Note(double beat, Voice voice, double durationBeats, float velocity) {
+public record Note(double beat, Voice voice, double durationBeats, float velocity, Envelope envelope) {
+
+    public Note(double beat, Voice voice, double durationBeats, float velocity) {
+        this(beat, voice, durationBeats, velocity, Envelope.NONE);
+    }
 
     public Note {
         Objects.requireNonNull(voice, "voice");
+        Objects.requireNonNull(envelope, "envelope");
         if (beat < 0.0) {
             throw new IllegalArgumentException("Beat cannot be negative");
         }

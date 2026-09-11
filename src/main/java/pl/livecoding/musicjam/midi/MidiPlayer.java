@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 
 public final class MidiPlayer implements AutoCloseable {
 
@@ -40,6 +41,24 @@ public final class MidiPlayer implements AutoCloseable {
             double patternLengthBeats,
             int loops
     ) throws InterruptedException {
+        long startNanos = System.nanoTime();
+        playLoop(notes, bpm, patternLengthBeats, loops, () -> System.nanoTime() - startNanos, 0L);
+    }
+
+    /**
+     * Plays in time with audio playing somewhere else. At the start of every loop it asks
+     * {@code heardNanos} how much of that audio has been heard, works out from that when the audio
+     * started, and schedules the loop's notes from there - {@code latencyNanos} early, for the synth
+     * to sound them. Audio that stalls or starts late is caught up with at the next loop.
+     */
+    public void playLoop(
+            List<Note> notes,
+            double bpm,
+            double patternLengthBeats,
+            int loops,
+            LongSupplier heardNanos,
+            long latencyNanos
+    ) throws InterruptedException {
         if (closed) {
             throw new IllegalStateException("Player is closed");
         }
@@ -50,20 +69,24 @@ public final class MidiPlayer implements AutoCloseable {
             return;
         }
 
-        List<Event> timeline = buildTimeline(notes, bpm, patternLengthBeats, loops);
+        List<Event> oneLoop = buildLoop(notes, bpm, patternLengthBeats);
+        long loopNanos = beatToNanos(patternLengthBeats, bpm);
         Set<Integer> activePitches = new HashSet<>();
-        long startNanos = System.nanoTime();
         try {
-            for (Event event : timeline) {
-                sleepUntil(startNanos + event.atNanos());
-                switch (event.type()) {
-                    case ON -> {
-                        output.noteOn(event.pitch(), event.velocity());
-                        activePitches.add(event.pitch());
-                    }
-                    case OFF -> {
-                        output.noteOff(event.pitch());
-                        activePitches.remove(event.pitch());
+            for (int loop = 0; loop < loops; loop++) {
+                long audioStartNanos = System.nanoTime() - heardNanos.getAsLong();
+                long loopStartNanos = audioStartNanos + loop * loopNanos - latencyNanos;
+                for (Event event : oneLoop) {
+                    sleepUntil(loopStartNanos + event.atNanos());
+                    switch (event.type()) {
+                        case ON -> {
+                            output.noteOn(event.pitch(), event.velocity());
+                            activePitches.add(event.pitch());
+                        }
+                        case OFF -> {
+                            output.noteOff(event.pitch());
+                            activePitches.remove(event.pitch());
+                        }
                     }
                 }
             }
@@ -82,30 +105,21 @@ public final class MidiPlayer implements AutoCloseable {
         }
     }
 
-    private static List<Event> buildTimeline(
-            List<Note> notes,
-            double bpm,
-            double patternLengthBeats,
-            int loops
-    ) {
-        var timeline = new ArrayList<Event>(notes.size() * loops * 2);
-        for (int loop = 0; loop < loops; loop++) {
-            double loopOffsetBeats = loop * patternLengthBeats;
-            for (Note note : notes) {
-                int midiNote = midiNoteOf(note.voice());
-                int velocity127 = Math.round(note.velocity() * 127.0f);
-                long onNanos = beatToNanos(loopOffsetBeats + note.beat(), bpm);
-                long offNanos = beatToNanos(
-                        loopOffsetBeats + note.beat() + note.durationBeats(), bpm);
-                timeline.add(new Event(onNanos, EventType.ON, midiNote, velocity127));
-                timeline.add(new Event(offNanos, EventType.OFF, midiNote, 0));
-            }
+    /** One loop's events. A note still sounding when the loop ends is released there. */
+    private static List<Event> buildLoop(List<Note> notes, double bpm, double patternLengthBeats) {
+        var events = new ArrayList<Event>(notes.size() * 2);
+        for (Note note : notes) {
+            int midiNote = midiNoteOf(note.voice());
+            int velocity127 = Math.round(note.velocity() * 127.0f);
+            double offBeat = Math.min(note.beat() + note.durationBeats(), patternLengthBeats);
+            events.add(new Event(beatToNanos(note.beat(), bpm), EventType.ON, midiNote, velocity127));
+            events.add(new Event(beatToNanos(offBeat, bpm), EventType.OFF, midiNote, 0));
         }
-        timeline.sort(
+        events.sort(
                 Comparator.comparingLong(Event::atNanos)
                         .thenComparing(Event::type)
         );
-        return timeline;
+        return events;
     }
 
     private static int midiNoteOf(Voice voice) {

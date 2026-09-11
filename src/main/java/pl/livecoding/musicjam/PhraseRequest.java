@@ -10,19 +10,23 @@ import java.util.Properties;
 /**
  * Everything needed to play a looped phrase from a MIDI file via {@link BeatApp}: which file and
  * track, which bar window, how many loops, which synth for melodic notes, which drum pattern to
- * pair it with, and an optional external MIDI device to route to instead of native synthesis.
+ * pair it with, and an optional external MIDI device to route to instead of native synthesis - with
+ * how the melody sent there keeps in time with the drums: {@code loop} or {@code live}.
  *
  * <p>Three ways to build one: fluent ({@link #forFile}), from a {@code .properties} file
  * ({@link #fromPropertiesFile}), or from CLI args (handled internally by {@link BeatApp}).
  */
 public record PhraseRequest(
         Path file, int trackIndex, int startBar, int bars, int loops, String synth, String drums,
-        String midiDevice) {
+        String midiDevice, String midiSync) {
 
     public PhraseRequest {
         Objects.requireNonNull(file, "file");
         Objects.requireNonNull(synth, "synth");
         Objects.requireNonNull(drums, "drums");
+        if (!"loop".equals(midiSync) && !"live".equals(midiSync)) {
+            throw new IllegalArgumentException("midiSync must be \"loop\" or \"live\"");
+        }
         if (bars <= 0) {
             throw new IllegalArgumentException("bars must be positive");
         }
@@ -65,6 +69,10 @@ public record PhraseRequest(
         if (midiDevice != null) {
             builder.midiDevice(midiDevice);
         }
+        String midiSync = properties.getProperty("midiSync");
+        if (midiSync != null) {
+            builder.midiSync(midiSync.trim());
+        }
         return builder.build();
     }
 
@@ -88,6 +96,7 @@ public record PhraseRequest(
         private String synth = "anthem";
         private String drums = "shape";
         private String midiDevice;
+        private String midiSync = "loop";
 
         private Builder(Path file) {
             this.file = file;
@@ -128,8 +137,13 @@ public record PhraseRequest(
             return this;
         }
 
+        public Builder midiSync(String midiSync) {
+            this.midiSync = midiSync;
+            return this;
+        }
+
         public PhraseRequest build() {
-            return new PhraseRequest(file, trackIndex, startBar, bars, loops, synth, drums, midiDevice);
+            return new PhraseRequest(file, trackIndex, startBar, bars, loops, synth, drums, midiDevice, midiSync);
         }
 
         public void playJam() throws Exception {

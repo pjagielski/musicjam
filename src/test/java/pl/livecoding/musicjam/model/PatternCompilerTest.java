@@ -40,4 +40,27 @@ class PatternCompilerTest {
                 new Note(4.0, Drum.KICK, 1.0, 1.0f)
         ), notes);
     }
+
+    @Test
+    void cutsADrumBarShortWhenTheLoopEndsInsideIt() {
+        var song = new Song(120, 4, List.of(
+                new DrumTrack(Drum.KICK, "X.X.", 1.0f),
+                new MelodyTrack(List.of(), 2.0, 1.0f)
+        ));
+
+        assertEquals(List.of(new Note(0.0, Drum.KICK, 1.0, 1.0f)), PatternCompiler.compile(song));
+    }
+
+    @Test
+    void startsTheNextBarWhenTheLoopReachesIntoIt() {
+        var song = new Song(120, 4, List.of(
+                new DrumTrack(Drum.KICK, "X...", 1.0f),
+                new MelodyTrack(List.of(), 5.0, 1.0f)
+        ));
+
+        assertEquals(List.of(
+                new Note(0.0, Drum.KICK, 1.0, 1.0f),
+                new Note(4.0, Drum.KICK, 1.0, 1.0f)
+        ), PatternCompiler.compile(song));
+    }
 }

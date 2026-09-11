@@ -11,7 +11,8 @@ public final class PatternCompiler {
 
     /**
      * Compiles every track of a song into one loop's worth of notes. A {@link DrumTrack} is one
-     * bar ({@code song.beatsPerBar()}) and repeats to fill {@link #totalBeats}; a
+     * bar ({@code song.beatsPerBar()}) and repeats to fill {@link #totalBeats}, cut off where that
+     * length ends - so a loop shorter than a bar plays only the start of the pattern; a
      * {@link MelodyTrack} already spans the full length and contributes once.
      */
     public static List<Note> compile(Song song) {
@@ -43,14 +44,15 @@ public final class PatternCompiler {
     private static List<Note> compileDrumTrack(DrumTrack track, double beatsPerBar, double totalBeats) {
         String steps = track.steps();
         double durationBeats = beatsPerBar / steps.length();
-        int repeats = Math.max(1, (int) Math.round(totalBeats / beatsPerBar));
+        // ceil, not round: a loop that ends mid-bar still needs that bar's opening steps
+        int repeats = Math.max(1, (int) Math.ceil(totalBeats / beatsPerBar));
         var notes = new ArrayList<Note>();
         for (int repeat = 0; repeat < repeats; repeat++) {
             double barOffset = repeat * beatsPerBar;
             for (int step = 0; step < steps.length(); step++) {
                 float accent = accentOf(steps.charAt(step));
-                if (accent > 0.0f) {
-                    double beat = barOffset + (double) step * beatsPerBar / steps.length();
+                double beat = barOffset + (double) step * beatsPerBar / steps.length();
+                if (accent > 0.0f && beat < totalBeats) {
                     notes.add(new Note(beat, track.drum(), durationBeats, track.gain() * accent));
                 }
             }
@@ -60,11 +62,13 @@ public final class PatternCompiler {
 
     private static List<Note> compileMelodyTrack(MelodyTrack track) {
         return track.notes().stream()
-                .map(note -> new Note(note.beat(), note.voice(), note.durationBeats(), note.velocity() * track.gain()))
+                .map(note -> new Note(note.beat(), note.voice(), note.durationBeats(), note.velocity() * track.gain(),
+                        note.envelope()))
                 .toList();
     }
 
-    private static float accentOf(char step) {
+    /** 'X' is 1.0, 'x' 0.8, 'o' 0.5; '.', '-' and ' ' are rests. */
+    public static float accentOf(char step) {
         return switch (step) {
             case 'X' -> 1.0f;
             case 'x' -> 0.8f;
