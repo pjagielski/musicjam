@@ -8,20 +8,20 @@ Windows:
 
 ```powershell
 .\gradlew.bat run
-.\gradlew.bat run --args="src/main/resources/shape.mid"
-.\gradlew.bat run --args="src/main/resources/shape.mid 1 0 2 4"
+.\gradlew.bat run --args="src/main/resources/song_shape.mid"
+.\gradlew.bat run --args="src/main/resources/song_shape.mid 1 0 2 4"
 .\gradlew.bat run --args="--config jam.properties"
 .\gradlew.bat test
 
 # Steps 1 and 2 of the workshop path depend on nothing but the JDK's own javax.sound.midi, so
 # they run standalone via single-file source-launch (from the repo root):
-java src/main/java/pl/livecoding/musicjam/midi/SequencerDemo.java src/main/resources/shape.mid
-java src/main/java/pl/livecoding/musicjam/midi/InspectMidi.java src/main/resources/shape.mid
+java src/main/java/pl/livecoding/musicjam/midi/SequencerDemo.java src/main/resources/song_shape.mid
+java src/main/java/pl/livecoding/musicjam/midi/InspectMidi.java src/main/resources/song_shape.mid
 java src/main/java/pl/livecoding/musicjam/midi/ListMidiDevices.java
 
 # Step 3 builds on MidiFileReader/NaivePlayer (real app code, not dependency-free), so it needs
 # the project's classpath — a small Gradle task instead of source-launch:
-.\gradlew.bat naivePlayerDemo --args="src/main/resources/shape.mid 1 0 2 4"
+.\gradlew.bat naivePlayerDemo --args="src/main/resources/song_shape.mid 1 0 2 4"
 
 # A window for changing the jam while it plays (JavaFX, fetched by Gradle like any dependency):
 .\gradlew.bat studio
@@ -31,7 +31,7 @@ java src/main/java/pl/livecoding/musicjam/midi/ListMidiDevices.java
 macOS/Linux:
 
 ```bash
-./gradlew run --args="src/main/resources/shape.mid"
+./gradlew run --args="src/main/resources/song_shape.mid"
 ./gradlew test
 ```
 
@@ -119,7 +119,7 @@ java src/main/java/pl/livecoding/musicjam/midi/InspectMidi.java path\to\song.mid
 
 Each melodic `Note` carries a `Voice.Pitch(midiNote)`; `AudioEngine` resolves that to a synthesized tone via a `PitchSynth` instead of a sample file, cached per distinct pitch+duration — no MIDI device involved, so there's no software-synthesizer patch-loading glitch on the first note. `AnthemLeadSynth`/`TrancePluckSynth`/`WidePadSynth` are ports of the "Anthem Lead - Mainstage", "Trance Pluck - Classic" and "Wide Pad - Halo" patches from a separate JUCE project (`Sandbox/novasaw`): a 7-voice unison PolyBLEP sawtooth with drift/vibrato, a diode waveshaper and a resonant lowpass driven by the envelope and key tracking. All three extend `NovasawSynth`, which owns the one shared `render(...)` — a patch is nothing but the recipe constants and preset macro knobs passed to its constructor; the low-level DSP primitives (`polyBlepSaw`, `shapeDiode`, the phase-jitter hash, the lowpass filter) live once in `NovasawDsp`. Pick a patch with the `[synth]` argument (`anthem`, the default, `pluck`, or `pad`). novasaw's stereo pan spread and chorus/delay/reverb sends are left out — `AudioEngine`'s `Sample` type is mono and these ports only target one preset each.
 
-MIDI files generally shouldn't be checked into this repository — treat them like WAV samples and point `BeatApp` at a file on disk. `src/main/resources/` is the exception: it holds four workshop fixtures kept here on purpose (`shape.mid` — used to derive the `shape` drum pattern below — plus `Don't_You_Worry_Child.mid`, `GiorgiobyMoroder.mid` and `Still_Dre.mid` as extra material for `InspectMidi.java`/`BeatApp`). Don't add further copyrighted transcriptions the same way without checking you're allowed to.
+MIDI files generally shouldn't be checked into this repository — treat them like WAV samples and point `BeatApp` at a file on disk. `src/main/resources/` is the exception: it holds four workshop fixtures kept here on purpose (`song_shape.mid` — used to derive the `shape` drum pattern below — plus `song_child.mid`, `song_giorgioby.mid` and `song_still_dre.mid` as extra material for `InspectMidi.java`/`BeatApp`). Don't add further copyrighted transcriptions the same way without checking you're allowed to.
 
 ### Routing the melody to an external MIDI device
 
@@ -127,7 +127,7 @@ An optional trailing argument (after `loops` and `synth`) redirects the melody l
 
 ```powershell
 java src/main/java/pl/livecoding/musicjam/midi/ListMidiDevices.java
-.\gradlew.bat run --args="src/main/resources/shape.mid 1 0 2 4 anthem loopMIDI"
+.\gradlew.bat run --args="src/main/resources/song_shape.mid 1 0 2 4 anthem loopMIDI"
 ```
 
 ### Configuring a request without juggling positional arguments
@@ -135,7 +135,7 @@ java src/main/java/pl/livecoding/musicjam/midi/ListMidiDevices.java
 `BeatApp` takes up to 7 positional arguments (`file trackIndex startBar bars loops synth midiDevice`) — easy to lose count of. `PhraseRequest` is the object `BeatApp` builds internally from those arguments; it's also a public, standalone way to configure the same thing, either fluently in Java:
 
 ```java
-PhraseRequest.forFile("src/main/resources/shape.mid")
+PhraseRequest.forFile("src/main/resources/song_shape.mid")
         .track(1)
         .fromBar(0)
         .bars(2)
@@ -147,7 +147,7 @@ PhraseRequest.forFile("src/main/resources/shape.mid")
 or from a `.properties` file (only `file` is required, everything else falls back to the same defaults as the CLI):
 
 ```properties
-file=src/main/resources/shape.mid
+file=src/main/resources/song_shape.mid
 track=1
 fromBar=0
 bars=2
@@ -163,7 +163,7 @@ midiLatency=37
 .\gradlew.bat run --args="--config jam.properties"
 ```
 
-`src/main/resources/` has one ready-made `.properties` file per workshop fixture, each pointing at a melody window and drum pattern (`BeatApp.DRUM_PATTERNS`) transcribed from (or, for `giorgio`, invented for) that same file: `jam.properties`/`worry.properties` (`shape.mid`/`Don't_You_Worry_Child.mid`), `dre.properties` (`Still_Dre.mid`), `giorgio.properties` (`GiorgiobyMoroder.mid`, which has no drum track in its source MIDI, so its pattern is a plain four-on-the-floor rather than a transcription).
+`src/main/resources/` has one ready-made `.properties` file per workshop fixture, each pointing at a melody window and drum pattern (`BeatApp.DRUM_PATTERNS`) transcribed from (or, for `giorgio`, invented for) that same file: `jam.properties`/`worry.properties` (`song_shape.mid`/`song_child.mid`), `dre.properties` (`song_still_dre.mid`), `giorgio.properties` (`song_giorgioby.mid`, which has no drum track in its source MIDI, so its pattern is a plain four-on-the-floor rather than a transcription).
 
 `ListMidiDevices.java` prints every `MidiDevice` Java Sound can see, so you can find the exact name after setting up the virtual cable. Only the melody layer is redirected — `Drum.gmPercussionNote()` values only mean "drum" on GM channel 10, so drums keep rendering natively through `AudioEngine` on their own thread while the melody goes out over `MidiPlayer`/`NoteOutput` (`ExternalMidiOutput`, a sibling of `MidiNoteOutput` that sends raw `ShortMessage`s to any `MidiDevice.Receiver` instead of a `Synthesizer`'s `MidiChannel`) — pointed at a real device instead of Gervill. `ExternalMidiOutput` also registers a JVM shutdown hook that sends "All Sound Off" (CC 120), so killing the app (Ctrl+C) doesn't leave a note stuck ringing on the external synth. Verified against Surge XT over loopMIDI.
 
@@ -174,7 +174,7 @@ The drums play on the audio device's clock and the melody on `System.nanoTime()`
 
 Either way the melody goes out `midiLatency` milliseconds early — 37 by default, the time Surge XT took to sound a note on the default Windows device. It depends on the synth and on its buffer size, so measure your own and set the key.
 
-`shapeDrumTracks()`'s pattern (kick on beats 1 & 3, snare on 2 & 4, syncopated closed-hat in between) is transcribed from bar 3 onward of `shape.mid`'s "Electric Drum Kit" track — the intro bars are sparse, so extracting from bar 1 gave an empty pattern.
+`shapeDrumTracks()`'s pattern (kick on beats 1 & 3, snare on 2 & 4, syncopated closed-hat in between) is transcribed from bar 3 onward of `song_shape.mid`'s "Electric Drum Kit" track — the intro bars are sparse, so extracting from bar 1 gave an empty pattern.
 
 ## Studio: change the jam while it plays
 
@@ -242,7 +242,7 @@ Each step exists to answer a question the previous one raised — the path is de
 6. **Precision (20-30 min).** `NaivePlayer` has jitter. Implement `Transport.frameAtBeat` and compare block-edge quantization against `AudioEngineTest`'s exact-offset assertions — `AudioEngine` sidesteps the wake-up-deadline problem entirely by placing every transient at its target sample before playback starts.
 7. **Put it together (20-30 min).** `BeatApp` loads a melody window into a `MelodyTrack` and plays it alongside step 5's `DrumTrack`s as one `Song` — `PatternCompiler` tiles the drum bar to the melody's length (see `CONTEXT.md`), and `AudioEngine` renders both. Circle back to step 1: `SequencerDemo`/Gervill can glitch on a synth's first note (a real, diagnosed bug — the built-in software synthesizer loads an instrument's patch lazily on its first `noteOn`, see `MidiNoteOutput.warmUp`'s comment); native synthesis through `AudioEngine` never touches an external synth at all, so the glitch doesn't exist there by construction.
 
-The original single-file proof of concept remains in `Beat.java` for comparison. `src/main/resources/` has four MIDI files to explore beyond the workshop's own `shape.mid` fixture — `Don't_You_Worry_Child.mid`, `GiorgiobyMoroder.mid` and `Still_Dre.mid` aren't wired into any specific exercise, they're just more material to point participants at for steps 2/3/5/7.
+The original single-file proof of concept remains in `Beat.java` for comparison. `src/main/resources/` has four MIDI files to explore beyond the workshop's own `song_shape.mid` fixture — `song_child.mid`, `song_giorgioby.mid` and `song_still_dre.mid` aren't wired into any specific exercise, they're just more material to point participants at for steps 2/3/5/7.
 
 ### A 20-minute thread experiment
 

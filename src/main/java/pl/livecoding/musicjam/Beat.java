@@ -157,7 +157,7 @@ public class Beat {
             new Track(sample("hh"), "x.x.x.x.x.x.x.x.", 0.35f),
             new Track(openHat(),    "..o.....", 0.25f)          // 8 krokow -> polimetria
         );
-        loadMelody("src/main/resources/shape.mid", 1, 0, 4);
+        loadMelody("src/main/resources/song_shape.mid", 1, 0, 4);
 
         // wszystko prealokowane - zero smieci w petli audio
         float[] mix = new float[BLOCK * 2];

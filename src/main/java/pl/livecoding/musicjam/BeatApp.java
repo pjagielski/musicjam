@@ -241,7 +241,7 @@ public final class BeatApp {
         return pattern;
     }
 
-    // Transcribed from the "Electric Drum Kit" track of shape.mid (bars 3+, once the groove kicks in).
+    // Transcribed from the "Electric Drum Kit" track of song_shape.mid (bars 3+, once the groove kicks in).
     private static List<DrumTrack> shapeDrumTracks() {
         return List.of(
                 new DrumTrack(Drum.KICK, "o..o....o..o....", 1.00f),
@@ -250,7 +250,7 @@ public final class BeatApp {
         );
     }
 
-    // Transcribed from the "Drums" track (channel 10) of Don't_You_Worry_Child.mid, bar 40 (the drop).
+    // Transcribed from the "Drums" track (channel 10) of song_child.mid, bar 40 (the drop).
     private static List<DrumTrack> worryDrumTracks() {
         return List.of(
                 new DrumTrack(Drum.KICK, "X...X...X...X...", 1.00f),
@@ -260,7 +260,7 @@ public final class BeatApp {
         );
     }
 
-    // Transcribed from the "Da Dope Beat" track (channel 10) of Still_Dre.mid, bar 10 — the groove
+    // Transcribed from the "Da Dope Beat" track (channel 10) of song_still_dre.mid, bar 10 — the groove
     // is identical for nearly the whole song, so any settled bar gives the same pattern.
     private static List<DrumTrack> dreDrumTracks() {
         return List.of(
@@ -271,7 +271,7 @@ public final class BeatApp {
         );
     }
 
-    // GiorgiobyMoroder.mid has no drum track at all in the source MIDI (a single arpeggio track) —
+    // song_giorgioby.mid has no drum track at all in the source MIDI (a single arpeggio track) —
     // this is a plain four-on-the-floor pattern in the disco/italo style the song evokes, not a transcription.
     private static List<DrumTrack> giorgioDrumTracks() {
         return List.of(
