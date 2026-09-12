@@ -156,6 +156,7 @@ synth=pad
 drums=shape
 midiDevice=loopMIDI
 midiSync=loop
+midiLatency=37
 ```
 
 ```powershell
@@ -171,7 +172,7 @@ The drums play on the audio device's clock and the melody on `System.nanoTime()`
 - `loop` (the default): `MidiPlayer` still schedules notes by `System.nanoTime()`, but at the start of every loop it asks `AudioEngine.heardNanos()` how much of the drums has been heard, works out when they started, and schedules that loop from there. A stall is caught up with at the next loop.
 - `live`: drums and melody play through `AudioEngine.playLive`, the same `LiveSession` as the studio, and each MIDI note goes out when the audio device reaches its frame, so a stall is caught up with note by note.
 
-Either way the melody goes out `BeatApp.EXTERNAL_SYNTH_LATENCY_MILLIS` (37 ms) early, the time Surge XT took to sound a note on the default Windows device.
+Either way the melody goes out `midiLatency` milliseconds early — 37 by default, the time Surge XT took to sound a note on the default Windows device. It depends on the synth and on its buffer size, so measure your own and set the key.
 
 `shapeDrumTracks()`'s pattern (kick on beats 1 & 3, snare on 2 & 4, syncopated closed-hat in between) is transcribed from bar 3 onward of `shape.mid`'s "Electric Drum Kit" track — the intro bars are sparse, so extracting from bar 1 gave an empty pattern.
 
@@ -183,7 +184,7 @@ Either way the melody goes out `BeatApp.EXTERNAL_SYNTH_LATENCY_MILLIS` (37 ms) e
 - jam presets: every `jam*.properties` next to the starting config; picking one loads its MIDI file and melody window, the file's tempo, its drum pattern and its synth,
 - tempo, and the loop length, from 32 bars down to 1/16 of a bar for a hard stutter; the melody window is re-read from the MIDI file, and the drum bar is cut off where the loop ends,
 - melody on/off and volume,
-- an external MIDI device: once connected, the melody can be routed to it, and the filter slider sends a control change — CC 74 by default, which most synths map to cutoff; others need MIDI learn. An external synth sounds a note only after its own audio buffer, so the melody is sent early by the synth latency slider; 37 ms is what Surge XT needed on the default Windows device, and it depends on the synth's buffer size.
+- an external MIDI device: once connected, the melody can be routed to it, and the filter slider sends a control change — CC 74 by default, which most synths map to cutoff; others need MIDI learn. An external synth sounds a note only after its own audio buffer, so the melody is sent early by the synth latency slider, which starts at the jam's `midiLatency` (37 ms by default, what Surge XT needed on the default Windows device).
 
 Every change lands on the next loop boundary rather than immediately: `AudioEngine.playLive` compiles each loop from whatever `Song` the window last published, so within a loop every hit is still placed at its exact sample frame. The status line says when an edit is waiting for the loop to come round; shorten the loop if that wait is too long.
 

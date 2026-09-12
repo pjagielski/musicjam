@@ -37,8 +37,6 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class BeatApp {
     private static final double BEATS_PER_BAR = 4.0;
     private static final Path SAMPLE_DIRECTORY = Path.of("samples");
-    /** How long an external synth takes to sound a note: measured for Surge XT on the default Windows device. */
-    public static final int EXTERNAL_SYNTH_LATENCY_MILLIS = 37;
     private static final Map<String, PitchSynth> SYNTHS = Map.of(
             "anthem", new AnthemLeadSynth(),
             "pad", new WidePadSynth(),
@@ -169,7 +167,7 @@ public final class BeatApp {
                 Thread.sleep(1);
             }
             player.playLoop(melodyNotes, bpm, totalBeats, request.loops(),
-                    drums::heardNanos, TimeUnit.MILLISECONDS.toNanos(EXTERNAL_SYNTH_LATENCY_MILLIS));
+                    drums::heardNanos, TimeUnit.MILLISECONDS.toNanos(request.midiLatencyMillis()));
         } finally {
             drumThread.join();
         }
@@ -192,7 +190,7 @@ public final class BeatApp {
         long millis = Math.round(request.loops() * PatternCompiler.totalBeats(song) * 60_000 / song.bpm());
         try (ExternalMidiOutput midi = ExternalMidiOutput.open(request.midiDevice(), 0, program);
              AudioEngine.LiveSession session = engine.playLive(() -> jam, melodyListener(midi))) {
-            session.setExternalLatencyMillis(EXTERNAL_SYNTH_LATENCY_MILLIS);
+            session.setExternalLatencyMillis(request.midiLatencyMillis());
             Thread.sleep(millis);
         }
     }
@@ -308,11 +306,14 @@ public final class BeatApp {
                   drums=shape
                   midiDevice=loopMIDI
                   midiSync=loop
+                  midiLatency=37
 
                 Wzorce perkusji ("drums" w pliku .properties, nie ma jako argument CLI): shape (domyslny), worry, dre, giorgio
 
                 Melodia przez MIDI ("midiSync"): loop (domyslny) - MidiPlayer co petle dogania perkusje,
                 live - perkusja i melodia w jednej LiveSession, korekta przy kazdej nucie
+                Melodia wychodzi o "midiLatency" milisekund wczesniej (domyslnie 37) - tyle zwleka
+                zewnetrzny syntezator, zanim cokolwiek slychac; zalezy od niego i od jego bufora
 
                 To samo programistycznie: PhraseRequest.forFile("plik.mid").track(1).fromBar(0)
                   .bars(2).loops(4).synth("anthem").playJam();

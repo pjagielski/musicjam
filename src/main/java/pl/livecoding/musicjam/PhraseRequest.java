@@ -11,14 +11,22 @@ import java.util.Properties;
  * Everything needed to play a looped phrase from a MIDI file via {@link BeatApp}: which file and
  * track, which bar window, how many loops, which synth for melodic notes, which drum pattern to
  * pair it with, and an optional external MIDI device to route to instead of native synthesis - with
- * how the melody sent there keeps in time with the drums: {@code loop} or {@code live}.
+ * how the melody sent there keeps in time with the drums: {@code loop} or {@code live}, and how
+ * far ahead of the beat its notes go out, in milliseconds.
  *
  * <p>Three ways to build one: fluent ({@link #forFile}), from a {@code .properties} file
  * ({@link #fromPropertiesFile}), or from CLI args (handled internally by {@link BeatApp}).
  */
 public record PhraseRequest(
         Path file, int trackIndex, int startBar, int bars, int loops, String synth, String drums,
-        String midiDevice, String midiSync) {
+        String midiDevice, String midiSync, int midiLatencyMillis) {
+
+    /**
+     * How long an external synth takes to sound a note, in milliseconds: measured for Surge XT on
+     * the default Windows device. It depends on the synth and its buffer size, so measure your own
+     * and set {@code midiLatency}.
+     */
+    public static final int DEFAULT_MIDI_LATENCY_MILLIS = 37;
 
     public PhraseRequest {
         Objects.requireNonNull(file, "file");
@@ -26,6 +34,9 @@ public record PhraseRequest(
         Objects.requireNonNull(drums, "drums");
         if (!"loop".equals(midiSync) && !"live".equals(midiSync)) {
             throw new IllegalArgumentException("midiSync must be \"loop\" or \"live\"");
+        }
+        if (midiLatencyMillis < 0) {
+            throw new IllegalArgumentException("midiLatency must not be negative");
         }
         if (bars <= 0) {
             throw new IllegalArgumentException("bars must be positive");
@@ -73,6 +84,7 @@ public record PhraseRequest(
         if (midiSync != null) {
             builder.midiSync(midiSync.trim());
         }
+        applyIfPresent(properties, "midiLatency", builder::midiLatency);
         return builder.build();
     }
 
@@ -97,6 +109,7 @@ public record PhraseRequest(
         private String drums = "shape";
         private String midiDevice;
         private String midiSync = "loop";
+        private int midiLatencyMillis = DEFAULT_MIDI_LATENCY_MILLIS;
 
         private Builder(Path file) {
             this.file = file;
@@ -142,8 +155,14 @@ public record PhraseRequest(
             return this;
         }
 
+        public Builder midiLatency(int millis) {
+            this.midiLatencyMillis = millis;
+            return this;
+        }
+
         public PhraseRequest build() {
-            return new PhraseRequest(file, trackIndex, startBar, bars, loops, synth, drums, midiDevice, midiSync);
+            return new PhraseRequest(file, trackIndex, startBar, bars, loops, synth, drums, midiDevice, midiSync,
+                    midiLatencyMillis);
         }
 
         public void playJam() throws Exception {

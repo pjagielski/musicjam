@@ -103,7 +103,7 @@ public final class BeatStudio extends Application {
     private final CheckBox melodyToMidi = new CheckBox("Melodia przez MIDI");
     private final Spinner<Integer> cc = new Spinner<>(0, 127, 74);
     private final Slider filter = new Slider(0, 127, 64);
-    private final Slider midiLatency = new Slider(0, 100, BeatApp.EXTERNAL_SYNTH_LATENCY_MILLIS);
+    private final Slider midiLatency = new Slider(0, 100, PhraseRequest.DEFAULT_MIDI_LATENCY_MILLIS);
     private final Label midiLatencyLabel = new Label();
     private final ProgressBar loopProgress = new ProgressBar(0);
     private final Label status = new Label("Zatrzymane");
@@ -223,6 +223,7 @@ public final class BeatStudio extends Application {
         loading = true;
         try {
             request = next;
+            midiLatency.setValue(next.midiLatencyMillis());
             sequence = nextSequence;
             synth = nextSynth;
             rows.clear();

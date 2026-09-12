@@ -25,6 +25,7 @@ class PhraseRequestTest {
         assertEquals("anthem", request.synth());
         assertNull(request.midiDevice());
         assertEquals("loop", request.midiSync());
+        assertEquals(37, request.midiLatencyMillis());
     }
 
     @Test
@@ -37,6 +38,7 @@ class PhraseRequestTest {
                 .synth("pad")
                 .midiDevice("loopMIDI")
                 .midiSync("live")
+                .midiLatency(12)
                 .build();
 
         assertEquals(3, request.trackIndex());
@@ -46,6 +48,7 @@ class PhraseRequestTest {
         assertEquals("pad", request.synth());
         assertEquals("loopMIDI", request.midiDevice());
         assertEquals("live", request.midiSync());
+        assertEquals(12, request.midiLatencyMillis());
     }
 
     @Test
@@ -63,6 +66,12 @@ class PhraseRequestTest {
     }
 
     @Test
+    void rejectsNegativeMidiLatency() {
+        assertThrows(IllegalArgumentException.class,
+                () -> PhraseRequest.forFile("song.mid").midiLatency(-1).build());
+    }
+
+    @Test
     void loadsFromPropertiesFile(@TempDir Path directory) throws IOException {
         Path config = directory.resolve("jam.properties");
         Files.writeString(config, """
@@ -74,6 +83,7 @@ class PhraseRequestTest {
                 synth=pad
                 midiDevice=loopMIDI
                 midiSync=live
+                midiLatency=12
                 """);
 
         PhraseRequest request = PhraseRequest.fromPropertiesFile(config);
@@ -86,6 +96,7 @@ class PhraseRequestTest {
         assertEquals("pad", request.synth());
         assertEquals("loopMIDI", request.midiDevice());
         assertEquals("live", request.midiSync());
+        assertEquals(12, request.midiLatencyMillis());
     }
 
     @Test
@@ -101,6 +112,7 @@ class PhraseRequestTest {
         assertEquals(4, request.loops());
         assertEquals("anthem", request.synth());
         assertNull(request.midiDevice());
+        assertEquals(37, request.midiLatencyMillis());
     }
 
     @Test
