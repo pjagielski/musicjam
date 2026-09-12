@@ -163,7 +163,16 @@ midiLatency=37
 .\gradlew.bat run --args="--config jam.properties"
 ```
 
-`src/main/resources/` has one ready-made `.properties` file per workshop fixture, each pointing at a melody window and drum pattern (`BeatApp.DRUM_PATTERNS`) transcribed from (or, for `giorgio`, invented for) that same file: `jam.properties`/`worry.properties` (`song_shape.mid`/`song_child.mid`), `dre.properties` (`song_still_dre.mid`), `giorgio.properties` (`song_giorgioby.mid`, which has no drum track in its source MIDI, so its pattern is a plain four-on-the-floor rather than a transcription).
+`src/main/resources/` has one ready-made `.properties` file per workshop fixture, each pointing at a melody window and the drum pattern (`BeatApp.DRUM_PATTERNS`) transcribed from — or, for `giorgio`, invented for — that same file:
+
+| config | file | drums |
+| --- | --- | --- |
+| `jam-shape.properties` | `song_shape.mid` | `shape`, the default, so the file does not name it |
+| `jam-child.properties` | `song_child.mid` | `worry` |
+| `jam-dre.properties` | `song_still_dre.mid` | `dre` |
+| `jam-giorgio.properties` | `song_giorgioby.mid` | `giorgio` — the source MIDI has no drum track, so this one is a plain four-on-the-floor rather than a transcription |
+
+`jam.properties`, the config read when none is given, is the same jam as `jam-giorgio.properties`.
 
 `ListMidiDevices.java` prints every `MidiDevice` Java Sound can see, so you can find the exact name after setting up the virtual cable. Only the melody layer is redirected — `Drum.gmPercussionNote()` values only mean "drum" on GM channel 10, so drums keep rendering natively through `AudioEngine` on their own thread while the melody goes out over `MidiPlayer`/`NoteOutput` (`ExternalMidiOutput`, a sibling of `MidiNoteOutput` that sends raw `ShortMessage`s to any `MidiDevice.Receiver` instead of a `Synthesizer`'s `MidiChannel`) — pointed at a real device instead of Gervill. `ExternalMidiOutput` also registers a JVM shutdown hook that sends "All Sound Off" (CC 120), so killing the app (Ctrl+C) doesn't leave a note stuck ringing on the external synth. Verified against Surge XT over loopMIDI.
 
