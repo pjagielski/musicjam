@@ -117,7 +117,7 @@ MIDI files generally shouldn't be checked into this repository — treat them li
 An optional trailing argument (after `loops` and `synth`) redirects the melody layer to an external MIDI device (e.g. a standalone synth like Surge XT, reached over a virtual MIDI cable such as loopMIDI) instead of native synthesis — matched by a case-insensitive substring of the device name:
 
 ```bash
-java src/main/java/pl/livecoding/musicjam/midi/ListMidiDevices.java
+./gradlew listMidiDevices
 ./gradlew run --args="src/main/resources/song_shape.mid 1 0 2 4 anthem loopMIDI"
 ```
 

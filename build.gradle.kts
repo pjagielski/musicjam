@@ -65,3 +65,10 @@ tasks.register<JavaExec>("studio") {
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass = "pl.livecoding.musicjam.studio.StudioLauncher"
 }
+
+tasks.register<JavaExec>("listMidiDevices") {
+    group = "workshop"
+    description = "Lists the MIDI devices Java can see, to find the name of a virtual cable."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "pl.livecoding.musicjam.midi.ListMidiDevices"
+}
