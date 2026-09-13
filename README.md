@@ -4,14 +4,12 @@ A small Java 25 jam app — a MIDI melody and a drum pattern played together —
 
 ## Run
 
-Windows:
-
-```powershell
-.\gradlew.bat run
-.\gradlew.bat run --args="src/main/resources/song_shape.mid"
-.\gradlew.bat run --args="src/main/resources/song_shape.mid 1 0 2 4"
-.\gradlew.bat run --args="--config jam.properties"
-.\gradlew.bat test
+```bash
+./gradlew run
+./gradlew run --args="src/main/resources/song_shape.mid"
+./gradlew run --args="src/main/resources/song_shape.mid 1 0 2 4"
+./gradlew run --args="--config src/main/resources/jam-dre.properties"
+./gradlew test
 
 # Steps 1 and 2 of the workshop path depend on nothing but the JDK's own javax.sound.midi, so
 # they run standalone via single-file source-launch (from the repo root):
@@ -21,21 +19,14 @@ java src/main/java/pl/livecoding/musicjam/midi/ListMidiDevices.java
 
 # Step 3 builds on MidiFileReader/NaivePlayer (real app code, not dependency-free), so it needs
 # the project's classpath — a small Gradle task instead of source-launch:
-.\gradlew.bat naivePlayerDemo --args="src/main/resources/song_shape.mid 1 0 2 4"
+./gradlew naivePlayerDemo --args="src/main/resources/song_shape.mid 1 0 2 4"
 
 # A window for changing the jam while it plays (JavaFX, fetched by Gradle like any dependency):
-.\gradlew.bat studio
-.\gradlew.bat studio --args="--config src/main/resources/jam.properties"
+./gradlew studio
+./gradlew studio --args="--config src/main/resources/jam.properties"
 ```
 
-macOS/Linux:
-
-```bash
-./gradlew run --args="src/main/resources/song_shape.mid"
-./gradlew test
-```
-
-`BeatApp` does exactly one thing: play a MIDI phrase and a drum pattern together as a single `Song`. Run with no arguments (or `--help`) to print full usage — that prints and exits, no audio device is touched.
+`BeatApp` does exactly one thing: play a MIDI phrase and a drum pattern together as a single `Song`. With no arguments it plays `src/main/resources/jam.properties`; `--help` prints the full usage and exits without touching an audio device.
 
 ## Write a beat
 
@@ -105,16 +96,16 @@ See `CONTEXT.md` for the vocabulary behind these names (why `Phrase` isn't `Melo
 
 `BeatApp` loads a window of bars from a single track of a standard MIDI file, synthesizes it natively, and plays it alongside one of `BeatApp.DRUM_PATTERNS` — both layers compiled and rendered as a single `Song`, through the same sample-accurate `AudioEngine`:
 
-```powershell
-.\gradlew.bat run --args="path\to\song.mid 1 0 2 4"
+```bash
+./gradlew run --args="path/to/song.mid 1 0 2 4"
 ```
 
 Arguments: file path, track index (default `1`), start bar (default `0`, 0-indexed — the window is `[startBar, startBar+bars)`), bars to loop (default `2`, assumes 4/4), number of loop repeats (default `4`), synth (default `anthem`), optional external MIDI device (see below). The CLI has no positional argument for the drum pattern — that's `drums=` in a `.properties` file (see "Configuring a request" below), always `shape` from the CLI. `MidiFileReader` converts note-on/note-off pairs to beats using the file's PPQ resolution and reads tempo from the tempo meta event (default 120 BPM) — that tempo drives the whole `Song`, so the drum layer stays rhythmically locked to the melody. A track normally holds the whole song, not just a repeating phrase — many tracks don't even start at bar 0 (an intro, or a part that only kicks in at the drop) — so `BeatApp` windows it down to the requested bars and rebases beats to the window's start, producing a `MelodyTrack`. Each `DrumTrack` in the chosen pattern is one bar; `PatternCompiler` tiles it to match the `MelodyTrack`'s length (see `CONTEXT.md`).
 
 Not sure which track or bar range to use? The standalone `InspectMidi.java` lists every track in a file with its channel, GM program, note count, pitch range and the bar its first note falls on:
 
-```powershell
-java src/main/java/pl/livecoding/musicjam/midi/InspectMidi.java path\to\song.mid
+```bash
+java src/main/java/pl/livecoding/musicjam/midi/InspectMidi.java path/to/song.mid
 ```
 
 Each melodic `Note` carries a `Voice.Pitch(midiNote)`; `AudioEngine` resolves that to a synthesized tone via a `PitchSynth` instead of a sample file, cached per distinct pitch+duration — no MIDI device involved, so there's no software-synthesizer patch-loading glitch on the first note. `AnthemLeadSynth`/`TrancePluckSynth`/`WidePadSynth` are ports of the "Anthem Lead - Mainstage", "Trance Pluck - Classic" and "Wide Pad - Halo" patches from a separate JUCE project (`Sandbox/novasaw`): a 7-voice unison PolyBLEP sawtooth with drift/vibrato, a diode waveshaper and a resonant lowpass driven by the envelope and key tracking. All three extend `NovasawSynth`, which owns the one shared `render(...)` — a patch is nothing but the recipe constants and preset macro knobs passed to its constructor; the low-level DSP primitives (`polyBlepSaw`, `shapeDiode`, the phase-jitter hash, the lowpass filter) live once in `NovasawDsp`. Pick a patch with the `[synth]` argument (`anthem`, the default, `pluck`, or `pad`). novasaw's stereo pan spread and chorus/delay/reverb sends are left out — `AudioEngine`'s `Sample` type is mono and these ports only target one preset each.
@@ -125,9 +116,9 @@ MIDI files generally shouldn't be checked into this repository — treat them li
 
 An optional trailing argument (after `loops` and `synth`) redirects the melody layer to an external MIDI device (e.g. a standalone synth like Surge XT, reached over a virtual MIDI cable such as loopMIDI) instead of native synthesis — matched by a case-insensitive substring of the device name:
 
-```powershell
+```bash
 java src/main/java/pl/livecoding/musicjam/midi/ListMidiDevices.java
-.\gradlew.bat run --args="src/main/resources/song_shape.mid 1 0 2 4 anthem loopMIDI"
+./gradlew run --args="src/main/resources/song_shape.mid 1 0 2 4 anthem loopMIDI"
 ```
 
 ### Configuring a request without juggling positional arguments
@@ -159,8 +150,8 @@ midiSync=loop
 midiLatency=37
 ```
 
-```powershell
-.\gradlew.bat run --args="--config jam.properties"
+```bash
+./gradlew run --args="--config src/main/resources/jam-dre.properties"
 ```
 
 `src/main/resources/` has one ready-made `.properties` file per workshop fixture, each pointing at a melody window and the drum pattern (`BeatApp.DRUM_PATTERNS`) transcribed from — or, for `giorgio`, invented for — that same file:
@@ -245,7 +236,7 @@ Each step exists to answer a question the previous one raised — the path is de
 
 1. **The black box (5 min).** Run `java src/main/java/pl/livecoding/musicjam/midi/SequencerDemo.java path/to/song.mid` — four lines, `javax.sound.midi` plays a whole song, no code of ours involved. Everything that follows exists to answer "what is this actually doing, and can we do better?"
 2. **Take the file apart (20-30 min).** `java src/main/java/pl/livecoding/musicjam/midi/InspectMidi.java path/to/song.mid` a real MIDI file: PPQ, tracks, channels, GM programs, note ranges, which bar each track's first note falls on. Participants implement the tick → beat conversion themselves (this is `MidiFileReader`'s core move) before looking at the real implementation.
-3. **Write your own player (25-35 min).** `Sequencer` only plays a `Sequence` it was handed — it has no way to play the `List<Note>` step 2 just produced. So write one: `NaivePlayer` schedules one waiting thread per note and fires it at an absolute `System.nanoTime()` target, still through the same built-in software synthesizer as step 1 (`MidiNoteOutput`) — no drums yet, just melody, so the only thing that changed is who's doing the scheduling. Run it live with `.\gradlew.bat naivePlayerDemo --args="path\to\song.mid"` (`NaivePlayerDemo`, step 3's answer, playing a MIDI file's melody window through `NaivePlayer`). Time one platform thread per hit against one virtual thread per hit (see "A 20-minute thread experiment" below) and measure the jitter on both — neither is sample-accurate, that's the point being set up for step 6.
+3. **Write your own player (25-35 min).** `Sequencer` only plays a `Sequence` it was handed — it has no way to play the `List<Note>` step 2 just produced. So write one: `NaivePlayer` schedules one waiting thread per note and fires it at an absolute `System.nanoTime()` target, still through the same built-in software synthesizer as step 1 (`MidiNoteOutput`) — no drums yet, just melody, so the only thing that changed is who's doing the scheduling. Run it live with `./gradlew naivePlayerDemo --args="path/to/song.mid"` (`NaivePlayerDemo`, step 3's answer, playing a MIDI file's melody window through `NaivePlayer`). Time one platform thread per hit against one virtual thread per hit (see "A 20-minute thread experiment" below) and measure the jitter on both — neither is sample-accurate, that's the point being set up for step 6.
 4. **— break (10-15 min) —**
 5. **Write your own pattern (20-25 min).** `Note(beat, voice, durationBeats, velocity)` is a familiar shape by now — build `Song`, `DrumTrack` (implementing the sealed `Track`) and `PatternCompiler` as a second way to produce the same shape, by hand from a compact string instead of from a file, and feed it into the same `NaivePlayer` from step 3.
 6. **Precision (20-30 min).** `NaivePlayer` has jitter. Implement `Transport.frameAtBeat` and compare block-edge quantization against `AudioEngineTest`'s exact-offset assertions — `AudioEngine` sidesteps the wake-up-deadline problem entirely by placing every transient at its target sample before playback starts.

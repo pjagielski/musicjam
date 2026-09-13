@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class BeatApp {
     private static final double BEATS_PER_BAR = 4.0;
     private static final Path SAMPLE_DIRECTORY = Path.of("samples");
+    private static final Path DEFAULT_CONFIG = Path.of("src/main/resources/jam.properties");
     private static final Map<String, PitchSynth> SYNTHS = Map.of(
             "anthem", new AnthemLeadSynth(),
             "pad", new WidePadSynth(),
@@ -58,7 +59,11 @@ public final class BeatApp {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length == 0 || "--help".equals(args[0])) {
+        if (args.length == 0) {
+            playJam(PhraseRequest.fromPropertiesFile(DEFAULT_CONFIG));
+            return;
+        }
+        if ("--help".equals(args[0])) {
             printHelp();
             return;
         }
@@ -290,7 +295,8 @@ public final class BeatApp {
                   ./gradlew run --args="sciezka/do/pliku.mid 1 0 2 4"
                   ./gradlew run --args="sciezka/do/pliku.mid 1 0 2 4 pad"
                   ./gradlew run --args="sciezka/do/pliku.mid 1 0 2 4 anthem loopMIDI"
-                  ./gradlew run --args="--config jam.properties"
+                  ./gradlew run                  (bez argumentow: src/main/resources/jam.properties)
+                  ./gradlew run --args="--config src/main/resources/jam-dre.properties"
 
                 Argumenty: plik.mid [trackIndex=1] [startBar=0] [bars=2] [loops=4] [synth=anthem] [midiDevice]
 
