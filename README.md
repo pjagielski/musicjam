@@ -110,7 +110,7 @@ java src/main/java/pl/livecoding/musicjam/midi/InspectMidi.java path/to/song.mid
 
 Each melodic `Note` carries a `Voice.Pitch(midiNote)`; `AudioEngine` resolves that to a synthesized tone via a `PitchSynth` instead of a sample file, cached per distinct pitch+duration — no MIDI device involved, so there's no software-synthesizer patch-loading glitch on the first note. `AnthemLeadSynth`/`TrancePluckSynth`/`WidePadSynth` are ports of the "Anthem Lead - Mainstage", "Trance Pluck - Classic" and "Wide Pad - Halo" patches from a separate JUCE project (`Sandbox/novasaw`): a 7-voice unison PolyBLEP sawtooth with drift/vibrato, a diode waveshaper and a resonant lowpass driven by the envelope and key tracking. All three extend `NovasawSynth`, which owns the one shared `render(...)` — a patch is nothing but the recipe constants and preset macro knobs passed to its constructor; the low-level DSP primitives (`polyBlepSaw`, `shapeDiode`, the phase-jitter hash, the lowpass filter) live once in `NovasawDsp`. Pick a patch with the `[synth]` argument (`anthem`, the default, `pluck`, or `pad`). novasaw's stereo pan spread and chorus/delay/reverb sends are left out — `AudioEngine`'s `Sample` type is mono and these ports only target one preset each.
 
-MIDI files generally shouldn't be checked into this repository — treat them like WAV samples and point `BeatApp` at a file on disk. `src/main/resources/` is the exception: it holds four workshop fixtures kept here on purpose (`song_shape.mid` — used to derive the `shape` drum pattern below — plus `song_child.mid`, `song_giorgioby.mid` and `song_still_dre.mid` as extra material for `InspectMidi.java`/`BeatApp`). Don't add further copyrighted transcriptions the same way without checking you're allowed to.
+MIDI files generally shouldn't be checked into this repository — treat them like WAV samples and point `BeatApp` at a file on disk. `src/main/resources/` is the exception: it holds five workshop fixtures kept here on purpose (`song_shape.mid` — used to derive the `shape` drum pattern below — plus `song_child.mid`, `song_giorgioby.mid`, `song_still_dre.mid` and `song_insomnia.mid` as extra material for `InspectMidi.java`/`BeatApp`). `song_insomnia.mid` is cleaned up from the file it was made from: that file said 125 BPM while its notes sit on a 130 BPM grid, so the tempo now says 130 and every tick is stretched to match, and the stray long notes and the notes written twice are gone. Don't add further copyrighted transcriptions the same way without checking you're allowed to.
 
 ### Routing the melody to an external MIDI device
 
@@ -147,7 +147,7 @@ synth=pad
 drums=shape
 midiDevice=loopMIDI
 midiSync=loop
-midiLatency=37
+midiLatency=50
 ```
 
 ```bash
@@ -162,6 +162,7 @@ midiLatency=37
 | `jam-child.properties` | `song_child.mid` | `worry` |
 | `jam-dre.properties` | `song_still_dre.mid` | `dre` |
 | `jam-giorgio.properties` | `song_giorgioby.mid` | `giorgio` — the source MIDI has no drum track, so this one is a plain four-on-the-floor rather than a transcription |
+| `jam-insomnia.properties` | `song_insomnia.mid` | `insomnia` — no drum track either: a house groove at half the level, so the synth melody on top does not clip |
 
 `jam.properties`, the config read when none is given, is the same jam as `jam-giorgio.properties`.
 
@@ -172,7 +173,7 @@ The drums play on the audio device's clock and the melody on `System.nanoTime()`
 - `loop` (the default): `MidiPlayer` still schedules notes by `System.nanoTime()`, but at the start of every loop it asks `AudioEngine.heardNanos()` how much of the drums has been heard, works out when they started, and schedules that loop from there. A stall is caught up with at the next loop.
 - `live`: drums and melody play through `AudioEngine.playLive`, the same `LiveSession` as the studio, and each MIDI note goes out when the audio device reaches its frame, so a stall is caught up with note by note.
 
-Either way the melody goes out `midiLatency` milliseconds early — 37 by default, the time Surge XT took to sound a note on the default Windows device. It depends on the synth and on its buffer size, so measure your own and set the key.
+Either way the melody goes out `midiLatency` milliseconds early — 50 by default. It is how much later the synth's path to the speaker is than the drums': Surge XT over loopMIDI took 35–50 ms, on a Mac 75, and Gervill over 200, because it buffers 120 ms of audio and corrects its own jitter on top. It depends on the synth and on its buffer size, so find your own - by ear, with the studio's synth latency slider - and set the key.
 
 `shapeDrumTracks()`'s pattern (kick on beats 1 & 3, snare on 2 & 4, syncopated closed-hat in between) is transcribed from bar 3 onward of `song_shape.mid`'s "Electric Drum Kit" track — the intro bars are sparse, so extracting from bar 1 gave an empty pattern.
 
@@ -184,7 +185,7 @@ Either way the melody goes out `midiLatency` milliseconds early — 37 by defaul
 - jam presets: every `jam*.properties` next to the starting config; picking one loads its MIDI file and melody window, the file's tempo, its drum pattern and its synth,
 - tempo, and the loop length, from 32 bars down to 1/16 of a bar for a hard stutter; the melody window is re-read from the MIDI file, and the drum bar is cut off where the loop ends,
 - melody on/off and volume,
-- an external MIDI device: once connected, the melody can be routed to it, and the filter slider sends a control change — CC 74 by default, which most synths map to cutoff; others need MIDI learn. An external synth sounds a note only after its own audio buffer, so the melody is sent early by the synth latency slider, which starts at the jam's `midiLatency` (37 ms by default, what Surge XT needed on the default Windows device).
+- an external MIDI device: once connected, the melody can be routed to it, and the filter slider sends a control change — CC 74 by default, which most synths map to cutoff; others need MIDI learn. An external synth sounds a note only after its own audio buffer, so the melody is sent early by the synth latency slider, which starts at the jam's `midiLatency` (50 ms by default) and goes up to 400 ms, enough for Gervill.
 
 Every change lands on the next loop boundary rather than immediately: `AudioEngine.playLive` compiles each loop from whatever `Song` the window last published, so within a loop every hit is still placed at its exact sample frame. The status line says when an edit is waiting for the loop to come round; shorten the loop if that wait is too long.
 
@@ -242,7 +243,7 @@ Each step exists to answer a question the previous one raised — the path is de
 6. **Precision (20-30 min).** `NaivePlayer` has jitter. Implement `Transport.frameAtBeat` and compare block-edge quantization against `AudioEngineTest`'s exact-offset assertions — `AudioEngine` sidesteps the wake-up-deadline problem entirely by placing every transient at its target sample before playback starts.
 7. **Put it together (20-30 min).** `BeatApp` loads a melody window into a `MelodyTrack` and plays it alongside step 5's `DrumTrack`s as one `Song` — `PatternCompiler` tiles the drum bar to the melody's length (see `CONTEXT.md`), and `AudioEngine` renders both. Circle back to step 1: `SequencerDemo`/Gervill can glitch on a synth's first note (a real, diagnosed bug — the built-in software synthesizer loads an instrument's patch lazily on its first `noteOn`, see `MidiNoteOutput.warmUp`'s comment); native synthesis through `AudioEngine` never touches an external synth at all, so the glitch doesn't exist there by construction.
 
-The original single-file proof of concept remains in `Beat.java` for comparison. `src/main/resources/` has four MIDI files to explore beyond the workshop's own `song_shape.mid` fixture — `song_child.mid`, `song_giorgioby.mid` and `song_still_dre.mid` aren't wired into any specific exercise, they're just more material to point participants at for steps 2/3/5/7.
+The original single-file proof of concept remains in `Beat.java` for comparison. `src/main/resources/` has five MIDI files to explore beyond the workshop's own `song_shape.mid` fixture — `song_child.mid`, `song_giorgioby.mid`, `song_still_dre.mid` and `song_insomnia.mid` aren't wired into any specific exercise, they're just more material to point participants at for steps 2/3/5/7.
 
 ### A 20-minute thread experiment
 

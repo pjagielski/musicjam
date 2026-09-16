@@ -25,7 +25,7 @@ class PhraseRequestTest {
         assertEquals("anthem", request.synth());
         assertNull(request.midiDevice());
         assertEquals("loop", request.midiSync());
-        assertEquals(37, request.midiLatencyMillis());
+        assertEquals(50, request.midiLatencyMillis());
     }
 
     @Test
@@ -112,7 +112,7 @@ class PhraseRequestTest {
         assertEquals(4, request.loops());
         assertEquals("anthem", request.synth());
         assertNull(request.midiDevice());
-        assertEquals(37, request.midiLatencyMillis());
+        assertEquals(50, request.midiLatencyMillis());
     }
 
     @Test

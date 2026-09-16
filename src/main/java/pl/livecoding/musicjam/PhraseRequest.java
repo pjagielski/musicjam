@@ -26,7 +26,7 @@ public record PhraseRequest(
      * the default Windows device. It depends on the synth and its buffer size, so measure your own
      * and set {@code midiLatency}.
      */
-    public static final int DEFAULT_MIDI_LATENCY_MILLIS = 37;
+    public static final int DEFAULT_MIDI_LATENCY_MILLIS = 50;
 
     public PhraseRequest {
         Objects.requireNonNull(file, "file");

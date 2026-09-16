@@ -47,7 +47,8 @@ public final class BeatApp {
             "shape", shapeDrumTracks(),
             "worry", worryDrumTracks(),
             "dre", dreDrumTracks(),
-            "giorgio", giorgioDrumTracks()
+            "giorgio", giorgioDrumTracks(),
+            "insomnia", insomniaDrumTracks()
     );
 
     private BeatApp() {
@@ -278,6 +279,18 @@ public final class BeatApp {
 
     // song_giorgioby.mid has no drum track at all in the source MIDI (a single arpeggio track) —
     // this is a plain four-on-the-floor pattern in the disco/italo style the song evokes, not a transcription.
+    // song_insomnia.mid has no drums either: a house groove, the clap on 2 and 4, the open hat on every
+    // off-beat - at half the level of the others, so that the synth melody on top of it does not clip
+    private static List<DrumTrack> insomniaDrumTracks() {
+        return List.of(
+                new DrumTrack(Drum.KICK, "X...X...X...X...", 0.50f),
+                new DrumTrack(Drum.CLAP, "....X.......X..x", 0.50f),
+                new DrumTrack(Drum.SNARE, "....X.......X...", 0.38f),
+                new DrumTrack(Drum.OPEN_HAT, "..x...o...x...o.", 0.25f),
+                new DrumTrack(Drum.CLOSED_HAT, ".o.o.o.o.o.o.o.o", 0.20f)
+        );
+    }
+
     private static List<DrumTrack> giorgioDrumTracks() {
         return List.of(
                 new DrumTrack(Drum.KICK, "X...X...X...X...", 1.00f),
@@ -312,13 +325,13 @@ public final class BeatApp {
                   drums=shape
                   midiDevice=loopMIDI
                   midiSync=loop
-                  midiLatency=37
+                  midiLatency=50
 
-                Wzorce perkusji ("drums" w pliku .properties, nie ma jako argument CLI): shape (domyslny), worry, dre, giorgio
+                Wzorce perkusji ("drums" w pliku .properties, nie ma jako argument CLI): shape (domyslny), worry, dre, giorgio, insomnia
 
                 Melodia przez MIDI ("midiSync"): loop (domyslny) - MidiPlayer co petle dogania perkusje,
                 live - perkusja i melodia w jednej LiveSession, korekta przy kazdej nucie
-                Melodia wychodzi o "midiLatency" milisekund wczesniej (domyslnie 37) - tyle zwleka
+                Melodia wychodzi o "midiLatency" milisekund wczesniej (domyslnie 50) - tyle zwleka
                 zewnetrzny syntezator, zanim cokolwiek slychac; zalezy od niego i od jego bufora
 
                 To samo programistycznie: PhraseRequest.forFile("plik.mid").track(1).fromBar(0)
