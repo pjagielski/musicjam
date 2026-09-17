@@ -200,6 +200,7 @@ h3 { font: bold 10.5pt Consolas, monospace; margin: 4mm 0 1mm; padding: 1mm 2mm;
 {sections}
 </body></html>""".replace("{head}", html.escape(head)).replace("{toc}", toc).replace("{sections}", "\n".join(sections))
 
-with open(OUT, "w", encoding="utf-8") as f:
+with open(OUT, "w", encoding="utf-8", newline="
+") as f:
     f.write(page)
 print("wrote", OUT)
