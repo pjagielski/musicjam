@@ -9,10 +9,10 @@ import javax.sound.midi.ShortMessage;
 import javax.sound.midi.Track;
 import java.nio.file.Path;
 
-public class InspectMidi {
+class InspectMidi {
     private static final double BEATS_PER_BAR = 4.0;
 
-    public static void main(String[] args) throws Exception {
+    static void main(String[] args) throws Exception {
         if (args.length < 1) {
             System.out.println("Usage: java InspectMidi.java <file.mid>");
             return;

@@ -59,7 +59,7 @@ public final class BeatApp {
         return DRUM_PATTERNS;
     }
 
-    public static void main(String[] args) throws Exception {
+    static void main(String[] args) throws Exception {
         if (args.length == 0) {
             playJam(PhraseRequest.fromPropertiesFile(DEFAULT_CONFIG));
             return;

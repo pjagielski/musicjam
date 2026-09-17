@@ -5,8 +5,8 @@ import javax.sound.midi.Sequence;
 import javax.sound.midi.Sequencer;
 import java.nio.file.Path;
 
-public class SequencerDemo {
-    public static void main(String[] args) throws Exception {
+class SequencerDemo {
+    static void main(String[] args) throws Exception {
         if (args.length < 1) {
             System.out.println("Usage: java SequencerDemo.java <file.mid>");
             return;

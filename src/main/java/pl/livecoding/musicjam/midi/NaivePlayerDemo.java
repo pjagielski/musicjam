@@ -19,10 +19,10 @@ import java.util.List;
  * {@code PatternCompiler}, once there's a {@code Note} shape worth building by hand as well as
  * reading from a file.
  */
-public class NaivePlayerDemo {
+class NaivePlayerDemo {
     private static final double BEATS_PER_BAR = 4.0;
 
-    public static void main(String[] args) throws Exception {
+    static void main(String[] args) throws Exception {
         if (args.length < 1) {
             System.out.println("Usage: .\\gradlew.bat naivePlayerDemo --args=\""
                     + "<file.mid> [trackIndex=1] [startBar=0] [bars=2] [loops=4]\"");

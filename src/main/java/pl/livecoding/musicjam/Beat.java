@@ -15,7 +15,7 @@ import java.util.*;
  * Zegarem jest line.write() - blokuje, gdy bufor karty jest pelny.
  * Zdarzenia startuja z offsetem WEWNATRZ bloku, nie na jego granicy.
  */
-public class Beat {
+class Beat {
 
     static final int SR = 44100;      // sample rate
     static final int BLOCK = 512;     // ramek na blok (~11.6 ms)
@@ -150,7 +150,7 @@ public class Beat {
         melodyBeats = len;
     }
 
-    public static void main(String[] args) throws Exception {
+    static void main(String[] args) throws Exception {
         tracks = List.of(
             new Track(sample("bd"), "X..-..X...-.X...", 1.00f),
             new Track(sample("sd"), "....X.......X...", 0.70f),
