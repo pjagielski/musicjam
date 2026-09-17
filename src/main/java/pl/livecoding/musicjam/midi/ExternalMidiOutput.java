@@ -2,6 +2,7 @@ package pl.livecoding.musicjam.midi;
 
 import javax.sound.midi.InvalidMidiDataException;
 import javax.sound.midi.MidiDevice;
+import javax.sound.midi.MidiMessage;
 import javax.sound.midi.MidiSystem;
 import javax.sound.midi.MidiUnavailableException;
 import javax.sound.midi.Receiver;
@@ -14,17 +15,19 @@ import javax.sound.midi.ShortMessage;
  * {@code java ListMidiDevices.java} to see what's available once a virtual cable is set up.
  */
 public final class ExternalMidiOutput implements NoteOutput {
+    private static final int ALL_SOUND_OFF = 120;
+    private static final int ALL_NOTES_OFF = 123;
 
     private final MidiDevice device;
-    private final Receiver receiver;
+    private final NoteGate receiver;
     private final int channel;
     private final Thread shutdownHook;
 
-    private ExternalMidiOutput(MidiDevice device, Receiver receiver, int channel) {
+    private ExternalMidiOutput(MidiDevice device, NoteGate receiver, int channel) {
         this.device = device;
         this.receiver = receiver;
         this.channel = channel;
-        this.shutdownHook = new Thread(this::allSoundOff);
+        this.shutdownHook = new Thread(this::silence);
         Runtime.getRuntime().addShutdownHook(shutdownHook);
     }
 
@@ -35,6 +38,8 @@ public final class ExternalMidiOutput implements NoteOutput {
         Receiver receiver;
         try {
             receiver = device.getReceiver();
+            // a note left hanging by a run that was killed ends here, before anything new is played
+            panic(receiver, channel);
             receiver.send(new ShortMessage(ShortMessage.PROGRAM_CHANGE, channel, program, 0), -1);
         } catch (MidiUnavailableException exception) {
             device.close();
@@ -43,7 +48,25 @@ public final class ExternalMidiOutput implements NoteOutput {
             device.close();
             throw new IllegalStateException(exception);
         }
-        return new ExternalMidiOutput(device, receiver, channel);
+        return new ExternalMidiOutput(device, new NoteGate(receiver), channel);
+    }
+
+    /**
+     * Silences every channel of a device, for a synth left with a note hanging by a run that was
+     * killed rather than stopped - IntelliJ's Stop on a program run through Gradle ends the JVM
+     * without running its shutdown hooks.
+     */
+    public static void panic(String deviceNameContains) throws MidiUnavailableException {
+        MidiDevice device = findDevice(deviceNameContains);
+        device.open();
+        try (Receiver receiver = device.getReceiver()) {
+            for (int channel = 0; channel < 16; channel++) {
+                sendQuietly(receiver, ShortMessage.CONTROL_CHANGE, channel, ALL_SOUND_OFF);
+                panic(receiver, channel);
+            }
+        } finally {
+            device.close();
+        }
     }
 
     private static MidiDevice findDevice(String nameContains) throws MidiUnavailableException {
@@ -90,15 +113,43 @@ public final class ExternalMidiOutput implements NoteOutput {
      */
     private synchronized void allSoundOff() {
         try {
-            send(ShortMessage.CONTROL_CHANGE, 120, 0);
+            send(ShortMessage.CONTROL_CHANGE, ALL_SOUND_OFF, 0);
         } catch (RuntimeException exception) {
             // Best-effort: the device may already be gone (closed, unplugged) by the time this runs.
         }
     }
 
+    /**
+     * Everything that stops the synth, for close() and the shutdown hook alike. Note-ons are shut out
+     * first: the JVM runs its shutdown hooks while the player's threads still run, and a note-on a
+     * moment after All Sound Off would start a note that nothing ends. Then All Sound Off, and a
+     * note-off for every pitch, for a synth that ignores All Sound Off.
+     */
+    private synchronized void silence() {
+        receiver.shutNoteOns();
+        allSoundOff();
+        panic(receiver, channel);
+    }
+
+    /** All Notes Off and a note-off for every pitch on one channel - best effort, like allSoundOff. */
+    private static void panic(Receiver receiver, int channel) {
+        sendQuietly(receiver, ShortMessage.CONTROL_CHANGE, channel, ALL_NOTES_OFF);
+        for (int pitch = 0; pitch < 128; pitch++) {
+            sendQuietly(receiver, ShortMessage.NOTE_OFF, channel, pitch);
+        }
+    }
+
+    private static void sendQuietly(Receiver receiver, int command, int channel, int data1) {
+        try {
+            receiver.send(new ShortMessage(command, channel, data1, 0), -1);
+        } catch (InvalidMidiDataException | RuntimeException deviceAlreadyGone) {
+            // a device that is closed or unplugged has nothing left to silence
+        }
+    }
+
     @Override
     public synchronized void close() {
-        allSoundOff();
+        silence();
         try {
             Runtime.getRuntime().removeShutdownHook(shutdownHook);
         } catch (IllegalStateException exception) {
@@ -107,5 +158,35 @@ public final class ExternalMidiOutput implements NoteOutput {
         }
         receiver.close();
         device.close();
+    }
+
+    /**
+     * The device's receiver, with a door for note-ons that closing shuts: after that only what ends a
+     * note, or a control change, gets through.
+     */
+    static final class NoteGate implements Receiver {
+        private final Receiver receiver;
+        private volatile boolean noteOnsShut;
+
+        NoteGate(Receiver receiver) {
+            this.receiver = receiver;
+        }
+
+        void shutNoteOns() {
+            noteOnsShut = true;
+        }
+
+        @Override
+        public void send(MidiMessage message, long timeStamp) {
+            if (noteOnsShut && message instanceof ShortMessage note && note.getCommand() == ShortMessage.NOTE_ON) {
+                return;
+            }
+            receiver.send(message, timeStamp);
+        }
+
+        @Override
+        public void close() {
+            receiver.close();
+        }
     }
 }

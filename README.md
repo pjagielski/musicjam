@@ -121,6 +121,20 @@ An optional trailing argument (after `loops` and `synth`) redirects the melody l
 ./gradlew run --args="src/main/resources/song_shape.mid 1 0 2 4 anthem loopMIDI"
 ```
 
+The melody goes out on MIDI channel 1 unless `midiChannel=` says otherwise. It counts from 1 to 16,
+the way a synth does, while `javax.sound.midi` counts from 0, and a synth's own display may count
+either way: a KORG NTS-1 set to "1" played on `midiChannel=2`.
+
+Stopping ends every note: `ExternalMidiOutput.close`, and a shutdown hook for Ctrl+C, shut out any
+note-on still on its way, then send All Sound Off and a note-off for every pitch. IntelliJ's Stop on a
+program run through Gradle kills the JVM without running shutdown hooks, and a note can keep ringing -
+with "Build and run using: IntelliJ IDEA" (Settings, Build Tools, Gradle) Stop runs them. Either way
+the next run silences the device before it plays, and so does
+
+```bash
+./gradlew midiPanic
+```
+
 ### Configuring a request without juggling positional arguments
 
 `BeatApp` takes up to 7 positional arguments (`file trackIndex startBar bars loops synth midiDevice`) — easy to lose count of. `PhraseRequest` is the object `BeatApp` builds internally from those arguments; it's also a public, standalone way to configure the same thing, either fluently in Java:

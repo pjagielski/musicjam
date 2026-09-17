@@ -382,7 +382,7 @@ public final class BeatStudio extends Application {
     private void openMidi() {
         try {
             int program = MidiFileReader.readProgram(sequence, request.trackIndex());
-            midi = ExternalMidiOutput.open(device.getText(), 0, program);
+            midi = ExternalMidiOutput.open(device.getText(), request.midiChannelIndex(), program);
             sentController = -1;
             sendFilter();
         } catch (Exception exception) {

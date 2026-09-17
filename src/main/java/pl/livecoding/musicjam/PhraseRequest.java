@@ -19,7 +19,7 @@ import java.util.Properties;
  */
 public record PhraseRequest(
         Path file, int trackIndex, int startBar, int bars, int loops, String synth, String drums,
-        String midiDevice, String midiSync, int midiLatencyMillis) {
+        String midiDevice, String midiSync, int midiLatencyMillis, int midiChannel) {
 
     /**
      * How long an external synth takes to sound a note, in milliseconds: measured for Surge XT on
@@ -34,6 +34,10 @@ public record PhraseRequest(
         Objects.requireNonNull(drums, "drums");
         if (!"loop".equals(midiSync) && !"live".equals(midiSync)) {
             throw new IllegalArgumentException("midiSync must be \"loop\" or \"live\"");
+        }
+        if (midiChannel < 1 || midiChannel > 16) {
+            throw new IllegalArgumentException(
+                    "midiChannel counts from 1 to 16, the way a synth does, not " + midiChannel);
         }
         if (midiLatencyMillis < 0) {
             throw new IllegalArgumentException("midiLatency must not be negative");
@@ -85,6 +89,7 @@ public record PhraseRequest(
             builder.midiSync(midiSync.trim());
         }
         applyIfPresent(properties, "midiLatency", builder::midiLatency);
+        applyIfPresent(properties, "midiChannel", builder::midiChannel);
         return builder.build();
     }
 
@@ -93,6 +98,11 @@ public record PhraseRequest(
         if (value != null) {
             setter.accept(Integer.parseInt(value.trim()));
         }
+    }
+
+    /** {@code midiChannel} the way javax.sound.midi counts channels: from 0. */
+    public int midiChannelIndex() {
+        return midiChannel - 1;
     }
 
     public void playJam() throws Exception {
@@ -110,6 +120,7 @@ public record PhraseRequest(
         private String midiDevice;
         private String midiSync = "loop";
         private int midiLatencyMillis = DEFAULT_MIDI_LATENCY_MILLIS;
+        private int midiChannel = 1;
 
         private Builder(Path file) {
             this.file = file;
@@ -160,9 +171,18 @@ public record PhraseRequest(
             return this;
         }
 
+        /**
+         * The channel an external synth listens on, counted from 1 to 16 the way a synth counts -
+         * javax.sound.midi counts from 0, see {@link PhraseRequest#midiChannelIndex}.
+         */
+        public Builder midiChannel(int channel) {
+            this.midiChannel = channel;
+            return this;
+        }
+
         public PhraseRequest build() {
             return new PhraseRequest(file, trackIndex, startBar, bars, loops, synth, drums, midiDevice, midiSync,
-                    midiLatencyMillis);
+                    midiLatencyMillis, midiChannel);
         }
 
         public void playJam() throws Exception {

@@ -26,6 +26,7 @@ class PhraseRequestTest {
         assertNull(request.midiDevice());
         assertEquals("loop", request.midiSync());
         assertEquals(50, request.midiLatencyMillis());
+        assertEquals(1, request.midiChannel());
     }
 
     @Test
@@ -84,6 +85,7 @@ class PhraseRequestTest {
                 midiDevice=loopMIDI
                 midiSync=live
                 midiLatency=12
+                midiChannel=2
                 """);
 
         PhraseRequest request = PhraseRequest.fromPropertiesFile(config);
@@ -97,6 +99,8 @@ class PhraseRequestTest {
         assertEquals("loopMIDI", request.midiDevice());
         assertEquals("live", request.midiSync());
         assertEquals(12, request.midiLatencyMillis());
+        assertEquals(2, request.midiChannel());
+        assertEquals(1, request.midiChannelIndex());
     }
 
     @Test
@@ -113,6 +117,7 @@ class PhraseRequestTest {
         assertEquals("anthem", request.synth());
         assertNull(request.midiDevice());
         assertEquals(50, request.midiLatencyMillis());
+        assertEquals(1, request.midiChannel());
     }
 
     @Test

@@ -167,7 +167,7 @@ public final class BeatApp {
             }
         });
 
-        try (MidiPlayer player = MidiPlayer.openDevice(request.midiDevice(), 0, program)) {
+        try (MidiPlayer player = MidiPlayer.openDevice(request.midiDevice(), request.midiChannelIndex(), program)) {
             // the first loop is timed from the drums too, so wait until they can be heard
             while (drums.heardNanos() == 0 && drumThread.isAlive()) {
                 Thread.sleep(1);
@@ -194,7 +194,7 @@ public final class BeatApp {
         AudioEngine engine = new AudioEngine(SampleBank.load(SAMPLE_DIRECTORY, AudioEngine.DEFAULT_SAMPLE_RATE));
         AudioEngine.Jam jam = new AudioEngine.Jam(song, resolveSynth(request.synth()));
         long millis = Math.round(request.loops() * PatternCompiler.totalBeats(song) * 60_000 / song.bpm());
-        try (ExternalMidiOutput midi = ExternalMidiOutput.open(request.midiDevice(), 0, program);
+        try (ExternalMidiOutput midi = ExternalMidiOutput.open(request.midiDevice(), request.midiChannelIndex(), program);
              AudioEngine.LiveSession session = engine.playLive(() -> jam, melodyListener(midi))) {
             session.setExternalLatencyMillis(request.midiLatencyMillis());
             Thread.sleep(millis);
@@ -324,6 +324,7 @@ public final class BeatApp {
                   synth=anthem
                   drums=shape
                   midiDevice=loopMIDI
+                  midiChannel=1
                   midiSync=loop
                   midiLatency=50
 

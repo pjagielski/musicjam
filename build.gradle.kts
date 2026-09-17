@@ -72,3 +72,10 @@ tasks.register<JavaExec>("listMidiDevices") {
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass = "pl.livecoding.musicjam.midi.ListMidiDevices"
 }
+
+tasks.register<JavaExec>("midiPanic") {
+    group = "workshop"
+    description = "Silences the MIDI device from jam.properties on every channel, after a run killed with a note hanging."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "pl.livecoding.musicjam.MidiPanic"
+}
