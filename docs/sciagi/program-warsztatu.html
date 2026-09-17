@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8">
+<title>Kod, który słychać – program warsztatu</title>
+<style>
+@page { size: 170mm 227mm; margin: 9mm 9mm; }
+* { box-sizing: border-box; }
+body { margin: 0; color: #1b1b1f; font: 10.5pt/1.45 "Segoe UI", Arial, sans-serif; hyphens: auto; }
+h1 { font-size: 18pt; margin: 0 0 2mm; }
+.lead { margin: 0 0 3mm; color: #333; }
+h2 { font-size: 15pt; margin: 0 0 2mm; padding-bottom: 1mm; border-bottom: 1.2pt solid #1b1b1f; break-after: avoid; }
+h2 .t { float: right; font-weight: normal; font-size: 11pt; color: #555; padding-top: 1.5mm; }
+h3 { font-size: 11pt; margin: 3mm 0 1mm; color: #1d4ed8; break-after: avoid; }
+p { margin: 0 0 1.6mm; }
+ul { margin: 0 0 1.6mm; padding-left: 5mm; }
+li { margin: 0 0 0.9mm; }
+code { font: 9.4pt Consolas, "Courier New", monospace; background: #eef0f4; padding: 0 0.6mm; border-radius: 0.6mm; }
+pre { font: 9.2pt/1.35 Consolas, monospace; background: #eef0f4; padding: 1.5mm 2mm; border-radius: 1mm; white-space: pre-wrap; margin: 0 0 2mm; }
+.q { font-style: italic; border-left: 2pt solid #1d4ed8; padding-left: 2.5mm; margin: 2mm 0; }
+.warn { border-left: 2pt solid #b45309; padding-left: 2.5mm; margin: 2mm 0; }
+table { border-collapse: collapse; width: 100%; margin: 0 0 3mm; font-size: 10pt; }
+td, th { border-bottom: 0.5pt solid #c9ced8; padding: 1mm 1.5mm; text-align: left; vertical-align: top; }
+th { border-bottom: 1pt solid #1b1b1f; }
+td.n { text-align: right; white-space: nowrap; }
+ol.toc { font-size: 12pt; line-height: 1.8; padding-left: 6mm; }
+ol.toc a { color: #1d4ed8; text-decoration: none; }
+.step { break-before: page; }
+* { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+</style></head><body>
+
+<h1>Kod, który słychać – program warsztatu</h1>
+<p class="lead">Sześć kroków w trzy godziny; każdy odpowiada na pytanie, które zostawił poprzedni. Każdy krok ma gałąź <code>step-N</code> (szkielet, czerwone testy) i <code>step-N-final</code> (rozwiązanie); klasa startowa leży w pakiecie <code>pl.livecoding.musicjam.stepN</code>.</p>
+
+<table>
+<tr><th>krok</th><th>co się dzieje</th><th>uczestnicy piszą</th><th>min</th><th>start</th></tr>
+<tr><td>0</td><td>otwarcie: plan, javax.sound.midi / sampled, Java kontra MIDI</td><td>–</td><td class="n">5</td><td class="n">0:00</td></tr>
+<tr><td>1</td><td><code>SequencerDemo</code>: Java gra plik MIDI za nas</td><td>nic</td><td class="n">5</td><td class="n">0:05</td></tr>
+<tr><td>2</td><td><code>InspectMidi</code>: rozbieramy plik na zdarzenia</td><td>parowanie nut, tick → beat</td><td class="n">25</td><td class="n">0:10</td></tr>
+<tr><td>3</td><td><code>PlayNotes</code>: własny odtwarzacz przez Gervill</td><td>wyjście MIDI, lista zdarzeń, scheduler z pulą</td><td class="n">30</td><td class="n">0:35</td></tr>
+<tr><td>–</td><td>przerwa</td><td></td><td class="n">10</td><td class="n">1:05</td></tr>
+<tr><td>4</td><td>ta sama melodia na zewnętrznym syntezatorze</td><td>wyjście MIDI na prawdziwe urządzenie</td><td class="n">20</td><td class="n">1:15</td></tr>
+<tr><td>5</td><td>perkusja co do próbki, dwa zegary, jeden zegar</td><td>harmonogram w ramkach, poprawka zegara</td><td class="n">45</td><td class="n">1:35</td></tr>
+<tr><td>6</td><td>live coding w studiu</td><td>nic</td><td class="n">15</td><td class="n">2:20</td></tr>
+<tr><td>–</td><td>powrót do kroku 1, podsumowanie</td><td></td><td class="n">5</td><td class="n">2:35</td></tr>
+</table>
+<p>Razem 160 min, 20 min zapasu. Kto utknie: <code>git switch step-N-final</code> albo ściąga z rozwiązań – i dalej razem z grupą.</p>
+
+<ol class="toc">
+<li><a href="#przed">Przed startem</a></li>
+<li><a href="#k0">Krok 0 · Otwarcie</a></li>
+<li><a href="#k1">Krok 1 · SequencerDemo</a></li>
+<li><a href="#k2">Krok 2 · InspectMidi</a></li>
+<li><a href="#k3">Krok 3 · PlayNotes</a></li>
+<li><a href="#k4">Krok 4 · PlayOnSynth</a></li>
+<li><a href="#k5">Krok 5 · PlayBeat, PlayJam</a></li>
+<li><a href="#k6">Krok 6 · Studio</a></li>
+<li><a href="#koniec">Podsumowanie</a></li>
+</ol>
+
+<section class="step" id="przed">
+<h2>Przed startem</h2>
+<ul>
+<li>JDK 25 (Gradle sam pobierze toolchain), słuchawki, repo sklonowane i zbudowane.</li>
+<li>Uruchamiamy klasy z IntelliJ. Lepiej przez IntelliJ niż przez Gradle: Settings → Build, Execution, Deployment → Build Tools → Gradle → <b>„Build and run using: IntelliJ IDEA”</b>. Wtedy Stop wykonuje hak zamknięcia i zewnętrzny syntezator milknie.</li>
+<li>Na krok 4: Surge XT i wirtualny kabel – loopMIDI (Windows: uruchomić, dodać port) albo IAC Driver (macOS: Audio MIDI Setup → MIDI Studio → IAC Driver → „Device is online”). W Surge kabel jako wejście MIDI.</li>
+<li>Syntezator sprzętowy (np. KORG NTS-1 po USB): <code>midiDevice=NTS-1</code>, a kanał sprawdzić – NTS-1 ustawiony na „1” grał na <code>midiChannel=2</code>.</li>
+<li>U siebie zmierzyć <code>midiLatency</code> kalibratorem: Surge XT przez loopMIDI 35–50 ms, Mac ok. 75 ms, Gervill ponad 200 ms. Domyślnie 50.</li>
+<li>Slajdy, ściąga z rozwiązań i ten program na tablecie.</li>
+</ul>
+</section>
+
+<section class="step" id="k0">
+<h2>0 · Otwarcie <span class="t">&nbsp;· 5 min</span></h2>
+<ul>
+<li>Pomysł: kod, który słychać – czas muzyczny w Javie, od gotowego odtwarzacza do własnego silnika.</li>
+<li>W JDK są dwa pakiety i wyznaczają program: <code>javax.sound.midi</code> (kroki 1–4) – co i kiedy zagrać, zdarzenia, nie dźwięk; <code>javax.sound.sampled</code> (kroki 5–6) – sam dźwięk, próbki na kartę. Bez bibliotek.</li>
+<li>Tabela Java kontra MIDI: następca (MIDI 2.0 w 2020, Kotlin i Scala – oryginały mają się dobrze), kompatybilność wsteczna (klawiatura z 1983 steruje Surge XT, plik .class z Javy 1.0 działa na JVM 25), co się zmieniło (kabel i platforma, nie protokół i język), ogłaszane martwe co roku.</li>
+</ul>
+
+<h2 id="k1" style="margin-top:6mm">1 · Czarna skrzynka – SequencerDemo <span class="t">&nbsp;· 5 min</span></h2>
+<p><b>Pokaż:</b> <code>step1.SequencerDemo</code> – cztery linie, <code>Sequencer</code> gra cały plik z <code>jam.properties</code>.</p>
+<ul>
+<li>Moment, w którym wszyscy sprawdzają dźwięk, słuchawki i build.</li>
+<li><code>Config</code> zamienia argumenty i plik .properties na ścieżkę; każdy kolejny krok dokłada pole.</li>
+</ul>
+<p class="q">Na dalej: co właściwie robi <code>Sequencer</code> – i czy umiemy lepiej?</p>
+</section>
+
+<section class="step" id="k2">
+<h2>2 · Rozbieramy plik – InspectMidi <span class="t">&nbsp;· 25 min</span></h2>
+<p><b>Pokaż:</b> <code>step2.InspectMidi</code> z <code>--config src/main/resources/jam-dre.properties</code>: lista ścieżek (nazwa, kanał, program GM, liczba nut, zakres, pierwszy takt), potem nuty w beatach. <code>--overview</code> – sama lista.</p>
+<h3>Powiedz</h3>
+<ul>
+<li><b>Tick → beat.</b> PPQ = ticki na ćwierćnutę (<code>getResolution()</code>). <code>song_shape.mid</code>: PPQ 384, tick 3072 = beat 8.0 = takt 3. Pomocnik <code>ticksToBeats</code> jest gotowy.</li>
+<li><b>Note-on → note-off.</b> Nuta to para zdarzeń; note-on z velocity 0 to w praktyce note-off. <code>PlayingNotes</code> trzyma kolejkę na każdą wysokość – ta sama nuta może zabrzmieć znowu przed zwolnieniem poprzedniej.</li>
+<li><b>Plik jest zagrany, nie skwantyzowany:</b> w Dre riff to trzy nuty naraz, a górna jest stale 0,063 beatu później. Niczego nie zaokrąglamy.</li>
+<li><b>Tempo w pliku to tylko deklaracja:</b> Insomnia miała nuty w siatce 130 BPM, a plik mówił 125 – riff trwał 7,69 beatu zamiast 8. <code>song_insomnia.mid</code> ma poprawione tempo i rozciągnięte ticki; każda nuta brzmi w tej samej sekundzie co przedtem.</li>
+</ul>
+<h3>Piszą</h3>
+<p>Gałąź komunikatów kanałowych w <code>MidiFileReader.readTrack</code> (kanał, program, note-on/off), sortowanie nut, <code>noteBetween</code>. Gotowe: PPQ, jedno przejście po ścieżce, meta (nazwa, tempo). <code>MidiFileReaderTest</code>: 9 testów, 4 zielone od startu, bez pliku i bez dźwięku.</p>
+<p class="q">Na dalej: mamy <code>List&lt;Note&gt;</code> w beatach – a <code>Sequencer</code> umie zagrać tylko <code>Sequence</code>.</p>
+</section>
+
+<section class="step" id="k3">
+<h2>3 · Własny odtwarzacz – PlayNotes <span class="t">&nbsp;· 30 min</span></h2>
+<p><b>Pokaż:</b> <code>step3.ListMidiDevices</code> – pierwszy na liście jest Gervill, syntezator z JDK, ten sam, którego używał <code>Sequencer</code>. Zmienia się tylko to, kto planuje nuty.</p>
+<h3>Piszą, w kolejności</h3>
+<ul>
+<li><code>MidiNoteOutput</code>: <code>open</code> (otwórz syntezator, kanał, <code>programChange</code>), <code>noteOn</code>, <code>noteOff</code>. Gotowe: <code>channelOf</code>, rozgrzewka, zamykanie. Test na atrapie, bez dźwięku.</li>
+<li><code>MidiPlayer.schedule</code>: każda nuta to dwa zdarzenia, każde z <b>momentem liczonym od startu</b>, nie z opóźnieniem od poprzedniego – spóźnienia się nie sumują.</li>
+<li><code>PooledScheduler.submit</code>: cztery linie; ciekawa jest zamiana momentu na opóźnienie „od teraz”, którego chce <code>ScheduledExecutorService</code>.</li>
+</ul>
+<p><b>Pokaż:</b> <code>--scheduler all</code> – platform, virtual, pool, scoped; każdy kończy się <code>TimingReport</code> (przygotowanie, spóźnienie wybudzeń).</p>
+<h3>Powiedz</h3>
+<ul>
+<li>Żaden nie trafia w moment: <code>Thread.sleep</code> wraca, kiedy system operacyjny zdąży. Wątki wirtualne tanio czekają, ale nie są dokładniejsze.</li>
+<li><code>TimingReport</code> mierzy wybudzenie, nie dźwięk – Gervill ma jeszcze własny bufor.</li>
+<li><code>scoped</code> warto przeczytać: żadne zadanie nie przeżyje zakresu. <code>StructuredTaskScope</code> to wciąż preview w Javie 25 – stąd <code>--enable-preview</code> i przypięty JDK.</li>
+<li>Pierwsza nuta w Gervillu potrafi się zaciąć – instrument ładuje się leniwie; dlatego <code>warmUp</code>.</li>
+</ul>
+<p class="warn"><b>Przerwa, 10 min:</b> dobry moment, żeby każdy uruchomił Surge XT i kabel MIDI.</p>
+</section>
+
+<section class="step" id="k4">
+<h2>4 · Zewnętrzny syntezator – PlayOnSynth <span class="t">&nbsp;· 20 min</span></h2>
+<p><b>Pokaż:</b> <code>ListMidiDevices</code> – loopMIDI (i NTS-1) widać dwa razy pod jedną nazwą: końcówka, do której wysyłamy, i ta, z której czyta syntezator; wiadomości przyjmuje tylko pierwsza. W configu <code>midiDevice=loopMIDI</code> (dowolny fragment nazwy). Potem <code>step4.PlayOnSynth</code> – wypisuje urządzenie i kanał.</p>
+<h3>Piszą</h3>
+<p><code>ExternalMidiOutput</code> – drugi <code>NoteOutput</code>: <code>find</code> (pierwsze pasujące urządzenie, które przyjmuje wiadomości), <code>noteOn</code>/<code>noteOff</code>/<code>send</code> (<code>ShortMessage</code> do <code>Receiver</code>, znacznik czasu -1 = „teraz”), <code>allSoundOff</code>. <code>ExternalMidiOutputTest</code>: 9 testów, 3 zielone od startu (otwieranie, panic przy otwarciu, blokada note-onów).</p>
+<h3>Powiedz</h3>
+<ul>
+<li><b>Kanał.</b> Nuty idą na kanale ścieżki; syntezator sprzętowy słucha jednego kanału. <code>midiChannel=</code> (1–16, jak liczy syntezator) go nadpisuje; <code>javax.sound.midi</code> liczy od 0. NTS-1 z „1” na wyświetlaczu grał na <code>midiChannel=2</code>.</li>
+<li><b>CC 120 kontra CC 123.</b> All Sound Off ucina dźwięk od razu; All Notes Off tylko zwalnia nuty, pad z długim ogonem gra dalej.</li>
+<li><b>Nic nie zostaje wiszące.</b> Przy zamknięciu i w haku (Ctrl+C) najpierw blokada note-onów – wątki schedulera działają jeszcze w trakcie zamykania JVM – potem All Sound Off i note-off dla każdej wysokości. Przy otwarciu urządzenie jest najpierw wyciszane.</li>
+<li><b>Stop w IntelliJ.</b> Przy uruchomieniu przez Gradle zabija JVM bez haków – nuta gra dalej. Pomaga „Build and run using: IntelliJ IDEA”, kolejne uruchomienie albo <code>step4.MidiPanic</code>.</li>
+<li><code>--scheduler all</code> daje te same liczby co z Gervillem, a Surge i tak gra nutę dopiero po swoim buforze. Tego nie zmierzymy – dźwięk powstaje w innym programie, na innym zegarze.</li>
+</ul>
+<p class="warn"><b>Komu nie działa kabel lub syntezator:</b> <code>--midiDevice Gervill</code>, ten sam kod; w kroku 5 niczego nie traci.</p>
+</section>
+
+<section class="step" id="k5">
+<h2>5 · Perkusja, dwa zegary, jeden zegar <span class="t">&nbsp;· 45 min</span></h2>
+<h3>Na start (gotowe, bez ćwiczeń)</h3>
+<ul>
+<li><code>step5.CalibrateLatency</code> – stopa z <code>AudioEngine</code> i nuta z syntezatora na każdy beat; suwak (0–400 ms) aż zleją się w jedno uderzenie; linię <code>midiLatency=</code> do configu.</li>
+<li><code>step5.ShowSamples</code> – każdy bęben dwa razy: z pliku i ze wzoru. Pliki są różne (<code>bd.wav</code> 192 kHz stereo, <code>sd.wav</code> 44,1 kHz stereo, <code>hh.wav</code> mono 24 bit, <code>oh.wav</code> i <code>cp.wav</code> stereo 24 bit); <code>WavSampleLoader</code> robi z nich 44,1 kHz mono. Dla renderera to tylko tablica liczb.</li>
+</ul>
+<h3>Powiedz</h3>
+<p>Przestajemy czekać na moment – liczymy ramkę. Karta dostaje bloki po 512 ramek (ok. 12 ms). W 120 BPM szesnastka to 5512,5 ramki – każdą pozycję liczymy od początku, więc zaokrąglenia się nie sumują.</p>
+<h3>Piszą, w kolejności testów</h3>
+<ul>
+<li><code>Transport.frameAtBeat</code> (<code>TransportTest</code>).</li>
+<li><code>PatternCompiler.compile</code>: takt <code>"X...x...o..."</code> na te same <code>Note</code>, co z pliku; <code>parse</code> gotowe.</li>
+<li><code>AudioEngine.schedule</code> – serce kroku: harmonogram z kroku 3 w ramkach. <code>Hit</code> niesie całą nutę: <code>hits.add(new Hit(frame, note))</code>. <code>AudioEngineTest</code> (1000 ramek/s, bloki 128) zazielenia się razem z nim.</li>
+</ul>
+<p><b>Pokaż:</b> w <code>renderNext</code> zamień <code>hits[nextHit].frame()</code> na <code>position</code> i puść <code>PlayBeat --block 4096</code> (93 ms) – groove się rozsypuje. Przywróć linię.</p>
+<h3>Dwa zegary</h3>
+<p><code>step5.PlayJam</code> z <code>jam-insomnia.properties</code> (8 taktów, perkusja <code>insomnia</code>, ściszona o połowę) – perkusja idzie za kartą, melodia za <code>System.nanoTime()</code>. Z <code>--stall 300</code> perkusja po 3 s staje jak przy pauzie GC – melodia już jej nie dogoni.</p>
+<p><b>Piszą:</b> pętlę w <code>playLoop</code>: przed każdą pętlą zapytać gotowe <code>loopStartNanos</code> (teraz, <code>heardNanos</code>, numer pętli, długość, opóźnienie) i oddać ją <code>playOneLoop</code>. <code>MidiPlayerLoopTest</code>: arytmetyka zielona od startu, potem trzy pętle przeciw „audio”, które spóźnia się o 100 ms.</p>
+<h3>Jeden zegar (gotowe, 5 min pokazu)</h3>
+<pre>PlayJam --config src/main/resources/jam-insomnia.properties --synth pluck</pre>
+<ul>
+<li><code>synth=anthem|pluck|pad</code>: melodia nie idzie przez MIDI – <code>AudioEngine</code> renderuje każdą nutę przez syntezator na długość nuty i kładzie ją na jej ramce jak próbkę bębna.</li>
+<li>Nie ma <code>midiLatency</code> ani drugiego zegara; z <code>--stall 300</code> perkusja i melodia pauzują razem.</li>
+</ul>
+<p class="q">Puenta: dwóch zegarów nie ustawia się raz – porównuje się je w kółko. Albo zostaje jeden zegar – krok 6.</p>
+</section>
+
+<section class="step" id="k6">
+<h2>6 · Zmiany w trakcie grania – studio <span class="t">&nbsp;· 15 min</span></h2>
+<p><b>Pokaż:</b> gałąź <code>final</code>, <code>StudioLauncher</code> (<code>./gradlew studio</code>). Jeden <code>LiveSession</code> renderuje perkusję i melodię na jednym zegarze.</p>
+<ul>
+<li>Presety jamów, w tym Insomnia; siatka kroków, tempo, długość pętli aż do 1/16 taktu, melodia on/off.</li>
+<li>Zewnętrzny syntezator: kanał z <code>midiChannel=</code>, filtr (CC 74), suwak opóźnienia do 400 ms – słychać od razu.</li>
+<li>Edytor w stylu Strudla (podzbiór):
+<pre>$: stack(
+    s("bd(3,8,5)"),
+    s("[~ sd]*2").gain(1.25),
+    s("hh*16").gain("[0.2 0.1]*8")
+  )</pre>
+Ctrl+Enter wgrywa; <code>//</code> wycisza warstwę; kod z błędem się nie wgrywa – gra poprzedni wzór.</li>
+<li>Każda zmiana wchodzi na granicy pętli – w pętli każde uderzenie nadal trafia w swoją ramkę.</li>
+<li><code>LiveCode.notes</code> to trzeci sposób na <code>Note</code>: po pliku MIDI i wzorze – tekst pisany w trakcie grania.</li>
+</ul>
+
+<h2 id="koniec" style="margin-top:6mm">Podsumowanie – powrót do kroku 1 <span class="t">&nbsp;· 5 min</span></h2>
+<ul>
+<li>Teraz wiemy, co robi <code>Sequencer</code>: czyta plik (krok 2), planuje zdarzenia na swoim wątku (3) i oddaje je syntezatorowi – Gervillowi albo zewnętrznemu (4).</li>
+<li>Czekanie na moment zawsze się spóźnia; liczenie ramki trafia co do próbki (5).</li>
+<li>Dwa zegary trzeba porównywać; jeden zegar załatwia sprawę (5–6).</li>
+<li>Wszystko na samym JDK: <code>javax.sound.midi</code> + <code>javax.sound.sampled</code>.</li>
+</ul>
+</section>
+
+</body></html>

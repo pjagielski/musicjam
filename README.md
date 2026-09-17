@@ -252,6 +252,8 @@ Virtual threads make it much cheaper to keep many blocking tasks alive. They do 
 
 ## Suggested workshop path (3 hours)
 
+For the person running it: [`docs/sciagi/`](docs/sciagi/) has the workshop programme and the step-by-step solutions as PDFs to read on a tablet (in Polish).
+
 Each step exists to answer a question the previous one raised — the path is designed to be followed in order, not picked from. `BeatApp` only plays a jam now, so steps 1-2 run through `SequencerDemo.java`/`InspectMidi.java`/`ListMidiDevices.java` — dependency-free beyond the JDK's own `javax.sound.midi`, so they run via plain single-file source-launch (`InspectMidi.java` also doubles as the worked answer for the tick → beat exercise). Step 3's `NaivePlayer` is real app code (it shares `Note`/`Voice` with everything else, see "Precision" below), so it needs the project's classpath: drive it from `NaivePlayerTest`, from `NaivePlayerDemo` (a small Gradle task, not source-launch — see "Run" above), or from a throwaway `main` written live, until step 7 folds everything back into `BeatApp`.
 
 1. **The black box (5 min).** Run `java src/main/java/pl/livecoding/musicjam/midi/SequencerDemo.java path/to/song.mid` — four lines, `javax.sound.midi` plays a whole song, no code of ours involved. Everything that follows exists to answer "what is this actually doing, and can we do better?"

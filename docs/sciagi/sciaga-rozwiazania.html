@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8">
+<title>Kod, który słychać – ściąga z rozwiązań</title>
+<style>
+@page { size: 170mm 227mm; margin: 9mm 8mm; }
+* { box-sizing: border-box; }
+body { margin: 0; color: #1b1b1f; font: 9pt/1.35 Consolas, "Courier New", monospace; }
+h1 { font: bold 17pt "Segoe UI", Arial, sans-serif; margin: 0 0 2mm; }
+.lead { font: 10.5pt/1.45 "Segoe UI", Arial, sans-serif; margin: 0 0 3mm; }
+.legend { font: 10pt "Segoe UI", Arial, sans-serif; margin: 0 0 3mm; }
+.legend span { display: inline-block; padding: 0.4mm 2mm; margin: 0 2mm 1mm 0; font-family: Consolas, monospace; border-radius: 1mm; }
+ol.toc { font: 12pt/1.8 "Segoe UI", Arial, sans-serif; padding-left: 6mm; }
+ol.toc a { color: #1d4ed8; text-decoration: none; }
+.step { break-before: page; }
+.keep { break-inside: avoid; }
+h2 { font: bold 15pt "Segoe UI", Arial, sans-serif; margin: 0 0 1.5mm; padding-bottom: 1mm; border-bottom: 1.2pt solid #1b1b1f; }
+.meta { font: 10pt/1.45 "Segoe UI", Arial, sans-serif; margin: 0 0 3mm; color: #333; }
+h3 { font: bold 10.5pt Consolas, monospace; margin: 4mm 0 1mm; padding: 1mm 2mm; background: #eceef2; border-radius: 1mm; break-after: avoid; }
+.imp { font-weight: normal; color: #444; }
+.hunk { position: relative; margin: 0 0 2.5mm; padding: 0.6mm 0 0.6mm 9mm; border-left: 1pt solid #9aa3b2; break-inside: avoid; }
+.at { position: absolute; left: 1mm; top: 0.8mm; font-size: 8pt; color: #6b7280; }
+.hunk div { white-space: pre-wrap; word-break: break-word; padding-left: 4mm; text-indent: -4mm; }
+.hunk i { font-style: normal; display: inline-block; width: 4mm; text-indent: 0; font-weight: bold; }
+.a { background: #e3f4e8; font-weight: 600; }
+.d { background: #fbe6e6; text-decoration: line-through; color: #7a3b3b; }
+.x { font-style: italic; color: #7a3b3b; }
+.legend .a { background: #e3f4e8; }
+.legend .x { background: #fbe6e6; }
+* { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+</style></head><body>
+<h1>Kod, który słychać – ściąga z rozwiązań</h1>
+<p class="lead">Co zmienia się między szkieletem kroku (<code>step-N</code>) a rozwiązaniem (<code>step-N-final</code>) w <code>src/main</code>. Nad każdą zmianą sygnatura metody, w której leży; liczba z lewej to numer linii w <code>step-N-final</code>. Ścieżki plików od <code>pl/livecoding/musicjam/</code>.</p>
+<p class="legend"><span class="a">+ rozwiązanie</span><span class="x">&minus; [n linii TODO] ze szkieletu</span></p>
+<ol class="toc"><li><a href="#krok-2">Krok 2: Czytamy plik MIDI</a></li><li><a href="#krok-3">Krok 3: Własny scheduler i Gervill</a></li><li><a href="#krok-4">Krok 4: Zewnętrzny syntezator</a></li><li><a href="#krok-5">Krok 5: Perkusja, dwa zegary i jeden zegar</a></li></ol>
+<p class="lead">Stan gałęzi: step-5-final @ ab3c5e5 2026-09-16</p>
+<section class="step">
+<div class="keep"><h2 id="krok-2">Krok 2: Czytamy plik MIDI</h2>
+<p class="meta"><b>Uruchom:</b> step2.InspectMidi<br><b>Testy:</b> MidiFileReaderTest (9, zielone od startu 4)</p><h3>midi/MidiFileReader.java <span class="imp">+ import pl.livecoding.musicjam.model.Voice, java.util.Comparator</span></h3><div class="hunk"><span class="at">58</span>
+<div class="c"><i>&nbsp;</i>private static TrackReading readTrack(Track track, int index, int resolution) {</div>
+<div class="c"><i>&nbsp;</i>&#8942;</div>
+<div class="c"><i>&nbsp;</i>        } else if (message instanceof ShortMessage shortMessage) {</div>
+<div class="x"><i>&minus;</i>[4 linie TODO]</div>
+<div class="a"><i>+</i>            int pitch = shortMessage.getData1();</div>
+<div class="a"><i>+</i>            if (channel.isEmpty()) {</div>
+<div class="a"><i>+</i>                channel = OptionalInt.of(shortMessage.getChannel());</div>
+<div class="a"><i>+</i>            }</div>
+<div class="a"><i>+</i>            if (shortMessage.getCommand() == ShortMessage.PROGRAM_CHANGE &amp;&amp; !programSeen) {</div>
+<div class="a"><i>+</i>                program = shortMessage.getData1();</div>
+<div class="a"><i>+</i>                programSeen = true;</div>
+<div class="a"><i>+</i>            } else if (isNoteOn(shortMessage)) {</div>
+<div class="a"><i>+</i>                playingNotes.start(pitch, event.getTick(), shortMessage.getData2());</div>
+<div class="a"><i>+</i>            } else if (isNoteOff(shortMessage)) {</div>
+<div class="a"><i>+</i>                playingNotes.finish(pitch)</div>
+<div class="a"><i>+</i>                        .map(start -&gt; noteBetween(start, pitch, event.getTick(), resolution))</div>
+<div class="a"><i>+</i>                        .ifPresent(notes::add);</div>
+<div class="a"><i>+</i>            }</div>
+<div class="c"><i>&nbsp;</i>        }</div>
+</div></div>
+<div class="hunk"><span class="at">58</span>
+<div class="c"><i>&nbsp;</i>private static TrackReading readTrack(Track track, int index, int resolution) {</div>
+<div class="c"><i>&nbsp;</i>&#8942;</div>
+<div class="x"><i>&minus;</i>[2 linie TODO]</div>
+<div class="a"><i>+</i>    notes.sort(Comparator.comparingDouble(Note::beat)</div>
+<div class="a"><i>+</i>            .thenComparingInt(note -&gt; ((Voice.Pitch) note.voice()).midiNote()));</div>
+<div class="c"><i>&nbsp;</i>    return new TrackReading(new TrackData(index, name, channel, program, List.copyOf(notes)), bpm);</div>
+</div>
+<div class="hunk"><span class="at">100</span>
+<div class="c"><i>&nbsp;</i>private static Note noteBetween(</div>
+<div class="c"><i>&nbsp;</i>        PlayingNotes.PlayingNote start, int pitch, long endTick, int resolution) {</div>
+<div class="x"><i>&minus;</i>[4 linie TODO]</div>
+<div class="a"><i>+</i>    double durationBeats = ticksToBeats(endTick - start.tick(), resolution);</div>
+<div class="a"><i>+</i>    if (durationBeats &lt;= 0.0) {</div>
+<div class="a"><i>+</i>        return null;</div>
+<div class="a"><i>+</i>    }</div>
+<div class="a"><i>+</i>    return new Note(</div>
+<div class="a"><i>+</i>            ticksToBeats(start.tick(), resolution),</div>
+<div class="a"><i>+</i>            new Voice.Pitch(pitch),</div>
+<div class="a"><i>+</i>            durationBeats,</div>
+<div class="a"><i>+</i>            start.velocity() / 127f);</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div>
+</section>
+<section class="step">
+<div class="keep"><h2 id="krok-3">Krok 3: Własny scheduler i Gervill</h2>
+<p class="meta"><b>Uruchom:</b> step3.ListMidiDevices, step3.PlayNotes<br><b>Testy:</b> MidiNoteOutputTest, MidiPlayerTest, PooledSchedulerTest</p><h3>midi/MidiNoteOutput.java</h3><div class="hunk"><span class="at">29</span>
+<div class="c"><i>&nbsp;</i>static MidiNoteOutput open(Synthesizer synthesizer, int channelNumber, int program)</div>
+<div class="c"><i>&nbsp;</i>        throws MidiUnavailableException {</div>
+<div class="x"><i>&minus;</i>[4 linie TODO]</div>
+<div class="a"><i>+</i>    synthesizer.open();</div>
+<div class="a"><i>+</i>    MidiChannel channel = channelOf(synthesizer, channelNumber);</div>
+<div class="a"><i>+</i>    channel.programChange(program);</div>
+<div class="a"><i>+</i>    return new MidiNoteOutput(synthesizer, channel);</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div></div>
+<div class="hunk"><span class="at">66</span>
+<div class="c"><i>&nbsp;</i>public synchronized void noteOn(int pitch, int velocity) {</div>
+<div class="x"><i>&minus;</i>[2 linie TODO]</div>
+<div class="a"><i>+</i>    channel.noteOn(pitch, velocity);</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div>
+<div class="hunk"><span class="at">71</span>
+<div class="c"><i>&nbsp;</i>public synchronized void noteOff(int pitch) {</div>
+<div class="x"><i>&minus;</i>[2 linie TODO]</div>
+<div class="a"><i>+</i>    channel.noteOff(pitch);</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div>
+<div class="keep"><h3>midi/MidiPlayer.java <span class="imp">+ import pl.livecoding.musicjam.model.Voice, java.util.ArrayList</span></h3><div class="hunk"><span class="at">64</span>
+<div class="c"><i>&nbsp;</i>static List&lt;ScheduledEvent&gt; schedule(</div>
+<div class="c"><i>&nbsp;</i>&#8942;</div>
+<div class="c"><i>&nbsp;</i>    }</div>
+<div class="x"><i>&minus;</i>[5 linii TODO]</div>
+<div class="a"><i>+</i>    var events = new ArrayList&lt;ScheduledEvent&gt;(Math.multiplyExact(notes.size(), 2 * loops));</div>
+<div class="a"><i>+</i>    for (int loop = 0; loop &lt; loops; loop++) {</div>
+<div class="a"><i>+</i>        double loopStart = loop * patternLengthBeats;</div>
+<div class="a"><i>+</i>        for (Note note : notes) {</div>
+<div class="a"><i>+</i>            int pitch = ((Voice.Pitch) note.voice()).midiNote();</div>
+<div class="a"><i>+</i>            int velocity = Math.round(note.velocity() * 127.0f);</div>
+<div class="a"><i>+</i>            events.add(ScheduledEvent.noteOn(</div>
+<div class="a"><i>+</i>                    beatToNanos(loopStart + note.beat(), bpm), pitch, velocity));</div>
+<div class="a"><i>+</i>            events.add(ScheduledEvent.noteOff(</div>
+<div class="a"><i>+</i>                    beatToNanos(loopStart + note.beat() + note.durationBeats(), bpm), pitch));</div>
+<div class="a"><i>+</i>        }</div>
+<div class="a"><i>+</i>    }</div>
+<div class="a"><i>+</i>    return events;</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div></div>
+<div class="keep"><h3>scheduler/PooledScheduler.java</h3><div class="hunk"><span class="at">29</span>
+<div class="c"><i>&nbsp;</i>public void submit(long offsetNanos, TimedTask task) {</div>
+<div class="x"><i>&minus;</i>[5 linii TODO]</div>
+<div class="a"><i>+</i>    long targetNanos = startNanos + offsetNanos;</div>
+<div class="a"><i>+</i>    pool.schedule(</div>
+<div class="a"><i>+</i>            () -&gt; task.runAt(targetNanos),</div>
+<div class="a"><i>+</i>            targetNanos - System.nanoTime(),</div>
+<div class="a"><i>+</i>            TimeUnit.NANOSECONDS);</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div></div>
+</section>
+<section class="step">
+<div class="keep"><h2 id="krok-4">Krok 4: Zewnętrzny syntezator</h2>
+<p class="meta"><b>Uruchom:</b> step4.PlayOnSynth (awaryjnie step4.MidiPanic)<br><b>Testy:</b> ExternalMidiOutputTest (9, zielone od startu 3)</p><h3>midi/ExternalMidiOutput.java <span class="imp">+ import java.util.Locale</span></h3><div class="hunk"><span class="at">88</span>
+<div class="c"><i>&nbsp;</i>static MidiDevice find(String nameContains, List&lt;MidiDevice&gt; devices) throws MidiUnavailableException {</div>
+<div class="x"><i>&minus;</i>[5 linii TODO]</div>
+<div class="a"><i>+</i>    String wanted = nameContains.toLowerCase(Locale.ROOT);</div>
+<div class="a"><i>+</i>    for (MidiDevice device : devices) {</div>
+<div class="a"><i>+</i>        String name = device.getDeviceInfo().getName().toLowerCase(Locale.ROOT);</div>
+<div class="a"><i>+</i>        if (name.contains(wanted) &amp;&amp; device.getMaxReceivers() != 0) {</div>
+<div class="a"><i>+</i>            return device;</div>
+<div class="a"><i>+</i>        }</div>
+<div class="a"><i>+</i>    }</div>
+<div class="a"><i>+</i>    throw new MidiUnavailableException(&quot;No MIDI device named like \&quot;&quot; + nameContains + &quot;\&quot; takes messages&quot;);</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div></div>
+<div class="hunk"><span class="at">100</span>
+<div class="c"><i>&nbsp;</i>public synchronized void noteOn(int pitch, int velocity) {</div>
+<div class="x"><i>&minus;</i>[2 linie TODO]</div>
+<div class="a"><i>+</i>    send(ShortMessage.NOTE_ON, pitch, velocity);</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div>
+<div class="hunk"><span class="at">105</span>
+<div class="c"><i>&nbsp;</i>public synchronized void noteOff(int pitch) {</div>
+<div class="x"><i>&minus;</i>[2 linie TODO]</div>
+<div class="a"><i>+</i>    send(ShortMessage.NOTE_OFF, pitch, 0);</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div>
+<div class="hunk"><span class="at">109</span>
+<div class="c"><i>&nbsp;</i>private void send(int command, int data1, int data2) {</div>
+<div class="x"><i>&minus;</i>[4 linie TODO]</div>
+<div class="a"><i>+</i>    try {</div>
+<div class="a"><i>+</i>        receiver.send(new ShortMessage(command, channel, data1, data2), -1);</div>
+<div class="a"><i>+</i>    } catch (InvalidMidiDataException exception) {</div>
+<div class="a"><i>+</i>        throw new IllegalArgumentException(exception);</div>
+<div class="a"><i>+</i>    }</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div>
+<div class="hunk"><span class="at">123</span>
+<div class="c"><i>&nbsp;</i>private synchronized void allSoundOff() {</div>
+<div class="x"><i>&minus;</i>[3 linie TODO]</div>
+<div class="a"><i>+</i>    try {</div>
+<div class="a"><i>+</i>        send(ShortMessage.CONTROL_CHANGE, ALL_SOUND_OFF, 0);</div>
+<div class="a"><i>+</i>    } catch (RuntimeException deviceAlreadyGone) {</div>
+<div class="a"><i>+</i>        // best effort: by the time a shutdown hook runs, the device may be closed or unplugged</div>
+<div class="a"><i>+</i>    }</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div>
+</section>
+<section class="step">
+<div class="keep"><h2 id="krok-5">Krok 5: Perkusja, dwa zegary i jeden zegar</h2>
+<p class="meta"><b>Uruchom:</b> step5.PlayBeat, step5.PlayJam<br><b>Testy:</b> TransportTest, PatternCompilerTest, AudioEngineScheduleTest, AudioEngineTest, MidiPlayerLoopTest</p><h3>audio/AudioEngine.java <span class="imp">+ import java.util.ArrayList</span></h3><div class="hunk"><span class="at">225</span>
+<div class="c"><i>&nbsp;</i>static List&lt;Hit&gt; schedule(List&lt;Note&gt; notes, double bpm, double patternLengthBeats, int loops, int sampleRate) {</div>
+<div class="c"><i>&nbsp;</i>&#8942;</div>
+<div class="c"><i>&nbsp;</i>    }</div>
+<div class="x"><i>&minus;</i>[5 linii TODO]</div>
+<div class="a"><i>+</i>    Transport transport = new Transport(bpm, sampleRate);</div>
+<div class="a"><i>+</i>    var hits = new ArrayList&lt;Hit&gt;(notes.size() * loops);</div>
+<div class="a"><i>+</i>    for (int loop = 0; loop &lt; loops; loop++) {</div>
+<div class="a"><i>+</i>        double loopStart = loop * patternLengthBeats;</div>
+<div class="a"><i>+</i>        for (Note note : notes) {</div>
+<div class="a"><i>+</i>            long frame = transport.frameAtBeat(loopStart + note.beat());</div>
+<div class="a"><i>+</i>            hits.add(new Hit(frame, note));</div>
+<div class="a"><i>+</i>        }</div>
+<div class="a"><i>+</i>    }</div>
+<div class="a"><i>+</i>    return hits;</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div></div>
+<div class="keep"><h3>audio/Transport.java</h3><div class="hunk"><span class="at">18</span>
+<div class="c"><i>&nbsp;</i>public long frameAtBeat(double beat) {</div>
+<div class="x"><i>&minus;</i>[2 linie TODO]</div>
+<div class="a"><i>+</i>    return Math.round(beat * 60.0 / bpm * sampleRate);</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div></div>
+<div class="keep"><h3>midi/MidiPlayer.java</h3><div class="hunk"><span class="at">78</span>
+<div class="c"><i>&nbsp;</i>public void playLoop(List&lt;Note&gt; notes, double bpm, double patternLengthBeats, int loops,</div>
+<div class="c"><i>&nbsp;</i>&#8942;</div>
+<div class="x"><i>&minus;</i>[5 linii TODO]</div>
+<div class="a"><i>+</i>    for (int loop = 0; loop &lt; loops; loop++) {</div>
+<div class="a"><i>+</i>        long startNanos = loopStartNanos(</div>
+<div class="a"><i>+</i>                System.nanoTime(), heardNanos.getAsLong(), loop, loopNanos, latencyNanos);</div>
+<div class="a"><i>+</i>        playOneLoop(oneLoop, startNanos);</div>
+<div class="a"><i>+</i>    }</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div></div>
+<div class="keep"><h3>model/PatternCompiler.java <span class="imp">+ import java.util.ArrayList, java.util.Comparator</span></h3><div class="hunk"><span class="at">18</span>
+<div class="c"><i>&nbsp;</i>public static List&lt;Note&gt; compile(List&lt;DrumTrack&gt; tracks, int beatsPerBar) {</div>
+<div class="x"><i>&minus;</i>[4 linie TODO]</div>
+<div class="a"><i>+</i>    var notes = new ArrayList&lt;Note&gt;();</div>
+<div class="a"><i>+</i>    for (DrumTrack track : tracks) {</div>
+<div class="a"><i>+</i>        String steps = track.steps();</div>
+<div class="a"><i>+</i>        double stepBeats = (double) beatsPerBar / steps.length();</div>
+<div class="a"><i>+</i>        for (int step = 0; step &lt; steps.length(); step++) {</div>
+<div class="a"><i>+</i>            double beat = step * stepBeats;</div>
+<div class="a"><i>+</i>            parse(steps.charAt(step)).ifPresent(accent -&gt;</div>
+<div class="a"><i>+</i>                    notes.add(new Note(beat, track.drum(), stepBeats, track.gain() * accent)));</div>
+<div class="a"><i>+</i>        }</div>
+<div class="a"><i>+</i>    }</div>
+<div class="a"><i>+</i>    notes.sort(Comparator.comparingDouble(Note::beat));</div>
+<div class="a"><i>+</i>    return List.copyOf(notes);</div>
+<div class="c"><i>&nbsp;</i>}</div>
+</div></div>
+</section>
+</body></html>
