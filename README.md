@@ -220,6 +220,11 @@ $: stack(
 
 It is a small language in the style of Strudel, written for this project: a subset, not Strudel itself.
 
+The drums above come from `strudel/feb-remix.js`, a whole track written in Strudel itself: those drums
+on a TR-707, a sliced riff, a supersaw bass, chords and an arpeggio over D - G - Bm - A at 130 BPM.
+Paste it into [strudel.cc](https://strudel.cc) to hear where the studio's example came from; it loads
+its samples from `github:mistipher/studel-beats`.
+
 - `s("...")` (or `sound`) is a mini-notation pattern of drum names: `bd`, `sd`, `hh`, `oh`, `cp`. Steps separated by spaces share one cycle, and one cycle is one bar. `~` is a rest, `[ ]` groups steps into one, `,` inside brackets layers sequences, `*n` plays a step n times within its slot, and `(k,n)` or `(k,n,r)` spreads k hits evenly over n slots (Bjorklund), rotated r slots to the left.
 - `stack(...)` plays patterns together, and so do several `$:` blocks.
 - `.gain(0.5)` takes a number, `.gain("[0.2 0.1]*8")` a pattern read wherever the sound pattern plays; anything above 1 is capped at 1.
