@@ -4,9 +4,9 @@ import pl.livecoding.musicjam.Config;
 
 import javax.sound.midi.MidiSystem;
 
-public class SequencerDemo {
+class SequencerDemo {
 
-    public static void main(String[] args) throws Exception {
+    static void main(String[] args) throws Exception {
         var file = Config.fromArgs(args).file();
 
         var sequence = MidiSystem.getSequence(file.toFile());
