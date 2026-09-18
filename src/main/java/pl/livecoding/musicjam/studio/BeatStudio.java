@@ -6,6 +6,7 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -25,6 +26,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.stage.Screen;
 import pl.livecoding.musicjam.BeatApp;
 import pl.livecoding.musicjam.PhraseRequest;
 import pl.livecoding.musicjam.audio.AudioEngine;
@@ -178,9 +180,26 @@ public final class BeatStudio extends Application {
         cc.valueProperty().addListener((property, before, after) -> sendFilter());
         midiLatency.valueProperty().addListener((property, before, after) -> applyMidiLatency());
 
-        stage.setScene(new Scene(layout()));
+        boolean presentation = getParameters().getRaw().contains("--presentation");
+        Scene scene = new Scene(layout());
+        if (presentation) {
+            scene.getRoot().setStyle("-fx-font-size: 18px;");
+            code.setStyle("-fx-font-family: 'Consolas', 'Menlo', monospace; -fx-font-size: 18px;");
+        }
+        stage.setScene(scene);
         stage.setTitle("MusicJam Studio");
+        if (presentation || getParameters().getRaw().contains("--screen")) {
+            Screen screen = selectedScreen();
+            Rectangle2D bounds = screen.getVisualBounds();
+            stage.setX(bounds.getMinX());
+            stage.setY(bounds.getMinY());
+            stage.setWidth(bounds.getWidth());
+            stage.setHeight(bounds.getHeight());
+        }
         stage.show();
+        if (presentation) {
+            stage.setFullScreen(true);
+        }
         playhead().start();
     }
 
@@ -194,6 +213,23 @@ public final class BeatStudio extends Application {
         List<String> args = getParameters().getRaw();
         int index = args.indexOf("--config");
         return index >= 0 && index + 1 < args.size() ? Path.of(args.get(index + 1)) : DEFAULT_CONFIG;
+    }
+
+    private Screen selectedScreen() {
+        List<String> args = getParameters().getRaw();
+        int index = args.indexOf("--screen");
+        if (index < 0) {
+            return Screen.getPrimary();
+        }
+        if (index + 1 >= args.size()) {
+            throw new IllegalArgumentException("--screen needs an index from 0 to " + (Screen.getScreens().size() - 1));
+        }
+        int number = Integer.parseInt(args.get(index + 1));
+        if (number < 0 || number >= Screen.getScreens().size()) {
+            throw new IllegalArgumentException("Screen " + number + " not found; choose 0 to "
+                    + (Screen.getScreens().size() - 1));
+        }
+        return Screen.getScreens().get(number);
     }
 
     private void findJams(Path config) throws IOException {

@@ -24,7 +24,13 @@ java src/main/java/pl/livecoding/musicjam/midi/ListMidiDevices.java
 # A window for changing the jam while it plays (JavaFX, fetched by Gradle like any dependency):
 ./gradlew studio
 ./gradlew studio --args="--config src/main/resources/jam.properties"
+# Large window for a projector; use 1 instead of 0 if that is the desired monitor:
+./gradlew studio --args="--presentation --screen 0"
 ```
+
+`--presentation` opens Studio full screen with larger text; Esc leaves full-screen mode.
+`--screen N` chooses a monitor (numbered from 0) and can also be used without presentation mode.
+In an IntelliJ run configuration for `StudioLauncher`, put the same flags in **Program arguments**.
 
 To send the melody to a software or hardware MIDI synth, follow
 [External MIDI setup](MIDI_SETUP.md) for Windows, macOS and Linux.
