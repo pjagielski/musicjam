@@ -68,14 +68,14 @@ import java.util.stream.Stream;
  * the slider as a control change (CC 74 unless told otherwise).
  *
  * <p>Starts from {@code --config <file>}, or {@code src/main/resources/jam.properties}, but with a
- * four-bar loop and the drums drawn from the starter code rather than the config's own.
+ * eight-bar loop and the drums drawn from the starter code rather than the config's own.
  */
 public final class BeatStudio extends Application {
     private static final int BEATS_PER_BAR = 4;
     private static final Path DEFAULT_CONFIG = Path.of("src/main/resources/jam.properties");
     private static final List<String> LOOP_LENGTHS =
             List.of("1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32");
-    private static final String STARTING_LOOP = "4";
+    private static final String STARTING_LOOP = "8";
     private static final double CELL_HEIGHT = 34;
     private static final double CELL_GAP = 4;
     private static final double BAR_WIDTH = 16 * CELL_HEIGHT + 15 * CELL_GAP;

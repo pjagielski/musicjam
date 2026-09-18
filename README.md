@@ -204,7 +204,7 @@ Either way the melody goes out `midiLatency` milliseconds early — 50 by defaul
 
 ## Studio: change the jam while it plays
 
-`BeatStudio` opens the jam `BeatApp` would play from a `.properties` file, in a window where it keeps playing while you change it. It starts with a four-bar loop and the drums drawn from the code in the editor (see "Live coding in the studio" below); picking a jam preset brings in that jam's own drums and loop length:
+`BeatStudio` opens the jam `BeatApp` would play from a `.properties` file, in a window where it keeps playing while you change it. It starts with an eight-bar loop and the drums drawn from the code in the editor (see "Live coding in the studio" below); picking a jam preset brings in that jam's own drums and loop length:
 
 - a step grid per drum track — click a cell to cycle rest → `x` → `X` → `o`; the highlighted column is the step you are hearing,
 - jam presets: every `jam*.properties` next to the starting config; picking one loads its MIDI file and melody window, the file's tempo, its drum pattern and its synth,
