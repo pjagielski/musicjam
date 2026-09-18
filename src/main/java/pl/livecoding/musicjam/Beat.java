@@ -1,10 +1,13 @@
 package pl.livecoding.musicjam;
 
-import pl.livecoding.musicjam.audio.WavSampleLoader;
+import pl.livecoding.musicjam.audio.SampleBank;
+import pl.livecoding.musicjam.model.Drum;
+import pl.livecoding.musicjam.model.DrumTrack;
 import pl.livecoding.musicjam.synth.AnthemLeadSynth;
 
 import javax.sound.midi.*;
 import javax.sound.sampled.*;
+
 import java.nio.file.*;
 import java.util.*;
 
@@ -60,7 +63,8 @@ class Beat {
     }
 
     static double bpm = 96;
-    static List<Track> tracks;
+    static List<DrumTrack> tracks;
+    static List<Track> audioTracks;
 
     /** Absolutna ramka betu - liczona zawsze od zera, nigdy przyrostowo. */
     static long frameAt(double beat) {
@@ -69,7 +73,7 @@ class Beat {
 
     /** Odpala wszystkie kroki wpadajace w [pos, pos+BLOCK). */
     static void schedule(long pos, Voice[] pool) {
-        for (Track t : tracks) {
+        for (Track t : audioTracks) {
             int n = t.steps.length();
             while (frameAt(t.nextStep * BAR_BEATS / n) < pos + BLOCK) {
                 long f = frameAt(t.nextStep * BAR_BEATS / n);
@@ -152,11 +156,14 @@ class Beat {
 
     static void main(String[] args) throws Exception {
         tracks = List.of(
-            new Track(sample("bd"), "X..-..X...-.X...", 1.00f),
-            new Track(sample("sd"), "....X.......X...", 0.70f),
-            new Track(sample("hh"), "x.x.x.x.x.x.x.x.", 0.35f),
-            new Track(openHat(),    "..o.....", 0.25f)          // 8 krokow -> polimetria
+            new DrumTrack(Drum.KICK, "o..o....o..o....", 1.00f),
+            new DrumTrack(Drum.CLOSED_HAT, "o.ooo.o.o.o.oooo", 0.60f),
+            new DrumTrack(Drum.SNARE, "......o.......o.", 0.80f)
         );
+        SampleBank samples = SampleBank.load(Path.of("samples"), SR);
+        audioTracks = tracks.stream()
+                .map(track -> new Track(samples.sample(track.drum()).copyMono(), track.steps(), track.gain()))
+                .toList();
         loadMelody("src/main/resources/song_shape.mid", 1, 0, 4);
 
         // wszystko prealokowane - zero smieci w petli audio
@@ -188,20 +195,4 @@ class Beat {
         }
     }
 
-    static float[] sample(String name) throws Exception {
-        return WavSampleLoader.load(Path.of("samples", name + ".wav"), SR).copyMono();
-    }
-
-    /** Otwartego hi-hatu nie ma w samples/, wiec jest syntezowany. */
-    static float[] openHat() {
-        Random rnd = new Random(42);
-        float[] d = new float[(int) (0.30 * SR)];
-        double hp = 0, prev = 0;
-        for (int i = 0; i < d.length; i++) {
-            double x = rnd.nextDouble() * 2 - 1;
-            hp = 0.90 * (hp + x - prev); prev = x;
-            d[i] = (float) (hp * Math.exp(-((double) i / SR) * 13) * 0.6);
-        }
-        return d;
-    }
 }
