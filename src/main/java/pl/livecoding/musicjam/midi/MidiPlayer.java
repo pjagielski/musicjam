@@ -88,11 +88,11 @@ public final class MidiPlayer implements AutoCloseable {
                 .map(event -> event.offsetNanos() > loopNanos ? event.at(loopNanos) : event)
                 .toList();
 
-        // TODO(step-5): play oneLoop loops times, each through playOneLoop. Before every loop, ask
-        // TODO(step-5): loopStartNanos where it starts: with the clock as it is now (System.nanoTime()),
-        // TODO(step-5): with how much of the audio has been heard (heardNanos), with the loop's number,
-        // TODO(step-5): its length and the latency.
-        throw new UnsupportedOperationException("MidiPlayer.playLoop");
+        for (int loop = 0; loop < loops; loop++) {
+            long startNanos = loopStartNanos(
+                    System.nanoTime(), heardNanos.getAsLong(), loop, loopNanos, latencyNanos);
+            playOneLoop(oneLoop, startNanos);
+        }
     }
 
     /** One loop's events through a scheduler of its own, from startNanos on the System.nanoTime() clock. */

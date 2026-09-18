@@ -1,5 +1,7 @@
 package pl.livecoding.musicjam.model;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,10 +16,18 @@ public final class PatternCompiler {
      * as its accent times its track's gain.
      */
     public static List<Note> compile(List<DrumTrack> tracks, int beatsPerBar) {
-        // TODO(step-5): a track of n steps divides the bar into n equal steps: step i starts at beat
-        // TODO(step-5): i * beatsPerBar / n and lasts one step. parse says how loud a step is, and a rest
-        // TODO(step-5): is no note at all. Every track goes into the same list, sorted by beat.
-        throw new UnsupportedOperationException("PatternCompiler.compile");
+        var notes = new ArrayList<Note>();
+        for (DrumTrack track : tracks) {
+            String steps = track.steps();
+            double stepBeats = (double) beatsPerBar / steps.length();
+            for (int step = 0; step < steps.length(); step++) {
+                double beat = step * stepBeats;
+                parse(steps.charAt(step)).ifPresent(accent ->
+                        notes.add(new Note(beat, track.drum(), stepBeats, track.gain() * accent)));
+            }
+        }
+        notes.sort(Comparator.comparingDouble(Note::beat));
+        return List.copyOf(notes);
     }
 
     /**

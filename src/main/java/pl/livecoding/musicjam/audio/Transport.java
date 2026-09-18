@@ -16,7 +16,6 @@ public record Transport(double bpm, int sampleRate) {
      * so rounding cannot add up.
      */
     public long frameAtBeat(double beat) {
-        // TODO(step-5): beats to seconds at this tempo, seconds to frames at this sample rate, rounded
-        throw new UnsupportedOperationException("Transport.frameAtBeat");
+        return Math.round(beat * 60.0 / bpm * sampleRate);
     }
 }

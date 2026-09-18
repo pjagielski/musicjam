@@ -9,6 +9,7 @@ import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.SourceDataLine;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -225,11 +226,16 @@ public final class AudioEngine {
         if (loops <= 0) {
             throw new IllegalArgumentException("Loops must be positive");
         }
-        // TODO(step-5): a hit for every note in every loop, just like MidiPlayer.schedule in step 3:
-        // TODO(step-5): loop number i starts at i * patternLengthBeats, and a Transport at this tempo
-        // TODO(step-5): and sample rate turns the note's beat within the whole playback into a frame.
-        // TODO(step-5): A hit carries its whole note: the renderer needs its voice and its velocity.
-        throw new UnsupportedOperationException("AudioEngine.schedule");
+        Transport transport = new Transport(bpm, sampleRate);
+        var hits = new ArrayList<Hit>(notes.size() * loops);
+        for (int loop = 0; loop < loops; loop++) {
+            double loopStart = loop * patternLengthBeats;
+            for (Note note : notes) {
+                long frame = transport.frameAtBeat(loopStart + note.beat());
+                hits.add(new Hit(frame, note));
+            }
+        }
+        return hits;
     }
 
     /** One note, due on a frame counted from the start of playback: a drum, or a note of the melody. */
