@@ -46,9 +46,31 @@ ticks:
 ./gradlew inspectMidi
 ```
 
+```text
+File: song_still_dre.mid
+PPQ: 480, tempo: 93.5 BPM, length: 101.0 bars (4/4)
+Tracks:
+   0:                          (no notes)
+   1: Bowed Bass Strings       ch=0   prog=42   notes=188   range=[E2..E3]   first note: bar 1.8
+   2: Pizz Strings             ch=1   prog=45   notes=2400  range=[B4..A5]   first note: bar 2.0
+   4: Da Dope Beat             ch=9   prog=0    notes=1828  range=[B1..A#2]  first note: bar 5.6
+   5: Electric lead            ch=3   prog=84   notes=201   range=[B4..E5]   first note: bar 9.7
+   7: Snoop Dogg: "If you a... ch=5   prog=69   notes=6     range=[E3..G3]   first note: bar 17.9
+
+Track 2: Pizz Strings (ch=1, prog=45), 2400 notes
+    beat  bar.beat  pitch         dur    vel
+   4.000    2:1.00  C5 (72)     0.438   1.00
+   4.000    2:1.00  E5 (76)     0.438   1.00
+   4.063    2:1.06  A5 (81)     0.438   1.00
+   4.500    2:1.50  C5 (72)     0.438   1.00
+```
+
+The riff is three notes struck together, and the top one is consistently 0.063 beat late — the
+file is played in, not quantized. Nothing here rounds that away.
+
 ```properties
 file=src/main/resources/song_still_dre.mid
-track=5
+track=2
 ```
 
 Both can be overridden from the command line, which is how you try another track without editing

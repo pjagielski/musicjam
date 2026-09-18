@@ -1,6 +1,7 @@
 package pl.livecoding.musicjam.midi;
 
 import pl.livecoding.musicjam.model.Note;
+import pl.livecoding.musicjam.model.Voice;
 
 import javax.sound.midi.InvalidMidiDataException;
 import javax.sound.midi.MetaMessage;
@@ -13,6 +14,7 @@ import javax.sound.midi.Track;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.OptionalInt;
 
@@ -53,10 +55,6 @@ public final class MidiFileReader {
                 List.copyOf(read));
     }
 
-    /**
-     * One pass over the track, because that is all it takes. The meta events - the track's name
-     * and the file's tempo - are read here already; the channel messages are the exercise.
-     */
     private static TrackReading readTrack(Track track, int index, int resolution) {
         PlayingNotes playingNotes = new PlayingNotes();
         List<Note> notes = new ArrayList<>();
@@ -76,24 +74,38 @@ public final class MidiFileReader {
                     bpm = bpmOf(meta);
                 }
             } else if (message instanceof ShortMessage shortMessage) {
-                // TODO(step-2): the first channel message says which channel the track plays on;
-                // TODO(step-2): the first PROGRAM_CHANGE says which instrument to use;
-                // TODO(step-2): isNoteOn starts a note in playingNotes, isNoteOff finishes the one
-                // TODO(step-2): it closes, and a finished pair becomes a Note through noteBetween.
+                int pitch = shortMessage.getData1();
+                if (channel.isEmpty()) {
+                    channel = OptionalInt.of(shortMessage.getChannel());
+                }
+                if (isProgramChange(shortMessage) && program.isEmpty()) {
+                    program = OptionalInt.of(shortMessage.getData1());
+                } else if (isNoteOn(shortMessage)) {
+                    playingNotes.start(pitch, event.getTick(), shortMessage.getData2());
+                } else if (isNoteOff(shortMessage)) {
+                    playingNotes.finish(pitch)
+                            .map(start -> noteBetween(start, pitch, event.getTick(), resolution))
+                            .ifPresent(notes::add);
+                }
             }
         }
 
-        // TODO(step-2): sort the notes by beat, and by pitch within one beat, so that a chord comes
-        // TODO(step-2): out of the listing bottom note first
+        notes.sort(Comparator.comparingDouble(Note::beat)
+                .thenComparingInt(note -> ((Voice.Pitch) note.voice()).midiNote()));
         return new TrackReading(new TrackData(index, name, channel, program, List.copyOf(notes)), bpm);
     }
 
     private static Note noteBetween(
             PlayingNotes.PlayingNote start, int pitch, long endTick, int resolution) {
-        // TODO(step-2): two ticks and the file's resolution are one Note: ticksToBeats gives the beat
-        // TODO(step-2): it starts on and how many beats it lasts, and velocity is MIDI's 0-127 scaled
-        // TODO(step-2): to 0..1. A pair with nothing between the two ticks is not a note at all.
-        throw new UnsupportedOperationException("MidiFileReader.noteBetween");
+        double durationBeats = ticksToBeats(endTick - start.tick(), resolution);
+        if (durationBeats <= 0.0) {
+            return null;
+        }
+        return new Note(
+                ticksToBeats(start.tick(), resolution),
+                new Voice.Pitch(pitch),
+                durationBeats,
+                start.velocity() / 127f);
     }
 
     static boolean isNoteOn(ShortMessage message) {
