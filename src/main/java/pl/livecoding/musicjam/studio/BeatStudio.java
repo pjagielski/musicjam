@@ -7,6 +7,7 @@ import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
+import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -15,6 +16,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Slider;
 import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
@@ -24,7 +26,9 @@ import javafx.scene.control.ToggleButton;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.transform.Scale;
 import javafx.stage.Stage;
 import javafx.stage.Screen;
 import pl.livecoding.musicjam.BeatApp;
@@ -121,6 +125,7 @@ public final class BeatStudio extends Application {
     private double barFraction = -1;
     private int sentController = -1;
     private int sentFilter = -1;
+    private double zoom = 1.0;
 
     @Override
     public void start(Stage stage) throws Exception {
@@ -181,7 +186,7 @@ public final class BeatStudio extends Application {
         midiLatency.valueProperty().addListener((property, before, after) -> applyMidiLatency());
 
         boolean presentation = getParameters().getRaw().contains("--presentation");
-        Scene scene = new Scene(layout());
+        Scene scene = new Scene(windowLayout(stage));
         if (presentation) {
             scene.getRoot().setStyle("-fx-font-size: 18px;");
             code.setStyle("-fx-font-family: 'Consolas', 'Menlo', monospace; -fx-font-size: 18px;");
@@ -230,6 +235,55 @@ public final class BeatStudio extends Application {
                     + (Screen.getScreens().size() - 1));
         }
         return Screen.getScreens().get(number);
+    }
+
+    private BorderPane windowLayout(Stage stage) {
+        VBox content = layout();
+        ScrollPane scroll = new ScrollPane(new Group(content));
+        scroll.setPannable(true);
+        scroll.setPrefViewportWidth(1100);
+        scroll.setPrefViewportHeight(700);
+
+        Label zoomLabel = new Label("100%");
+        Button smaller = new Button("−");
+        smaller.setOnAction(event -> setZoom(content, zoomLabel, zoom - 0.15));
+        Button larger = new Button("+");
+        larger.setOnAction(event -> setZoom(content, zoomLabel, zoom + 0.15));
+        Button normal = new Button("100%");
+        normal.setOnAction(event -> setZoom(content, zoomLabel, 1.0));
+        Button nextScreen = new Button("Drugi ekran");
+        nextScreen.setDisable(Screen.getScreens().size() < 2);
+        nextScreen.setOnAction(event -> moveToNextScreen(stage));
+        Button fullScreen = new Button("Pełny ekran");
+        fullScreen.setOnAction(event -> stage.setFullScreen(!stage.isFullScreen()));
+
+        HBox tools = row(new Label("Powiększenie"), smaller, zoomLabel, larger, normal,
+                nextScreen, fullScreen);
+        tools.setPadding(new Insets(8, 12, 8, 12));
+        return new BorderPane(scroll, tools, null, null, null);
+    }
+
+    private void setZoom(VBox content, Label label, double requested) {
+        zoom = Math.max(0.7, Math.min(2.0, requested));
+        content.getTransforms().setAll(new Scale(zoom, zoom, 0, 0));
+        label.setText(Math.round(zoom * 100) + "%");
+    }
+
+    private static void moveToNextScreen(Stage stage) {
+        List<Screen> screens = Screen.getScreens();
+        List<Screen> current = Screen.getScreensForRectangle(
+                stage.getX() + stage.getWidth() / 2, stage.getY() + stage.getHeight() / 2, 1, 1);
+        int index = current.isEmpty() ? 0 : screens.indexOf(current.getFirst());
+        Rectangle2D bounds = screens.get((index + 1) % screens.size()).getVisualBounds();
+        boolean fullScreen = stage.isFullScreen();
+        stage.setFullScreen(false);
+        double width = Math.min(stage.getWidth(), bounds.getWidth());
+        double height = Math.min(stage.getHeight(), bounds.getHeight());
+        stage.setWidth(width);
+        stage.setHeight(height);
+        stage.setX(bounds.getMinX() + (bounds.getWidth() - width) / 2);
+        stage.setY(bounds.getMinY() + (bounds.getHeight() - height) / 2);
+        stage.setFullScreen(fullScreen);
     }
 
     private void findJams(Path config) throws IOException {

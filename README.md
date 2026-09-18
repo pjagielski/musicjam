@@ -31,6 +31,8 @@ java src/main/java/pl/livecoding/musicjam/midi/ListMidiDevices.java
 `--presentation` opens Studio full screen with larger text; Esc leaves full-screen mode.
 `--screen N` chooses a monitor (numbered from 0) and can also be used without presentation mode.
 In an IntelliJ run configuration for `StudioLauncher`, put the same flags in **Program arguments**.
+You can also use **−**, **+**, **100%**, **Drugi ekran** and **Pełny ekran** in the Studio window,
+without changing any IntelliJ settings. The window scrolls when zoomed content no longer fits.
 
 To send the melody to a software or hardware MIDI synth, follow
 [External MIDI setup](MIDI_SETUP.md) for Windows, macOS and Linux.
