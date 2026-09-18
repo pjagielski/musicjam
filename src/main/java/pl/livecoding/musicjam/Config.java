@@ -7,7 +7,7 @@ import java.nio.file.Path;
 import java.util.Properties;
 
 public record Config(Path file) {
-    public static final String DEFAULT_PATH = "src/main/resources/jam.properties";
+    private static final String DEFAULT_PATH = "src/main/resources/jam.properties";
     private static final String USAGE = """
             Usage:
               --args="<file.mid>"
@@ -40,7 +40,7 @@ public record Config(Path file) {
         return new Config(file);
     }
 
-    public static Config fromFile(String path) throws IOException {
+    private static Config fromFile(String path) throws IOException {
         Properties properties = new Properties();
         try (InputStream in = Files.newInputStream(Path.of(path))) {
             properties.load(in);
