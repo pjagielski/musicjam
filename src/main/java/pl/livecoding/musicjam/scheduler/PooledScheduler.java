@@ -32,12 +32,11 @@ final class PooledScheduler implements EventScheduler {
 
     @Override
     public void submit(long offsetNanos, TimedTask task) {
-        // TODO(step-3): hand this event to the pool so it runs at startNanos + offsetNanos.
-        // TODO(step-3): pool.schedule takes a delay from now, not an instant, so work the target
-        // TODO(step-3): out first and convert once — and pass the target to task.runAt, because
-        // TODO(step-3): that is what lateness gets measured against. Add the returned future to
-        // TODO(step-3): tasks so awaitDone can report failures from noteOn and noteOff.
-        throw new UnsupportedOperationException("PooledScheduler.submit");
+        long targetNanos = startNanos + offsetNanos;
+        tasks.add(pool.schedule(
+                () -> task.runAt(targetNanos),
+                targetNanos - System.nanoTime(),
+                TimeUnit.NANOSECONDS));
     }
 
     @Override

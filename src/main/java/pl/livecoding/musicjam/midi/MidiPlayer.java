@@ -1,10 +1,12 @@
 package pl.livecoding.musicjam.midi;
 
 import pl.livecoding.musicjam.model.Note;
+import pl.livecoding.musicjam.model.Voice;
 import pl.livecoding.musicjam.scheduler.EventScheduler;
 import pl.livecoding.musicjam.scheduler.SchedulerKind;
 
 import javax.sound.midi.MidiUnavailableException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.LongSummaryStatistics;
 import java.util.concurrent.TimeUnit;
@@ -64,11 +66,19 @@ public final class MidiPlayer implements AutoCloseable {
         if (loops <= 0) {
             throw new IllegalArgumentException("Loops must be positive");
         }
-        // TODO(step-3): expand the notes into the events to fire: a note-on at note.beat() and a
-        // TODO(step-3): note-off at note.beat() + note.durationBeats(), for every loop, with loop
-        // TODO(step-3): number i starting at i * patternLengthBeats. Offsets are nanoseconds from
-        // TODO(step-3): the start of playback, so every beat goes through beatToNanos.
-        throw new UnsupportedOperationException("MidiPlayer.schedule");
+        var events = new ArrayList<ScheduledEvent>(Math.multiplyExact(notes.size(), 2 * loops));
+        for (int loop = 0; loop < loops; loop++) {
+            double loopStart = loop * patternLengthBeats;
+            for (Note note : notes) {
+                int pitch = ((Voice.Pitch) note.voice()).midiNote();
+                int velocity = Math.round(note.velocity() * 127.0f);
+                events.add(ScheduledEvent.noteOn(
+                        beatToNanos(loopStart + note.beat(), bpm), pitch, velocity));
+                events.add(ScheduledEvent.noteOff(
+                        beatToNanos(loopStart + note.beat() + note.durationBeats(), bpm), pitch));
+            }
+        }
+        return events;
     }
 
     static long beatToNanos(double beat, double bpm) {

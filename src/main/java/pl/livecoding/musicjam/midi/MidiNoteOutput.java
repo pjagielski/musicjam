@@ -28,10 +28,10 @@ final class MidiNoteOutput implements NoteOutput {
      */
     static MidiNoteOutput open(Synthesizer synthesizer, int channelNumber, int program)
             throws MidiUnavailableException {
-        // TODO(step-3): open the synthesizer, take the track's channel from it with channelOf, select
-        // TODO(step-3): the track's instrument on that channel with programChange, and wrap the
-        // TODO(step-3): synthesizer and the channel in a MidiNoteOutput.
-        throw new UnsupportedOperationException("MidiNoteOutput.open");
+        synthesizer.open();
+        MidiChannel channel = channelOf(synthesizer, channelNumber);
+        channel.programChange(program);
+        return new MidiNoteOutput(synthesizer, channel);
     }
 
     /**
@@ -64,14 +64,12 @@ final class MidiNoteOutput implements NoteOutput {
 
     @Override
     public synchronized void noteOn(int pitch, int velocity) {
-        // TODO(step-3): the channel plays the note
-        throw new UnsupportedOperationException("MidiNoteOutput.noteOn");
+        channel.noteOn(pitch, velocity);
     }
 
     @Override
     public synchronized void noteOff(int pitch) {
-        // TODO(step-3): the channel releases the note
-        throw new UnsupportedOperationException("MidiNoteOutput.noteOff");
+        channel.noteOff(pitch);
     }
 
     @Override
