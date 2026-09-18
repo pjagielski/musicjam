@@ -46,7 +46,9 @@ None of them hits the instant, because the operating system decides when a threa
 ## 4. An external synth
 
 The same player and the same schedulers; only where the notes go changes. The melody goes to
-Surge XT over a virtual MIDI cable. `Insomnia` joins the MIDI fixtures here, before its drums arrive in step 5. You write `ExternalMidiOutput`, a second `NoteOutput`: find the
+Surge XT over a virtual MIDI cable. `Insomnia` joins the MIDI fixtures here, before its drums arrive in step 5.
+First, `checkMidiSetup` sends one note directly to verify the device and channel. Then you write
+`ExternalMidiOutput`, a second `NoteOutput`: find the
 device by name, send note-on and note-off, and silence everything on close so that Ctrl+C leaves no
 note hanging (IntelliJ's Stop skips that when Gradle runs the program - let IntelliJ run it, or use `midiPanic`, which comes finished). Its tests use a stand-in `Receiver`, so they need neither the synth nor the cable.
 

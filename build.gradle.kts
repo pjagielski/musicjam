@@ -69,6 +69,13 @@ tasks.register<JavaExec>("listMidiDevices") {
     mainClass = "pl.livecoding.musicjam.step3.ListMidiDevices"
 }
 
+tasks.register<JavaExec>("checkMidiSetup") {
+    group = "workshop"
+    description = "Step 4: send a test note directly to the configured MIDI output and channel."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "pl.livecoding.musicjam.step4.CheckMidiSetup"
+}
+
 tasks.register<JavaExec>("playOnSynth") {
     group = "workshop"
     description = "Step 4: play the same notes on an external synth, through a virtual MIDI cable."

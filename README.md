@@ -269,8 +269,19 @@ loops=4
 midiDevice=loopMIDI
 ```
 
+Before writing `ExternalMidiOutput`, check the cable, synth and channel with a single C4. This
+program sends MIDI directly, so it works while the step 4 methods are still TODOs:
+
 ```bash
-./gradlew playOnSynth --args="--config src/main/resources/jam-dre.properties"
+./gradlew checkMidiSetup --args="--config src/main/resources/jam-dre.properties --midiChannel 1"
+```
+
+It prints the selected device and channel, then plays for 600 ms. If the synth is silent, check its
+MIDI input and audio output; try `--midiDevice Gervill` to check Java's own synth. Use the same
+`--midiDevice` and `--midiChannel` when running `playOnSynth`.
+
+```bash
+./gradlew playOnSynth --args="--config src/main/resources/jam-dre.properties --midiChannel 1"
 ```
 
 `Insomnia` joins as another melody for the external synth. Try it here; step 5 adds its drums:
