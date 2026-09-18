@@ -4,24 +4,30 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.OptionalInt;
 import java.util.Properties;
 
-public record Config(Path file) {
+public record Config(Path file, OptionalInt track) {
     private static final String DEFAULT_PATH = "src/main/resources/jam.properties";
     private static final String USAGE = """
             Usage:
-              --args="<file.mid>"
-              --args="--config <file.properties>"
+              --args="<file.mid> [--track <n>]"
+              --args="--config <file.properties> [--track <n>]"
+              --args="--overview"                 (list the tracks instead of one track's notes)
               no arguments                        (reads %s)"""
             .formatted(DEFAULT_PATH);
 
     public static Config fromArgs(String[] args) throws IOException {
         Path file = null;
+        OptionalInt track = OptionalInt.empty();
+        boolean overview = false;
         Config fromFile = null;
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "--config" -> fromFile = fromFile(value(args, ++i, "--config"));
+                case "--track" -> track = OptionalInt.of(Integer.parseInt(value(args, ++i, "--track")));
+                case "--overview" -> overview = true;
                 default -> {
                     if (args[i].startsWith("--")) {
                         throw new IllegalArgumentException("Unknown option " + args[i] + "\n" + USAGE);
@@ -37,7 +43,10 @@ public record Config(Path file) {
         if (file == null) {
             file = fromFile.file();
         }
-        return new Config(file);
+        if (track.isEmpty() && fromFile != null) {
+            track = fromFile.track();
+        }
+        return new Config(file, overview ? OptionalInt.empty() : track);
     }
 
     private static Config fromFile(String path) throws IOException {
@@ -49,7 +58,10 @@ public record Config(Path file) {
         if (file == null) {
             throw new IllegalArgumentException("Config file " + path + " is missing \"file\"");
         }
-        return new Config(Path.of(file));
+        String track = properties.getProperty("track");
+        return new Config(
+                Path.of(file),
+                track == null ? OptionalInt.empty() : OptionalInt.of(Integer.parseInt(track.trim())));
     }
 
     private static String value(String[] args, int index, String option) {
