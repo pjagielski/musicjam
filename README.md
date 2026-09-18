@@ -239,7 +239,9 @@ You need two programs outside Java:
   audio/MIDI settings, pick the virtual cable below as the MIDI input.
 - **a virtual MIDI cable**, so one program can send MIDI to another: loopMIDI on Windows (start it
   and add a port), the IAC Driver on macOS (Audio MIDI Setup, MIDI Studio, IAC Driver, "Device is
-  online").
+  online"), or `snd-virmidi` on Linux.
+
+See [External MIDI setup](MIDI_SETUP.md) for detailed instructions on all three systems.
 
 Then find the name Java sees it under:
 
