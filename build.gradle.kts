@@ -15,7 +15,22 @@ java {
     }
 }
 
+// JavaFX is not part of the JDK. Its artifacts are built per platform, and Gradle does not resolve
+// the Maven profiles openjfx picks one with, so the platform classifier is spelled out here.
+val javafxVersion = "21.0.12"
+val javafxPlatform = System.getProperty("os.name").lowercase().let { os ->
+    val arm = System.getProperty("os.arch").contains("aarch64")
+    when {
+        os.contains("win") -> "win"
+        os.contains("mac") -> if (arm) "mac-aarch64" else "mac"
+        else -> if (arm) "linux-aarch64" else "linux"
+    }
+}
+
 dependencies {
+    listOf("base", "graphics", "controls").forEach {
+        implementation("org.openjfx:javafx-$it:$javafxVersion:$javafxPlatform")
+    }
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
@@ -88,4 +103,34 @@ tasks.register<JavaExec>("midiPanic") {
     description = "Step 4: silence the config's MIDI device on every channel, after a run killed with a note hanging."
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass = "pl.livecoding.musicjam.step4.MidiPanic"
+}
+
+tasks.register<JavaExec>("playBeat") {
+    group = "workshop"
+    description = "Step 5: render a drum pattern ourselves, every hit on its exact sample frame."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "pl.livecoding.musicjam.step5.PlayBeat"
+}
+
+tasks.register<JavaExec>("playJam") {
+    group = "workshop"
+    description = "Step 5: our drums and the MIDI melody together - two clocks, kept together loop by loop."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "pl.livecoding.musicjam.step5.PlayJam"
+}
+
+tasks.register<JavaExec>("showSamples") {
+    group = "workshop"
+    description = "Step 5: a window with every drum from its WAV file and from its formula, on one time scale."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "pl.livecoding.musicjam.step5.ShowSamples"
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
+
+tasks.register<JavaExec>("calibrateLatency") {
+    group = "workshop"
+    description = "Step 5: a window to find midiLatency by ear - the kick and a synth note on every beat, made one."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "pl.livecoding.musicjam.step5.CalibrateLatency"
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 }

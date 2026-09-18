@@ -8,9 +8,9 @@ import pl.livecoding.musicjam.midi.ExternalMidiOutput;
  * every channel - when a run stopped with IntelliJ's Stop left a note hanging: Stop kills the JVM
  * without running the shutdown hook that would have done this.
  */
-public class MidiPanic {
+class MidiPanic {
 
-    public static void main(String[] args) throws Exception {
+    static void main(String[] args) throws Exception {
         Config config = Config.fromArgs(args);
         String device = config.midiDevice().orElseThrow(() -> new IllegalArgumentException(
                 "No MIDI device to silence: set midiDevice= in the properties file or pass --midiDevice <name>"));

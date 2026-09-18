@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.LongSummaryStatistics;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 
 public final class MidiPlayer implements AutoCloseable {
     static final long DEFAULT_STARTUP_DELAY_NANOS = TimeUnit.MILLISECONDS.toNanos(250);
@@ -67,6 +68,54 @@ public final class MidiPlayer implements AutoCloseable {
         }
     }
 
+    /**
+     * Plays the notes loop after loop in time with audio that plays alongside them: every loop starts
+     * from how much of that audio has been heard ({@code heardNanos}), {@code latencyNanos} early for
+     * a synth that sounds a note only after its own buffer. A stall in the audio is caught up with at
+     * the next loop. Each loop goes through a scheduler of its own, so a note still sounding when its
+     * loop ends is released there.
+     */
+    public void playLoop(List<Note> notes, double bpm, double patternLengthBeats, int loops,
+                         LongSupplier heardNanos, long latencyNanos) throws InterruptedException {
+        if (closed) {
+            throw new IllegalStateException("Player is closed");
+        }
+        if (loops <= 0) {
+            throw new IllegalArgumentException("Loops must be positive");
+        }
+        long loopNanos = beatToNanos(patternLengthBeats, bpm);
+        List<ScheduledEvent> oneLoop = schedule(notes, bpm, patternLengthBeats, 1).stream()
+                .map(event -> event.offsetNanos() > loopNanos ? event.at(loopNanos) : event)
+                .toList();
+
+        // TODO(step-5): play oneLoop loops times, each through playOneLoop. Before every loop, ask
+        // TODO(step-5): loopStartNanos where it starts: with the clock as it is now (System.nanoTime()),
+        // TODO(step-5): with how much of the audio has been heard (heardNanos), with the loop's number,
+        // TODO(step-5): its length and the latency.
+        throw new UnsupportedOperationException("MidiPlayer.playLoop");
+    }
+
+    /** One loop's events through a scheduler of its own, from startNanos on the System.nanoTime() clock. */
+    private void playOneLoop(List<ScheduledEvent> oneLoop, long startNanos) throws InterruptedException {
+        try (EventScheduler dispatcher = scheduler.newScheduler()) {
+            dispatcher.begin(startNanos - System.nanoTime());
+            for (ScheduledEvent event : oneLoop) {
+                dispatcher.submit(event.offsetNanos(), targetNanos -> event.fire(output));
+            }
+            dispatcher.awaitDone();
+        }
+    }
+
+    /**
+     * When loop number {@code loop} starts, on the {@code System.nanoTime()} clock: at
+     * {@code nowNanos}, {@code heardNanos} of the audio have been heard; every loop before this one
+     * lasted {@code loopNanos}; and the notes go out {@code latencyNanos} early.
+     */
+    static long loopStartNanos(long nowNanos, long heardNanos, int loop, long loopNanos, long latencyNanos) {
+        long audioStartNanos = nowNanos - heardNanos;
+        return audioStartNanos + loop * loopNanos - latencyNanos;
+    }
+
     static List<ScheduledEvent> schedule(
             List<Note> notes, double bpm, double patternLengthBeats, int loops) {
         if (loops <= 0) {
@@ -112,6 +161,10 @@ public final class MidiPlayer implements AutoCloseable {
 
         static ScheduledEvent noteOff(long offsetNanos, int pitch) {
             return new ScheduledEvent(offsetNanos, Type.NOTE_OFF, pitch, 0);
+        }
+
+        ScheduledEvent at(long offsetNanos) {
+            return new ScheduledEvent(offsetNanos, type, pitch, velocity);
         }
 
         void fire(NoteOutput output) {

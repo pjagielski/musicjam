@@ -29,7 +29,7 @@ file=src/main/resources/song_still_dre.mid
 `Config` is what turns those arguments and that file into a path; every later step reuses it and
 adds a field.
 
-Steps 1–3 use four MIDI fixtures: `song_shape.mid`, `song_child.mid`, `song_giorgioby.mid`, `song_still_dre.mid`. Step 4 adds `song_insomnia.mid`.
+`src/main/resources/` has five MIDI fixtures to try: `song_shape.mid`, `song_child.mid`, `song_giorgioby.mid`, `song_still_dre.mid`, `song_insomnia.mid`.
 
 Everything the rest of this workshop builds exists to answer one question: what is `Sequencer` actually doing, and can we do better?
 
@@ -67,6 +67,11 @@ Track 2: Pizz Strings (ch=1, prog=45), 2400 notes
 
 The riff is three notes struck together, and the top one is consistently 0.063 beat late — the
 file is played in, not quantized. Nothing here rounds that away.
+
+`song_insomnia.mid` is the opposite case. Its notes sit on a 130 BPM grid, but the file it was
+made from declared 125, so its two-bar riff lasted 7.69 beats. The fixture is that file with the
+tempo event set to 130 and every tick stretched to match: each note sounds at the same second as
+before, and the riff now fills two bars. The tempo in a file is only what the file claims.
 
 ```properties
 file=src/main/resources/song_still_dre.mid
@@ -153,7 +158,7 @@ scheduler=platform
 ```
 
 Every key can also be passed on the command line (`--track`, `--fromBar`, `--bars`, `--loops`,
-`--scheduler`), and `src/main/resources/` has one config per fixture used so far:
+`--scheduler`), and `src/main/resources/` has one config per fixture:
 
 | config | file | track |
 | --- | --- | --- |
@@ -161,6 +166,7 @@ Every key can also be passed on the command line (`--track`, `--fromBar`, `--bar
 | `jam-dre.properties` | `song_still_dre.mid` | 2 Pizz Strings |
 | `jam-shape.properties` | `song_shape.mid` | 1 8-Bit Triangle |
 | `jam-child.properties` | `song_child.mid` | 4 Chords |
+| `jam-insomnia.properties` | `song_insomnia.mid` | 0 Main Synth |
 
 ### The part you write
 
@@ -286,12 +292,6 @@ MIDI input and audio output; try `--midiDevice Gervill` to check Java's own synt
 ./gradlew playOnSynth --args="--config src/main/resources/jam-dre.properties --midiChannel 1"
 ```
 
-`Insomnia` joins as another melody for the external synth. Try it here; step 5 adds its drums:
-
-```bash
-./gradlew playOnSynth --args="--config src/main/resources/jam-insomnia.properties --midiDevice Gervill"
-```
-
 No cable, or no synth? `--midiDevice Gervill` sends the same messages down the same code into Java's
 own synthesizer, which is a MIDI device like any other.
 
@@ -329,3 +329,130 @@ checks the part that came finished.
 Run it with `--scheduler all` again. The `TimingReport` shows the same numbers as with Gervill -
 and yet Surge sounds each note only after its own audio buffer. Nothing we measure can see that,
 because the sound is made in another program, on another clock. Step 5 makes the sound itself.
+
+## Step 5: make the sound yourself
+
+Every strategy in step 3 woke a thread up and hoped; step 4 handed the notes to a synth with a
+clock of its own. This step stops waiting for the moment and computes where the sound goes instead
+- first for the drums, then for the drums and step 4's melody together.
+
+### Drums, to the sample
+
+```bash
+./gradlew playBeat --args="--config src/main/resources/jam-dre.properties"
+```
+
+`drums=` in a config names one of `DrumPatterns` - `shape`, `worry`, `dre`, `giorgio` or `insomnia`,
+one bar each, transcribed from its fixture (`giorgio`'s and `insomnia`'s files have no drums, so their
+patterns are invented) - and
+the tempo comes from the config's MIDI file, so the drums will fit its melody. Every drum is a file
+in `samples/` - `bd.wav`, `sd.wav`, `hh.wav`, `oh.wav` and `cp.wav` - and a drum whose file is
+missing is computed by a formula instead.
+
+The renderer cannot tell the two kinds apart: a sample from a file and a sample from a formula are
+both an array of floats. The files are not even alike - `bd.wav` is 192 kHz stereo, `sd.wav`
+44.1 kHz stereo, `hh.wav` 44.1 kHz mono in 24 bits, `oh.wav` and `cp.wav` 44.1 kHz stereo in 24
+bits - and `WavSampleLoader` turns each of them into 44.1 kHz mono floats. Every drum both ways, on one time scale:
+
+```bash
+./gradlew showSamples
+```
+
+A window opens with every drum twice, on the same 450 ms: the sample from its file in blue, the one
+from its formula in orange, each with its length, its loudest value and a play button - and for a
+file, how the file itself stores the sound, before it becomes 44.1 kHz mono. Where the two differ - the
+length, the decay, the loudness - shows at a glance, and so does what they share: a column of
+numbers the renderer does not care where it came from. JavaFX comes in with this window; step 6
+builds on it.
+
+`AudioEngine` hands the sound card blocks of 512 frames, about 12 ms. A hit does not wait for its
+moment: its moment is a frame number, worked out before anything plays. At 120 BPM a sixteenth note
+is 5512.5 frames, and counting every position from the start of playback, not from the hit before,
+keeps the rounding from adding up.
+
+### The part you write
+
+In the order the tests take it:
+
+- `Transport.frameAtBeat`: the frame a beat starts on (`TransportTest`).
+- `PatternCompiler.compile`: a bar of `"X...x...o..."` into the same `Note`s a MIDI file gives
+  (`PatternCompilerTest`). What one character means comes finished in `parse`: `X`, `x` and `o` are
+  hits of different loudness, and a dot, a dash or a space is a rest, `Optional.empty()`.
+- `AudioEngine.schedule`, the heart of the step: the schedule you wrote in step 3, counted in frames
+  instead of nanoseconds - a hit for every note in every loop, on the frame of its beat counted from
+  the start (`AudioEngineScheduleTest`).
+
+Nobody waits for those frames. The renderer comes finished: it cuts each block at every hit inside
+it, so a hit starts on its own frame rather than on the edge of the block. `AudioEngineTest` renders
+into memory at 1000 frames a second with blocks of 128 frames, so the frames are easy to count and
+no sound card is involved, and it turns green once your schedule is right. The tests of the parts
+that come finished are green from the start.
+
+Then hear what the cutting is for. In the renderer's `renderNext`, start every hit on the block's
+first frame: where it takes `long eventFrame = hits[nextHit].frame();`, write
+`long eventFrame = position;`, and play it with big blocks:
+
+```bash
+./gradlew playBeat --args="--config src/main/resources/jam-dre.properties --block 4096"
+```
+
+A block of 4096 frames lasts 93 ms, and the groove falls apart. Put the line back: nothing in this
+renderer waits for a moment any more. The only deadline left is handing the sound card its next
+block before the one it has runs out.
+
+### Two clocks
+
+```bash
+./gradlew playJam --args="--config src/main/resources/jam-dre.properties"
+```
+
+The drums play through `AudioEngine`, the melody of step 4 through `MidiPlayer`: on the device
+`midiDevice=` names, or on Gervill with `--midiDevice Gervill`. That is two clocks - the drums follow
+the sound card, the player follows `System.nanoTime()`. Make the drums stall the way a garbage
+collection pause would, three seconds in, and listen to the melody after that:
+
+```bash
+./gradlew playJam --args="--config src/main/resources/jam-dre.properties --stall 300"
+```
+
+`MidiPlayer` plays the melody loop by loop, through the schedulers of step 3. `loopStartNanos`
+comes finished: when the drums started, counted back from now by how much of them has been heard
+(`AudioEngine.heardNanos`), and when a loop starts after that - early by `midiLatency` milliseconds
+(50 unless the config says otherwise), the time the synth takes to sound a note. What is left to write
+is where it plugs in: the loop in `playLoop` that asks it, before every loop, where that loop starts,
+and hands the loop to `playOneLoop`. `MidiPlayerLoopTest` checks the arithmetic with plain numbers -
+green from the start - and then plays three loops against "audio" that falls 100 ms behind.
+
+50 ms is only where `midiLatency` starts: it is how much later the synth's path to the speaker is
+than the drums' - a virtual cable, the synth's own buffer, the operating system's audio - so every
+machine and every synth has its own. Surge XT over loopMIDI took 35-50 ms, on a Mac 75; Gervill
+over 200, because it buffers 120 ms of audio and corrects its own jitter on top. Find yours by ear:
+
+```bash
+./gradlew calibrateLatency
+```
+
+A window plays the kick through `AudioEngine` and a note on the synth, both on every beat, on the
+device and the track the config names. Move the slider until the two sound as one hit, and copy the
+`midiLatency=` line into the config. It comes finished and needs none of the exercises, so do it
+first.
+
+Now a stall is caught up with at the next loop. Two clocks are not set once; they are compared, again
+and again - or there is only one.
+
+### One clock
+
+Keep the melody off MIDI altogether:
+
+```bash
+./gradlew playJam --args="--config src/main/resources/jam-insomnia.properties --synth pluck"
+```
+
+`synth=` in a config, or `--synth`, names one of `Synths` - `anthem`, `pluck` or `pad`, patches
+ported from a synth written in C++. `AudioEngine` renders every melody note through it, for as long
+as the note lasts, and puts the result on the note's frame exactly as it puts a drum sample there:
+past that point the renderer cannot tell a note from a drum. Nothing is sent, so there is no
+`midiLatency` to find and no second clock to compare with - add `--stall 300`, and the drums and the
+melody pause together. It comes finished; `AudioEngineTest` checks a melody note against a synth that
+holds one level for exactly as long as it is asked to. One clock for everything is where step 6
+starts.

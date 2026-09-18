@@ -1,6 +1,6 @@
 package pl.livecoding.musicjam.model;
 
-public sealed interface Voice permits Voice.Pitch {
+public sealed interface Voice permits Voice.Pitch, Drum {
 
     record Pitch(int midiNote) implements Voice {
         public Pitch {

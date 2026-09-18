@@ -12,18 +12,25 @@ import java.util.Properties;
 
 public record Config(
         Path file, OptionalInt track, int fromBar, int bars, int loops, String scheduler,
-        Optional<String> midiDevice, OptionalInt midiChannel) {
+        Optional<String> midiDevice, OptionalInt midiChannel, String drums, int midiLatency, int block, int stall,
+        Optional<String> synth) {
     private static final String DEFAULT_PATH = "src/main/resources/jam.properties";
     private static final int DEFAULT_FROM_BAR = 0;
     private static final int DEFAULT_BARS = 2;
     private static final int DEFAULT_LOOPS = 4;
     private static final String DEFAULT_SCHEDULER = "platform";
+    private static final String DEFAULT_DRUMS = "shape";
+    private static final int DEFAULT_MIDI_LATENCY = 50;
+    private static final int DEFAULT_BLOCK = 512;
     private static final String USAGE = """
             Usage:
               --args="<file.mid> [--track <n>] [--fromBar <n>] [--bars <n>] [--loops <n>]"
               --args="--scheduler platform|virtual|pool|scoped|all"
               --args="--midiDevice <part of its name>"  (play on a device listMidiDevices shows)
               --args="--midiChannel <1-16>"       (send on this channel instead of the track's own)
+              --args="--drums shape|worry|dre|giorgio|insomnia [--block <frames>]"
+              --args="--midiLatency <ms> [--stall <ms>]"  (the synth's lead, a pause in the drums)
+              --args="--synth anthem|pluck|pad"   (playJam renders the melody with the drums, no MIDI)
               --args="--config <file.properties> [--track <n>]"
               --args="--overview"                 (list the tracks instead of one track's notes)
               no arguments                        (reads %s)"""
@@ -53,6 +60,11 @@ public record Config(
         String scheduler = null;
         String midiDevice = null;
         OptionalInt midiChannel = OptionalInt.empty();
+        String drums = null;
+        OptionalInt midiLatency = OptionalInt.empty();
+        OptionalInt block = OptionalInt.empty();
+        OptionalInt stall = OptionalInt.empty();
+        String synth = null;
         boolean overview = false;
         Config fromFile = null;
 
@@ -66,6 +78,11 @@ public record Config(
                 case "--scheduler" -> scheduler = value(args, ++i, "--scheduler");
                 case "--midiDevice" -> midiDevice = value(args, ++i, "--midiDevice");
                 case "--midiChannel" -> midiChannel = OptionalInt.of(number(args, ++i, "--midiChannel"));
+                case "--drums" -> drums = value(args, ++i, "--drums");
+                case "--midiLatency" -> midiLatency = OptionalInt.of(number(args, ++i, "--midiLatency"));
+                case "--block" -> block = OptionalInt.of(number(args, ++i, "--block"));
+                case "--stall" -> stall = OptionalInt.of(number(args, ++i, "--stall"));
+                case "--synth" -> synth = value(args, ++i, "--synth");
                 case "--overview" -> overview = true;
                 default -> {
                     if (args[i].startsWith("--")) {
@@ -104,6 +121,21 @@ public record Config(
             if (midiChannel.isEmpty()) {
                 midiChannel = fromFile.midiChannel();
             }
+            if (drums == null) {
+                drums = fromFile.drums();
+            }
+            if (midiLatency.isEmpty()) {
+                midiLatency = OptionalInt.of(fromFile.midiLatency());
+            }
+            if (block.isEmpty()) {
+                block = OptionalInt.of(fromFile.block());
+            }
+            if (stall.isEmpty()) {
+                stall = OptionalInt.of(fromFile.stall());
+            }
+            if (synth == null) {
+                synth = fromFile.synth().orElse(null);
+            }
         }
 
         return new Config(
@@ -114,7 +146,12 @@ public record Config(
                 loops.orElse(DEFAULT_LOOPS),
                 scheduler == null ? DEFAULT_SCHEDULER : scheduler,
                 Optional.ofNullable(midiDevice),
-                midiChannel);
+                midiChannel,
+                drums == null ? DEFAULT_DRUMS : drums,
+                midiLatency.orElse(DEFAULT_MIDI_LATENCY),
+                block.orElse(DEFAULT_BLOCK),
+                stall.orElse(0),
+                Optional.ofNullable(synth));
     }
 
     private static Config fromFile(String path) throws IOException {
@@ -135,7 +172,12 @@ public record Config(
                 intProperty(properties, "loops", DEFAULT_LOOPS),
                 properties.getProperty("scheduler", DEFAULT_SCHEDULER).trim(),
                 Optional.ofNullable(properties.getProperty("midiDevice")).map(String::trim),
-                optionalIntProperty(properties, "midiChannel"));
+                optionalIntProperty(properties, "midiChannel"),
+                properties.getProperty("drums", DEFAULT_DRUMS).trim(),
+                intProperty(properties, "midiLatency", DEFAULT_MIDI_LATENCY),
+                intProperty(properties, "block", DEFAULT_BLOCK),
+                intProperty(properties, "stall", 0),
+                Optional.ofNullable(properties.getProperty("synth")).map(String::trim));
     }
 
     private static int intProperty(Properties properties, String key, int fallback) {

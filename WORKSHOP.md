@@ -67,7 +67,10 @@ block instead, with a 4096-frame block, makes the error audible.
 Then the drums play with step 4's melody, and the melody is late: the drums follow the sound card,
 `MidiPlayer` follows `System.nanoTime()`, and after a stall they stay apart. A few lines fix it: before
 every loop, `playLoop` asks where that loop starts - from how much of the drums has been heard
-(`AudioEngine.heardNanos`), early by the synth's latency (`midiLatency`). Two clocks are not set once; they are compared, again and again.
+(`AudioEngine.heardNanos`), early by the synth's latency (`midiLatency`, found by ear with `calibrateLatency`). Two clocks are not set once; they are compared, again and again.
+
+Or there is no second clock: with `synth=pluck` the engine renders the melody through a synth too,
+note by note on the drums' frames - finished code to play with, and the idea step 6 is built on.
 
 ## 6. Change it while it plays
 
