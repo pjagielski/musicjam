@@ -68,3 +68,17 @@ tasks.register<JavaExec>("listMidiDevices") {
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass = "pl.livecoding.musicjam.step3.ListMidiDevices"
 }
+
+tasks.register<JavaExec>("playOnSynth") {
+    group = "workshop"
+    description = "Step 4: play the same notes on an external synth, through a virtual MIDI cable."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "pl.livecoding.musicjam.step4.PlayOnSynth"
+}
+
+tasks.register<JavaExec>("midiPanic") {
+    group = "workshop"
+    description = "Step 4: silence the config's MIDI device on every channel, after a run killed with a note hanging."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "pl.livecoding.musicjam.step4.MidiPanic"
+}

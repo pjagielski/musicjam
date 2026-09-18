@@ -31,6 +31,12 @@ public final class MidiPlayer implements AutoCloseable {
                 MidiNoteOutput.open(channel, program), scheduler, DEFAULT_STARTUP_DELAY_NANOS);
     }
 
+    public static MidiPlayer openDevice(String deviceNameContains, int channel, int program,
+                                        SchedulerKind scheduler) throws MidiUnavailableException {
+        return new MidiPlayer(ExternalMidiOutput.open(deviceNameContains, channel, program),
+                scheduler, DEFAULT_STARTUP_DELAY_NANOS);
+    }
+
     static MidiPlayer forOutput(NoteOutput output, SchedulerKind scheduler, long startupDelayNanos) {
         return new MidiPlayer(output, scheduler, startupDelayNanos);
     }

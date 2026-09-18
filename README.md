@@ -29,7 +29,7 @@ file=src/main/resources/song_still_dre.mid
 `Config` is what turns those arguments and that file into a path; every later step reuses it and
 adds a field.
 
-`src/main/resources/` has four MIDI fixtures to try: `song_shape.mid`, `song_child.mid`, `song_giorgioby.mid`, `song_still_dre.mid`.
+Steps 1–3 use four MIDI fixtures: `song_shape.mid`, `song_child.mid`, `song_giorgioby.mid`, `song_still_dre.mid`. Step 4 adds `song_insomnia.mid`.
 
 Everything the rest of this workshop builds exists to answer one question: what is `Sequencer` actually doing, and can we do better?
 
@@ -153,7 +153,7 @@ scheduler=platform
 ```
 
 Every key can also be passed on the command line (`--track`, `--fromBar`, `--bars`, `--loops`,
-`--scheduler`), and `src/main/resources/` has one config per fixture:
+`--scheduler`), and `src/main/resources/` has one config per fixture used so far:
 
 | config | file | track |
 | --- | --- | --- |
@@ -226,3 +226,93 @@ Gradle will fetch it if you do not have it.
 None of the four puts an event exactly where it belongs, because `Thread.sleep` returns when the
 operating system gets round to it. Step 5 stops asking: it places every note at its exact sample
 frame before playback starts, and the only deadline left is keeping the audio device fed.
+
+## Step 4: play it on a real synth
+
+Gervill is a General MIDI sound set from the nineties. The melody deserves a real synth - and the
+player and the four schedulers from step 3 stay exactly as they are. The only thing this step
+changes is where the notes go.
+
+You need two programs outside Java:
+
+- **a synth**: [Surge XT](https://surge-synthesizer.github.io/) is free and runs standalone. In its
+  audio/MIDI settings, pick the virtual cable below as the MIDI input.
+- **a virtual MIDI cable**, so one program can send MIDI to another: loopMIDI on Windows (start it
+  and add a port), the IAC Driver on macOS (Audio MIDI Setup, MIDI Studio, IAC Driver, "Device is
+  online").
+
+Then find the name Java sees it under:
+
+```bash
+./gradlew listMidiDevices
+```
+
+```text
+name                             description                      takes messages
+Gervill                          Software MIDI Synthesizer        yes
+Real Time Sequencer              Software sequencer               yes
+Microsoft MIDI Mapper            Windows MIDI_MAPPER              yes
+Microsoft GS Wavetable Synth     Internal software synthesizer    yes
+loopMIDI Port                    External MIDI Port               yes
+loopMIDI Port                    No details available             no
+```
+
+The cable shows up twice under one name: the end you send into, and the end the synth reads from.
+Only the first takes messages. The config names the device by any part of that name, ignoring case:
+
+```properties
+file=src/main/resources/song_still_dre.mid
+track=2
+fromBar=9
+bars=2
+loops=4
+midiDevice=loopMIDI
+```
+
+```bash
+./gradlew playOnSynth --args="--config src/main/resources/jam-dre.properties"
+```
+
+`Insomnia` joins as another melody for the external synth. Try it here; step 5 adds its drums:
+
+```bash
+./gradlew playOnSynth --args="--config src/main/resources/jam-insomnia.properties --midiDevice Gervill"
+```
+
+No cable, or no synth? `--midiDevice Gervill` sends the same messages down the same code into Java's
+own synthesizer, which is a MIDI device like any other.
+
+The notes go out on the channel the track was written on, and a hardware synth listens on one channel
+only. `midiChannel=` (or `--midiChannel`) sends them on another one. It counts from 1 to 16, the way a
+synth does, while `javax.sound.midi` counts from 0 - `midiChannel=2` is channel 1 in `ShortMessage` -
+and a synth's own display may count either way: a KORG NTS-1 set to "1" played on `midiChannel=2`.
+
+Stopping the program ends every note: `close`, and a shutdown hook for Ctrl+C, shut out any note-on
+still on its way from the scheduler's threads, then send All Sound Off and a note-off for every
+pitch. IntelliJ's Stop is different when Gradle runs the program - it kills the JVM without running
+shutdown hooks, and a note can keep ringing. Let IntelliJ run it instead (Settings, Build, Execution,
+Deployment, Build Tools, Gradle: "Build and run using: IntelliJ IDEA"), and Stop runs them. Either way
+the next run silences the device before it plays, and so does
+
+```bash
+./gradlew midiPanic
+```
+
+### The part you write
+
+`ExternalMidiOutput` is a second `NoteOutput`, beside step 3's `MidiNoteOutput`. Opening the device
+and closing it come finished; you write:
+
+- `find`: the first device whose name contains the one from the config and which takes messages.
+- `noteOn`, `noteOff` and `send`: a `ShortMessage` on the output's channel, handed to the device's
+  `Receiver` with a timestamp of -1, which means "now".
+- `allSoundOff`: control change 120. It runs on `close` and on a shutdown hook, so Ctrl+C does not
+  leave a note hanging on a synth that keeps running after this program has gone.
+
+`ExternalMidiOutputTest` gives it a stand-in device whose receiver only remembers what it was sent,
+so the tests need neither Surge nor the cable. One of its seven tests is green from the start: it
+checks the part that came finished.
+
+Run it with `--scheduler all` again. The `TimingReport` shows the same numbers as with Gervill -
+and yet Surge sounds each note only after its own audio buffer. Nothing we measure can see that,
+because the sound is made in another program, on another clock. Step 5 makes the sound itself.

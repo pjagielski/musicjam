@@ -46,9 +46,9 @@ None of them hits the instant, because the operating system decides when a threa
 ## 4. An external synth
 
 The same player and the same schedulers; only where the notes go changes. The melody goes to
-Surge XT over a virtual MIDI cable. You write `ExternalMidiOutput`, a second `NoteOutput`: find the
+Surge XT over a virtual MIDI cable. `Insomnia` joins the MIDI fixtures here, before its drums arrive in step 5. You write `ExternalMidiOutput`, a second `NoteOutput`: find the
 device by name, send note-on and note-off, and silence everything on close so that Ctrl+C leaves no
-note hanging. Its tests use a stand-in `Receiver`, so they need neither the synth nor the cable.
+note hanging (IntelliJ's Stop skips that when Gradle runs the program - let IntelliJ run it, or use `midiPanic`, which comes finished). Its tests use a stand-in `Receiver`, so they need neither the synth nor the cable.
 
 The report shows the same numbers as with Gervill, although Surge sounds a note only after its own
 buffer - which our measurement cannot see. Anyone whose setup fails stays on Gervill and loses
