@@ -26,6 +26,9 @@ java src/main/java/pl/livecoding/musicjam/midi/ListMidiDevices.java
 ./gradlew studio --args="--config src/main/resources/jam.properties"
 ```
 
+To send the melody to a software or hardware MIDI synth, follow
+[External MIDI setup](MIDI_SETUP.md) for Windows, macOS and Linux.
+
 `BeatApp` does exactly one thing: play a MIDI phrase and a drum pattern together as a single `Song`. With no arguments it plays `src/main/resources/jam.properties`; `--help` prints the full usage and exits without touching an audio device.
 
 ## Write a beat
