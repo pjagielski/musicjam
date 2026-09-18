@@ -20,12 +20,25 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
+// StructuredTaskScope is still a preview API in Java 25. The toolchain above pins the JDK, which
+// matters more than usual here: classes compiled with --enable-preview only run on that exact
+// version.
+tasks.withType<JavaCompile>().configureEach {
+    options.compilerArgs.add("--enable-preview")
+}
+
+tasks.withType<JavaExec>().configureEach {
+    jvmArgs("--enable-preview")
+}
+
 application {
     mainClass = "pl.livecoding.musicjam.step2.InspectMidi"
+    applicationDefaultJvmArgs = listOf("--enable-preview")
 }
 
 tasks.test {
     useJUnitPlatform()
+    jvmArgs("--enable-preview")
 }
 
 tasks.register<JavaExec>("sequencerDemo") {
@@ -40,4 +53,18 @@ tasks.register<JavaExec>("inspectMidi") {
     description = "Step 2: read the same file ourselves and print its tracks and notes."
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass = "pl.livecoding.musicjam.step2.InspectMidi"
+}
+
+tasks.register<JavaExec>("playNotes") {
+    group = "workshop"
+    description = "Step 3: schedule the notes we parsed ourselves, one thread per event."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "pl.livecoding.musicjam.step3.PlayNotes"
+}
+
+tasks.register<JavaExec>("listMidiDevices") {
+    group = "workshop"
+    description = "Step 3: list the MIDI devices Java can see - Gervill among them."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "pl.livecoding.musicjam.step3.ListMidiDevices"
 }

@@ -43,7 +43,7 @@ pitch range, first bar — and then prints every note of the configured one, in 
 ticks:
 
 ```bash
-./gradlew inspectMidi
+./gradlew inspectMidi --args="--config src/main/resources/jam-dre.properties"
 ```
 
 ```text
@@ -72,6 +72,9 @@ file is played in, not quantized. Nothing here rounds that away.
 file=src/main/resources/song_still_dre.mid
 track=2
 ```
+
+A bare `./gradlew inspectMidi` reads `jam.properties`, which points at a different fixture;
+`src/main/resources/` has one config per file, listed under step 3.
 
 Both can be overridden from the command line, which is how you try another track without editing
 the file:
@@ -108,3 +111,118 @@ device.
 The result is a `TrackData` per track, each holding a `List<Note>` — `beat`, `voice`,
 `durationBeats`, `velocity` — which is the shape every later step works on. `Sequencer` can only play a `Sequence` it was handed; it has no way to
 play this. That is step 3.
+
+## Step 3: write your own player
+
+`Sequencer` plays a `Sequence` it was handed. It has no way to play the `List<Note>` step 2
+produced — so schedule them yourself:
+
+```bash
+./gradlew playNotes
+```
+
+Playback goes through the same built-in software synthesizer `Sequencer` used in step 1
+(`MidiNoteOutput` wraps the same `Synthesizer`), so the only thing that changed is who does the
+scheduling.
+
+Which synthesizer is that? `ListMidiDevices` prints every MIDI device Java can see, and the first
+one is Gervill, the software synthesizer that comes with the JDK:
+
+```bash
+./gradlew listMidiDevices
+```
+
+```text
+name                             description                      takes messages
+Gervill                          Software MIDI Synthesizer        yes
+Real Time Sequencer              Software sequencer               yes
+```
+
+What comes after those two depends on the system - and in step 4, on the virtual cable you add.
+
+A whole track is too much to listen to, so the config gains a window and a loop count. `bars`
+counts from `fromBar`, and the window's notes are rebased so the phrase starts at beat 0:
+
+```properties
+file=src/main/resources/song_giorgioby.mid
+track=0
+fromBar=0
+bars=4
+loops=2
+scheduler=platform
+```
+
+Every key can also be passed on the command line (`--track`, `--fromBar`, `--bars`, `--loops`,
+`--scheduler`), and `src/main/resources/` has one config per fixture:
+
+| config | file | track |
+| --- | --- | --- |
+| `jam.properties` | `song_giorgioby.mid` | 0 Track 1 |
+| `jam-dre.properties` | `song_still_dre.mid` | 2 Pizz Strings |
+| `jam-shape.properties` | `song_shape.mid` | 1 8-Bit Triangle |
+| `jam-child.properties` | `song_child.mid` | 4 Chords |
+
+### The part you write
+
+First the sound. `MidiNoteOutput` is the `NoteOutput` that plays into Gervill, and three of its
+methods are yours: `open` opens the synthesizer and selects the track's instrument - the channel
+and program step 2 read from the file - on that channel, and `noteOn` and `noteOff` hand a note to
+the channel. `MidiNoteOutputTest` gives it a stand-in synthesizer whose channels only write down
+what they were asked to do, so the tests make no sound. Checking that the synthesizer has the
+channel (`channelOf`), warming the instrument up and closing come finished.
+
+Then the timing. Each note becomes two scheduled events — a note-on at `beat`, a note-off at
+`beat + durationBeats` — and each event fires at an absolute instant rather than after a delay
+measured from the previous one, so lateness cannot accumulate. `MidiPlayer.schedule` builds that
+list.
+
+Firing them is somebody else's job. `MidiPlayer` hands each event to an `EventScheduler`:
+
+```java
+dispatcher.begin(startupDelayNanos);
+for (ScheduledEvent event : events) {
+    dispatcher.submit(event.offsetNanos(), targetNanos -> {
+        lateness.wokeAt(targetNanos);
+        event.fire(output);
+    });
+}
+dispatcher.awaitDone();
+```
+
+`begin` fixes the zero point, `submit` says "run this at zero plus that offset", `awaitDone`
+waits for the last event. Nothing above that line knows how the work is dispatched, and every
+event's lateness is measured by the same code whichever way it is.
+
+Write `PooledScheduler.submit`. It is four lines, and the interesting one is the conversion:
+`ScheduledExecutorService` wants a delay from now, while the event has an instant to hit.
+
+### Four ways to dispatch the same events
+
+`pl.livecoding.musicjam.scheduler` exposes the interface and `SchedulerKind`, the enum that
+builds one; the implementations are package-private, so `midi` never names a concrete dispatcher.
+
+| `scheduler=` | what it does |
+| --- | --- |
+| `platform` | one platform thread per event, each sleeping to its own target |
+| `virtual` | the same, with a virtual thread factory |
+| `pool` | a `ScheduledThreadPoolExecutor` sized to the available processors |
+| `scoped` | `StructuredTaskScope`, one forked task per event |
+| `all` | run the phrase once per scheduler and print a report for each |
+
+```bash
+./gradlew playNotes --args="--scheduler all"
+```
+
+Each run ends with a `TimingReport`: how long the events took to set up, and how late each
+wake-up actually was. Compare them on your own machine — the numbers move with the JDK, the
+fixture and the load, so the interesting part is what changes when you swap one thing.
+
+`scoped` is worth reading rather than just running: no task outlives the scope, so a failure
+cannot leave hundreds of threads asleep with a closed synthesizer to play into.
+`StructuredTaskScope` is still a preview API in Java 25, which is why the build passes
+`--enable-preview` and pins the toolchain — classes compiled that way run only on that exact JDK.
+Gradle will fetch it if you do not have it.
+
+None of the four puts an event exactly where it belongs, because `Thread.sleep` returns when the
+operating system gets round to it. Step 5 stops asking: it places every note at its exact sample
+frame before playback starts, and the only deadline left is keeping the audio device fed.
