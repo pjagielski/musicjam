@@ -9,6 +9,7 @@ import javax.sound.midi.Receiver;
 import javax.sound.midi.ShortMessage;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Sends notes to a MIDI device outside the JVM - a virtual cable feeding a synth such as Surge XT -
@@ -85,30 +86,32 @@ public final class ExternalMidiOutput implements NoteOutput {
      * another program reads from - and only the first of them has receivers.
      */
     static MidiDevice find(String nameContains, List<MidiDevice> devices) throws MidiUnavailableException {
-        // TODO(step-4): compare each device's getDeviceInfo().getName() with nameContains, ignoring
-        // TODO(step-4): case, and skip a device whose getMaxReceivers() is 0 - it only sends
-        // TODO(step-4): (-1 means as many receivers as you like). When nothing fits, throw a
-        // TODO(step-4): MidiUnavailableException that says what was looked for.
-        throw new UnsupportedOperationException("ExternalMidiOutput.find");
+        String wanted = nameContains.toLowerCase(Locale.ROOT);
+        for (MidiDevice device : devices) {
+            String name = device.getDeviceInfo().getName().toLowerCase(Locale.ROOT);
+            if (name.contains(wanted) && device.getMaxReceivers() != 0) {
+                return device;
+            }
+        }
+        throw new MidiUnavailableException("No MIDI device named like \"" + nameContains + "\" takes messages");
     }
 
     @Override
     public synchronized void noteOn(int pitch, int velocity) {
-        // TODO(step-4): a NOTE_ON on this output's channel, through send
-        throw new UnsupportedOperationException("ExternalMidiOutput.noteOn");
+        send(ShortMessage.NOTE_ON, pitch, velocity);
     }
 
     @Override
     public synchronized void noteOff(int pitch) {
-        // TODO(step-4): a NOTE_OFF on this output's channel, through send
-        throw new UnsupportedOperationException("ExternalMidiOutput.noteOff");
+        send(ShortMessage.NOTE_OFF, pitch, 0);
     }
 
     private void send(int command, int data1, int data2) {
-        // TODO(step-4): receiver.send takes a message and a timestamp, and -1 means "now". Building
-        // TODO(step-4): a ShortMessage throws a checked InvalidMidiDataException for data out of
-        // TODO(step-4): range, which here can only be a bug - rethrow it unchecked.
-        throw new UnsupportedOperationException("ExternalMidiOutput.send");
+        try {
+            receiver.send(new ShortMessage(command, channel, data1, data2), -1);
+        } catch (InvalidMidiDataException exception) {
+            throw new IllegalArgumentException(exception);
+        }
     }
 
     /**
@@ -118,9 +121,11 @@ public final class ExternalMidiOutput implements NoteOutput {
      * outlives this program.
      */
     private synchronized void allSoundOff() {
-        // TODO(step-4): a CONTROL_CHANGE with controller ALL_SOUND_OFF and value 0. Best effort only:
-        // TODO(step-4): when the shutdown hook runs, the device may already be gone, so no exception
-        // TODO(step-4): gets out of here.
+        try {
+            send(ShortMessage.CONTROL_CHANGE, ALL_SOUND_OFF, 0);
+        } catch (RuntimeException deviceAlreadyGone) {
+            // best effort: by the time a shutdown hook runs, the device may be closed or unplugged
+        }
     }
 
     /**
