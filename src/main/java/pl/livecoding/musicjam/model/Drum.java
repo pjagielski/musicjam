@@ -1,21 +1,11 @@
 package pl.livecoding.musicjam.model;
 
 public enum Drum implements Voice {
-    KICK("bd.wav"),
-    SNARE("sd.wav"),
-    CLOSED_HAT("hh.wav"),
-    OPEN_HAT("oh.wav"),
-    CLAP("cp.wav");
-
-    private final String sampleFile;
-
-    Drum(String sampleFile) {
-        this.sampleFile = sampleFile;
-    }
-
-    public String sampleFile() {
-        return sampleFile;
-    }
+    KICK,
+    SNARE,
+    CLOSED_HAT,
+    OPEN_HAT,
+    CLAP;
 
     public int gmPercussionNote() {
         return switch (this) {

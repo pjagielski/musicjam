@@ -28,13 +28,24 @@ public final class SampleBank {
         Objects.requireNonNull(directory, "directory");
         var loaded = new EnumMap<Drum, Sample>(Drum.class);
         for (Drum drum : Drum.values()) {
-            Path path = directory.resolve(drum.sampleFile());
+            Path path = directory.resolve(fileName(drum));
             Sample sample = Files.isRegularFile(path)
                     ? WavSampleLoader.load(path, sampleRate)
                     : DrumSamples.create(drum, sampleRate);
             loaded.put(drum, sample);
         }
         return new SampleBank(loaded);
+    }
+
+    /** Default WAV file for a drum; the music model does not depend on sample files. */
+    public static String fileName(Drum drum) {
+        return switch (drum) {
+            case KICK -> "bd.wav";
+            case SNARE -> "sd.wav";
+            case CLOSED_HAT -> "hh.wav";
+            case OPEN_HAT -> "oh.wav";
+            case CLAP -> "cp.wav";
+        };
     }
 
     public Sample sample(Drum drum) {

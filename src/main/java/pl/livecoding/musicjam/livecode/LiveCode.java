@@ -34,7 +34,17 @@ import java.util.stream.Collectors;
 public final class LiveCode {
 
     private static final Map<String, Drum> DRUMS = Arrays.stream(Drum.values())
-            .collect(Collectors.toUnmodifiableMap(drum -> drum.sampleFile().replaceFirst("\\.wav$", ""), drum -> drum));
+            .collect(Collectors.toUnmodifiableMap(LiveCode::soundName, drum -> drum));
+
+    public static String soundName(Drum drum) {
+        return switch (drum) {
+            case KICK -> "bd";
+            case SNARE -> "sd";
+            case CLOSED_HAT -> "hh";
+            case OPEN_HAT -> "oh";
+            case CLAP -> "cp";
+        };
+    }
 
     /**
      * One hit in one cycle: which layer of the code it comes from, the drum, where in the cycle it

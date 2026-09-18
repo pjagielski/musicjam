@@ -95,7 +95,7 @@ record GridRow(String label, Drum drum, float[] accents, float gain, double note
     }
 
     private static String nameOf(Drum drum) {
-        return drum.sampleFile().replaceFirst("\\.wav$", "");
+        return LiveCode.soundName(drum);
     }
 
     private record Key(int layer, Drum drum) {
