@@ -133,6 +133,7 @@ public final class SynthPanel extends Application {
 
         stage.setScene(new Scene(root));
         stage.setTitle("MusicJam — knobs");
+        stage.getIcons().setAll(StudioIcon.sizes());
         stage.show();
 
         int snapshot = getParameters().getRaw().indexOf("--snapshot");

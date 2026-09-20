@@ -47,6 +47,7 @@ import pl.livecoding.musicjam.model.MelodyTrack;
 import pl.livecoding.musicjam.model.Song;
 import pl.livecoding.musicjam.model.Track;
 import pl.livecoding.musicjam.studio.knobs.PanelKnob;
+import pl.livecoding.musicjam.studio.knobs.StudioIcon;
 import pl.livecoding.musicjam.studio.knobs.StudioPanels;
 import pl.livecoding.musicjam.studio.knobs.SynthControls;
 import pl.livecoding.musicjam.synth.LiveNovasawSynth;
@@ -211,6 +212,7 @@ public final class BeatStudio extends Application {
         }
         stage.setScene(scene);
         stage.setTitle("MusicJam Studio");
+        stage.getIcons().setAll(StudioIcon.sizes());
         if (presentation || getParameters().getRaw().contains("--screen")) {
             Screen screen = selectedScreen();
             Rectangle2D bounds = screen.getVisualBounds();
