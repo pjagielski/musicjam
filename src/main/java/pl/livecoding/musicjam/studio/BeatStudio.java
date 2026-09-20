@@ -623,17 +623,20 @@ public final class BeatStudio extends Application {
         return root;
     }
 
-    /** The melody and the external synth, framed like the knob panel so the window reads as one. */
-    private HBox melodyAndMidiPanels() {
-        HBox panels = new HBox(14,
-                StudioPanels.frame("Melody",
-                        StudioPanels.row(melodyOn, melodyVolume.node())),
-                StudioPanels.frame("External MIDI",
-                        StudioPanels.row(new Label("Device"), device, connect, melodyToMidi),
-                        StudioPanels.row(new Label("CC"), cc, filter.node(), midiLatency.node())));
-        panels.setFillHeight(false);
-        panels.setAlignment(Pos.TOP_LEFT);
-        return panels;
+    /**
+      * The melody and the external synth, framed like the knob panel so the window reads as one.
+      * Both frames take the column's full width, so their edges line up with the grid and the code
+      * above them rather than ending wherever their contents happen to.
+      */
+    private VBox melodyAndMidiPanels() {
+        device.setPromptText("MIDI device");
+        VBox frame = StudioPanels.frame("Melody and external MIDI",
+                StudioPanels.row(melodyOn, device, connect, melodyToMidi, new Label("CC"), cc),
+                StudioPanels.knobRow(melodyVolume.node(), filter.node(), midiLatency.node()));
+        frame.setPrefWidth(BAR_WIDTH + 86);
+        frame.setMinWidth(BAR_WIDTH + 86);
+        frame.setMaxWidth(BAR_WIDTH + 86);
+        return new VBox(12, frame);
     }
 
     /** The synth's front panel, which folds away for anyone who only wants the grid. */

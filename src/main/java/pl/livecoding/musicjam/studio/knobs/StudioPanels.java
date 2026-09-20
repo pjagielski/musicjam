@@ -5,6 +5,8 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 /**
@@ -36,6 +38,21 @@ public final class StudioPanels {
         HBox row = new HBox(10, children);
         row.setAlignment(Pos.BOTTOM_LEFT);
         row.setPadding(new Insets(0, 0, 4, 0));
+        return row;
+    }
+
+    /** Knobs spread evenly across the frame's width, as they are in the synth panel's groups. */
+    public static HBox knobRow(Node... knobs) {
+        HBox row = new HBox();
+        row.setAlignment(Pos.BOTTOM_CENTER);
+        for (Node knob : knobs) {
+            Region gap = new Region();
+            HBox.setHgrow(gap, Priority.ALWAYS);
+            row.getChildren().addAll(gap, knob);
+        }
+        Region tail = new Region();
+        HBox.setHgrow(tail, Priority.ALWAYS);
+        row.getChildren().add(tail);
         return row;
     }
 
