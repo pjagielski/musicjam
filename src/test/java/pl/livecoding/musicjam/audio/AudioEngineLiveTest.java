@@ -7,6 +7,7 @@ import pl.livecoding.musicjam.model.MelodyTrack;
 import pl.livecoding.musicjam.model.Note;
 import pl.livecoding.musicjam.model.Song;
 import pl.livecoding.musicjam.model.Voice;
+import pl.livecoding.musicjam.synth.LivePitchSynth;
 import pl.livecoding.musicjam.synth.PitchSynth;
 
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -117,6 +119,106 @@ class AudioEngineLiveTest {
         render(renderer, BLOCKS);
 
         assertEquals(List.of(), sent);
+    }
+
+    @Test
+    void aLiveSynthIsHeardChangingInsideANoteThatIsAlreadySounding() {
+        var level = new AtomicReference<>(0.25f);
+        Song song = new Song(120, 4, List.of(new MelodyTrack(
+                List.of(new Note(0.0, new Voice.Pitch(60), 4.0, 1.0f)), 4.0, 1.0f)));
+        var renderer = engine().liveRenderer(
+                () -> new AudioEngine.Jam(song, constantLevelSynth(level)), null);
+        float[] mix = new float[BLOCK * 2];
+
+        renderer.renderNext(mix);
+        assertEquals(0.25f, mix[0]);
+
+        level.set(0.75f);
+        renderer.renderNext(mix);
+
+        // the same note is still sounding: the new value is heard without waiting for the next loop
+        assertEquals(0.75f, mix[0]);
+    }
+
+    @Test
+    void afterSchedulingStopsTheTailPlaysOnButNoNewNoteStarts() {
+        Song song = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "X...", 1.0f)));
+        var renderer = engine().liveRenderer(() -> jam(song), null);
+        float[] mix = new float[BLOCK * 2];
+
+        renderer.renderNext(mix);
+        assertEquals(1.0f, mix[0], "the loop's first kick");
+
+        renderer.stopScheduling();
+        float[] left = render(renderer, BLOCKS);
+
+        // the next loop would have put a kick at frame 2000 of this stretch; nothing should arrive
+        for (float value : left) {
+            assertEquals(0.0f, value);
+        }
+    }
+
+    @Test
+    void effectsSitAcrossTheSynthOnly() {
+        var level = new AtomicReference<>(0.25f);
+        Song song = new Song(120, 4, List.of(
+                new DrumTrack(Drum.KICK, "X...", 1.0f),
+                new MelodyTrack(List.of(new Note(0.0, new Voice.Pitch(60), 4.0, 1.0f)), 4.0, 1.0f)));
+        LivePitchSynth synth = constantLevelSynth(level);
+        var renderer = engine().liveRenderer(() -> new AudioEngine.Jam(song, new LivePitchSynth() {
+            @Override
+            public Sample render(int midiNote, int frameCount, int sampleRate) {
+                return synth.render(midiNote, frameCount, sampleRate);
+            }
+
+            @Override
+            public VoiceSource voice(int midiNote, int heldFrames, int sampleRate) {
+                return synth.voice(midiNote, heldFrames, sampleRate);
+            }
+
+            @Override
+            public AudioEffect effects(int sampleRate) {
+                return (input, stereoOut) -> {
+                    stereoOut[0] = input * 2;
+                    stereoOut[1] = input * 2;
+                };
+            }
+        }), null);
+        float[] mix = new float[BLOCK * 2];
+
+        renderer.renderNext(mix);
+
+        // the kick (1.0) went straight to the mix; only the voice's 0.25 was doubled
+        assertEquals(1.5f, mix[0], 1e-6f);
+        assertEquals(0.5f, mix[2], 1e-6f);
+    }
+
+    /** A synth whose voices simply play whatever {@code level} says at that frame. */
+    private static LivePitchSynth constantLevelSynth(AtomicReference<Float> level) {
+        return new LivePitchSynth() {
+            @Override
+            public Sample render(int midiNote, int frameCount, int sampleRate) {
+                throw new AssertionError("a live synth's melody should not be rendered in advance");
+            }
+
+            @Override
+            public VoiceSource voice(int midiNote, int heldFrames, int sampleRate) {
+                return new VoiceSource() {
+                    private int frame;
+
+                    @Override
+                    public float next() {
+                        frame++;
+                        return level.get();
+                    }
+
+                    @Override
+                    public boolean finished() {
+                        return frame >= heldFrames;
+                    }
+                };
+            }
+        };
     }
 
     private static AudioEngine engine() {

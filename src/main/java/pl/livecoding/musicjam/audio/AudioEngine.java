@@ -7,6 +7,7 @@ import pl.livecoding.musicjam.model.PatternCompiler;
 import pl.livecoding.musicjam.model.Song;
 import pl.livecoding.musicjam.model.Voice;
 import pl.livecoding.musicjam.synth.AnthemLeadSynth;
+import pl.livecoding.musicjam.synth.LivePitchSynth;
 import pl.livecoding.musicjam.synth.PitchSynth;
 
 import javax.sound.sampled.AudioFormat;
@@ -25,6 +26,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -241,7 +243,7 @@ public final class AudioEngine {
 
             while (hasNextEvent() && nextEventFrame() < blockEnd) {
                 long eventFrame = nextEventFrame();
-                renderVoices(voices, mix, position, segmentStart, eventFrame);
+                renderVoices(voices, mix, mix, position, segmentStart, eventFrame);
                 do {
                     BarHit hit = barHits[nextHit];
                     allocateVoice(voices, eventFrame).trigger(hit.sample, eventFrame, hit.velocity);
@@ -249,7 +251,7 @@ public final class AudioEngine {
                 } while (hasNextEvent() && nextEventFrame() == eventFrame);
                 segmentStart = eventFrame;
             }
-            renderVoices(voices, mix, position, segmentStart, blockEnd);
+            renderVoices(voices, mix, mix, position, segmentStart, blockEnd);
             position = blockEnd;
             return frames;
         }
@@ -273,10 +275,12 @@ public final class AudioEngine {
 
     }
 
-    private static void renderVoices(VoiceSlot[] voices, float[] mix, long blockStart, long fromFrame, long toFrame) {
+    /** Live voices go to the synth's own bus, so effects can be put across them alone. */
+    private static void renderVoices(VoiceSlot[] voices, float[] mix, float[] bus,
+                                     long blockStart, long fromFrame, long toFrame) {
         for (VoiceSlot voice : voices) {
             if (voice.active) {
-                voice.render(mix, blockStart, fromFrame, toFrame);
+                voice.render(voice.isLive() ? bus : mix, blockStart, fromFrame, toFrame);
             }
         }
     }
@@ -312,7 +316,8 @@ public final class AudioEngine {
     record ExternalNote(long frame, boolean on, int midiNote, int velocity) {
     }
 
-    private record LiveHit(long frame, Sample sample, float gain) {
+    /** A hit waiting for its frame: a rendered sample, or a voice that makes its sound as it plays. */
+    private record LiveHit(long frame, Sample sample, VoiceSource source, float gain) {
     }
 
     private record LoopMark(long startFrame, Song song, double lengthBeats) {
@@ -334,7 +339,12 @@ public final class AudioEngine {
         private final Map<ShapeKey, Sample> shapeCache = new HashMap<>();
         private final VoiceSlot[] voices = new VoiceSlot[maxVoices];
         private final ArrayDeque<LiveHit> hits = new ArrayDeque<>();
+        // the synth channel, kept apart from the drums so its effects only colour the synth
+        private final float[] bus = new float[blockSize * CHANNELS];
+        private final float[] stereo = new float[CHANNELS];
+        private AudioEffect effects;
         private volatile Loops loops = new Loops(null, null);
+        private volatile boolean scheduling = true;
         private long position;
         private long nextLoopStart;
 
@@ -346,24 +356,58 @@ public final class AudioEngine {
             }
         }
 
+        /**
+         * No more loops and no more notes: what is already sounding plays out, and the effects keep
+         * ringing. This is what a Stop that lets the delay finish its repeats is made of.
+         */
+        void stopScheduling() {
+            scheduling = false;
+            hits.clear();
+        }
+
         void renderNext(float[] mix) {
             Arrays.fill(mix, 0.0f);
+            Arrays.fill(bus, 0.0f);
             long blockEnd = position + blockSize;
-            while (nextLoopStart < blockEnd) {
+            while (scheduling && nextLoopStart < blockEnd) {
                 compileNextLoop();
             }
             long segmentStart = position;
             while (!hits.isEmpty() && hits.peekFirst().frame() < blockEnd) {
                 long frame = hits.peekFirst().frame();
-                renderVoices(voices, mix, position, segmentStart, frame);
+                renderVoices(voices, mix, bus, position, segmentStart, frame);
                 do {
                     LiveHit hit = hits.pollFirst();
-                    allocateVoice(voices, frame).trigger(hit.sample(), frame, hit.gain());
+                    VoiceSlot slot = allocateVoice(voices, frame);
+                    if (hit.source() != null) {
+                        slot.trigger(hit.source(), frame, hit.gain());
+                    } else {
+                        slot.trigger(hit.sample(), frame, hit.gain());
+                    }
                 } while (!hits.isEmpty() && hits.peekFirst().frame() == frame);
                 segmentStart = frame;
             }
-            renderVoices(voices, mix, position, segmentStart, blockEnd);
+            renderVoices(voices, mix, bus, position, segmentStart, blockEnd);
+            mixInBus(mix);
             position = blockEnd;
+        }
+
+        /**
+         * The synth bus into the mix, through its effects when it has them. It runs on every block,
+         * silence included, or a delay's repeats and a reverb's tail would stop with the last note.
+         */
+        private void mixInBus(float[] mix) {
+            for (int frame = 0; frame < blockSize; frame++) {
+                float value = bus[frame * CHANNELS];
+                if (effects == null) {
+                    mix[frame * CHANNELS] += value;
+                    mix[frame * CHANNELS + 1] += value;
+                    continue;
+                }
+                effects.process(value, stereo);
+                mix[frame * CHANNELS] += stereo[0];
+                mix[frame * CHANNELS + 1] += stereo[1];
+            }
         }
 
         Position positionAt(long frame) {
@@ -396,8 +440,17 @@ public final class AudioEngine {
                     int velocity = Math.max(1, Math.round(note.velocity() * 127.0f));
                     externalMelody.accept(new ExternalNote(frame, true, pitch.midiNote(), velocity));
                     externalMelody.accept(new ExternalNote(offFrame, false, pitch.midiNote(), 0));
+                } else if (jam.synth() instanceof LivePitchSynth live && note.voice() instanceof Voice.Pitch pitch) {
+                    if (effects == null) {
+                        effects = live.effects(sampleRate);
+                    }
+                    // a voice of its own, reading the synth's parameters as it plays, so a knob
+                    // moved now is heard in this note rather than in the loop after it
+                    int heldFrames = (int) transport.frameAtBeat(note.durationBeats());
+                    hits.addLast(new LiveHit(frame, null, live.voice(pitch.midiNote(), heldFrames, sampleRate),
+                            note.velocity()));
                 } else {
-                    hits.addLast(new LiveHit(frame, sampleFor(note, transport, jam.synth()), note.velocity()));
+                    hits.addLast(new LiveHit(frame, sampleFor(note, transport, jam.synth()), null, note.velocity()));
                 }
             }
             nextLoopStart = loopStart + Math.max(1L, transport.frameAtBeat(lengthBeats));
@@ -418,6 +471,8 @@ public final class AudioEngine {
 
     /** A {@link LiveRenderer} playing to the default audio device until {@link #close()}. */
     public final class LiveSession implements AutoCloseable {
+        private static final double MAX_TAIL_SECONDS = 12;
+
         private final LiveRenderer renderer;
         private final SourceDataLine line;
         private final NoteListener externalMelody;
@@ -426,7 +481,12 @@ public final class AudioEngine {
         private final AtomicReference<Throwable> failure = new AtomicReference<>();
         private final Thread renderThread;
         private final Thread melodyThread;
+        private final AtomicBoolean closed = new AtomicBoolean();
         private volatile boolean running = true;
+        // the melody thread has a stop of its own: an external synth's notes end when the jam does,
+        // even while our own tail is still ringing
+        private volatile boolean sendingMelody = true;
+        private volatile boolean releasing;
         private volatile double externalLatencyMillis;
 
         private LiveSession(Supplier<Jam> jams, NoteListener externalMelody)
@@ -461,23 +521,55 @@ public final class AudioEngine {
             return Optional.ofNullable(failure.get());
         }
 
+        /**
+         * Stops the jam but keeps playing until what it left behind has died away: notes still in
+         * their release, a delay's repeats, a reverb's tail. Returns at once — the tail rings on the
+         * render thread, which closes the line itself when the sound falls silent (or after
+         * {@link #MAX_TAIL_SECONDS}, so a delay set to repeat forever cannot hold the device).
+         */
+        public void release() {
+            releasing = true;
+            renderer.stopScheduling();
+            // the external synth is not ours to let ring: its notes end now
+            sendingMelody = false;
+            join(melodyThread);
+        }
+
+        /** Stops everything now, tail and all. */
         @Override
         public void close() {
             running = false;
-            join(renderThread);
+            sendingMelody = false;
+            if (Thread.currentThread() != renderThread) {
+                join(renderThread);
+            }
             join(melodyThread);
-            line.stop();
-            line.flush();
-            line.close();
+            if (closed.compareAndSet(false, true)) {
+                line.stop();
+                line.flush();
+                line.close();
+            }
         }
 
         private void render() {
             float[] mix = new float[blockSize * CHANNELS];
             byte[] pcm = new byte[blockSize * CHANNELS * 2];
+            long tailFrames = 0;
             try {
                 while (running) {
                     renderer.renderNext(mix);
                     writeFully(line, pcm, encodePcm16(mix, blockSize, pcm));
+                    if (!releasing) {
+                        continue;
+                    }
+                    tailFrames += blockSize;
+                    if (silent(mix) || tailFrames > MAX_TAIL_SECONDS * sampleRate) {
+                        running = false;
+                    }
+                }
+                if (releasing) {
+                    line.drain();
+                    close();
                 }
             } catch (RuntimeException exception) {
                 failure.compareAndSet(null, exception);
@@ -485,11 +577,21 @@ public final class AudioEngine {
             }
         }
 
+        /** Quiet enough that nobody would hear the rest of the tail (about -80 dB). */
+        private boolean silent(float[] mix) {
+            for (float value : mix) {
+                if (Math.abs(value) > 1e-4f) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         private void sendMelody() {
             Set<Integer> sounding = new HashSet<>();
             PlaybackClock clock = new PlaybackClock(line::getLongFramePosition, System::nanoTime, sampleRate);
             try {
-                while (running) {
+                while (running && sendingMelody) {
                     ExternalNote next = pendingMelody.peek();
                     long leadFrames = Math.round(externalLatencyMillis * sampleRate / 1000.0);
                     if (next == null || next.frame() - leadFrames > clock.frameNow()) {
@@ -557,26 +659,49 @@ public final class AudioEngine {
                 key -> samples.sample(drum).shaped(envelope, key.heldFrames(), sampleRate));
     }
 
+    /** One sounding note: either a rendered {@link Sample} played back, or a live {@link VoiceSource}. */
     private static final class VoiceSlot {
         private Sample sample;
+        private VoiceSource source;
         private long startFrame;
         private float gain;
         private boolean active;
 
         private void trigger(Sample sample, long startFrame, float gain) {
             this.sample = sample;
+            this.source = null;
+            this.startFrame = startFrame;
+            this.gain = gain;
+            this.active = true;
+        }
+
+        private boolean isLive() {
+            return source != null;
+        }
+
+        private void trigger(VoiceSource source, long startFrame, float gain) {
+            this.sample = null;
+            this.source = source;
             this.startFrame = startFrame;
             this.gain = gain;
             this.active = true;
         }
 
         private long remainingFrames(long position) {
+            if (source != null) {
+                // a live voice has no length to compare, so it is the last thing a new note steals
+                return Long.MAX_VALUE;
+            }
             long played = Math.max(0L, position - startFrame);
             return sample.frameCount() - played;
         }
 
         private void render(float[] mix, long blockStart, long fromFrame, long toFrame) {
             long firstFrame = Math.max(fromFrame, startFrame);
+            if (source != null) {
+                renderSource(mix, blockStart, firstFrame, toFrame);
+                return;
+            }
             long sampleFrame = firstFrame - startFrame;
             for (long frame = firstFrame; frame < toFrame && sampleFrame < sample.frameCount();
                  frame++, sampleFrame++) {
@@ -587,6 +712,21 @@ public final class AudioEngine {
             }
             if (sampleFrame >= sample.frameCount()) {
                 active = false;
+            }
+        }
+
+        /** The frames come one at a time and in order, which is all {@link VoiceSource} promises. */
+        private void renderSource(float[] mix, long blockStart, long firstFrame, long toFrame) {
+            for (long frame = firstFrame; frame < toFrame; frame++) {
+                if (source.finished()) {
+                    active = false;
+                    source = null;
+                    return;
+                }
+                float value = source.next() * gain;
+                int outputFrame = (int) (frame - blockStart);
+                mix[outputFrame * CHANNELS] += value;
+                mix[outputFrame * CHANNELS + 1] += value;
             }
         }
     }
