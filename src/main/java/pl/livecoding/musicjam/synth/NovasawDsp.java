@@ -96,7 +96,7 @@ final class NovasawDsp {
             float k = clamp(1.82f - resonance * 1.25f, 0.45f, 2.0f);
             float safeInput = clamp(input, -3.0f, 3.0f);
             float denominator = 1.0f / (1.0f + g * (g + k));
-            float high = (safeInput - low - k * band) * denominator;
+            float high = (safeInput - low - (k + g) * band) * denominator;
             float newBand = band + g * high;
             float newLow = low + g * newBand;
             band = clamp(newBand + g * high, -3.0f, 3.0f);
