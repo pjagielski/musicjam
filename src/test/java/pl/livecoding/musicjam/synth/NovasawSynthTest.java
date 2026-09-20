@@ -6,6 +6,7 @@ import pl.livecoding.musicjam.audio.Sample;
 import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Pins the sound of the ported patches down to the sample, so that moving the render into
@@ -29,6 +30,39 @@ class NovasawSynthTest {
                 fingerprint(new TrancePluckSynth().render(72, 5_512, SAMPLE_RATE)));
         assertEquals("88200 0.004098 0.033554 -0.001882 28.389289",
                 fingerprint(new WidePadSynth().render(48, 22_050, SAMPLE_RATE)));
+    }
+
+    @Test
+    void theSubFillsInTheOctaveBelowTheNote() {
+        SynthParams dry = new SubBassSynth().params().withSub(0);
+        SynthParams withSub = new SubBassSynth().params().withSub(0.8f);
+        double noteHz = 440 * Math.pow(2, (40 - 69) / 12.0);
+
+        double without = levelAt(NovasawSynth.render(40, SAMPLE_RATE, SAMPLE_RATE, dry), noteHz / 2);
+        double with = levelAt(NovasawSynth.render(40, SAMPLE_RATE, SAMPLE_RATE, withSub), noteHz / 2);
+
+        assertTrue(with > without * 3, "the sub should put real weight an octave down, not a hint");
+    }
+
+    @Test
+    void theBassPatchesKeepTheirOwnFingerprints() {
+        assertEquals("48069 -0.024709 -0.062270 0.002613 247.637361",
+                fingerprint(new SubBassSynth().render(40, 44_100, SAMPLE_RATE)));
+        assertEquals("47628 0.052664 -0.006201 0.000492 113.447781",
+                fingerprint(new AcidBassSynth().render(45, 44_100, SAMPLE_RATE)));
+    }
+
+    /** How much of {@code hertz} a sample holds, by correlating it with that frequency. */
+    private static double levelAt(Sample sample, double hertz) {
+        float[] mono = sample.copyMono();
+        double real = 0;
+        double imaginary = 0;
+        for (int frame = 0; frame < mono.length; frame++) {
+            double angle = 2 * Math.PI * hertz * frame / SAMPLE_RATE;
+            real += mono[frame] * Math.cos(angle);
+            imaginary += mono[frame] * Math.sin(angle);
+        }
+        return Math.hypot(real, imaginary) / mono.length;
     }
 
     /** A few frames spread across the sample, plus its energy: enough to catch any change in the DSP. */

@@ -40,12 +40,27 @@ public abstract class NovasawSynth implements PitchSynth {
             float driveBase, float driveRange, float outputTrim,
             float presetIntensity, float presetTone, float presetMotion
     ) {
+        this(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneBaseCents, detuneRangeCents,
+                cutoffBaseHz, cutoffRangeHz, filterEnvAmountHz, keyTrackHzPerSemitone,
+                motionRateHz, vibratoCentsBase, driveBase, driveRange, outputTrim,
+                presetIntensity, presetTone, presetMotion, 0.0f);
+    }
+
+    /** As above, with a sine an octave below the saws at {@code subLevel} — what a bass patch wants. */
+    protected NovasawSynth(
+            float attackSeconds, float decaySeconds, float sustainLevel, float releaseSeconds,
+            float detuneBaseCents, float detuneRangeCents,
+            float cutoffBaseHz, float cutoffRangeHz, float filterEnvAmountHz, float keyTrackHzPerSemitone,
+            float motionRateHz, float vibratoCentsBase,
+            float driveBase, float driveRange, float outputTrim,
+            float presetIntensity, float presetTone, float presetMotion, float subLevel
+    ) {
         float intensity = shapeEnergy(presetIntensity);
         float tone = shapeTone(presetTone);
         float motion = smoothStep(presetMotion);
         this.params = SynthParams.of(
                 attackSeconds, decaySeconds, sustainLevel, releaseSeconds,
-                detuneBaseCents + intensity * detuneRangeCents, vibratoCentsBase * motion,
+                detuneBaseCents + intensity * detuneRangeCents, subLevel, vibratoCentsBase * motion,
                 motionRateHz, motion,
                 cutoffBaseHz + tone * cutoffRangeHz + intensity * 1200.0f,
                 clamp(0.12f + tone * 0.20f + intensity * 0.16f + motion * 0.08f, 0.0f, 0.82f),

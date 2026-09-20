@@ -14,8 +14,10 @@ import pl.livecoding.musicjam.model.PatternCompiler;
 import pl.livecoding.musicjam.model.Song;
 import pl.livecoding.musicjam.model.Track;
 import pl.livecoding.musicjam.model.Voice;
+import pl.livecoding.musicjam.synth.AcidBassSynth;
 import pl.livecoding.musicjam.synth.AnthemLeadSynth;
 import pl.livecoding.musicjam.synth.PitchSynth;
+import pl.livecoding.musicjam.synth.SubBassSynth;
 import pl.livecoding.musicjam.synth.TrancePluckSynth;
 import pl.livecoding.musicjam.synth.WidePadSynth;
 
@@ -41,7 +43,9 @@ public final class BeatApp {
     private static final Map<String, PitchSynth> SYNTHS = Map.of(
             "anthem", new AnthemLeadSynth(),
             "pad", new WidePadSynth(),
-            "pluck", new TrancePluckSynth()
+            "pluck", new TrancePluckSynth(),
+            "sub", new SubBassSynth(),
+            "acid", new AcidBassSynth()
     );
     private static final Map<String, List<DrumTrack>> DRUM_PATTERNS = Map.of(
             "shape", shapeDrumTracks(),

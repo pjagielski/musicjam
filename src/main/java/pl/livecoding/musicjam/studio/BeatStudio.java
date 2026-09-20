@@ -260,7 +260,7 @@ public final class BeatStudio extends Application {
         VBox content = layout();
         ScrollPane scroll = new ScrollPane(new Group(content));
         scroll.setPannable(true);
-        scroll.setPrefViewportWidth(1430);
+        scroll.setPrefViewportWidth(1500);
         scroll.setPrefViewportHeight(780);
 
         Label zoomLabel = new Label("100%");

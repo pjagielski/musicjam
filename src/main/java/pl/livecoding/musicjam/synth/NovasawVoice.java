@@ -28,6 +28,8 @@ public final class NovasawVoice implements VoiceSource {
 
     private static final double[] UNISON_OFFSETS = {-1.0, -0.58, -0.23, 0.0, 0.23, 0.58, 1.0};
     private static final float MAX_OUTPUT_GAIN = 0.22f;
+    /** Loud enough that a sub at 1.0 stands up to the seven saws without swamping them. */
+    private static final float SUB_GAIN = 2.2f;
 
     private final Supplier<SynthParams> params;
     private final int midiNote;
@@ -40,6 +42,7 @@ public final class NovasawVoice implements VoiceSource {
     private final float deClickStep;
 
     private double motionPhase;
+    private double subPhase;
     private float envelope;
     private float deClick;
     private int frame;
@@ -92,6 +95,13 @@ public final class NovasawVoice implements VoiceSource {
             }
             driftPhase[unison] =
                     wrapTwoPi(driftPhase[unison] + 2.0 * Math.PI * (0.035 + 0.011 * unison) / sampleRate);
+        }
+
+        if (current.subLevel() > 0) {
+            // a sine an octave down, under the saws and through the same filter and drive: what
+            // gives a bass line its fundamental, since seven detuned saws alone come out thin
+            mono += (float) Math.sin(subPhase) * current.subLevel() * SUB_GAIN;
+            subPhase = wrapTwoPi(subPhase + Math.PI * frequency / sampleRate);
         }
 
         float voiceSample = mono * envelope * deClick;

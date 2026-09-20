@@ -10,10 +10,12 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import pl.livecoding.musicjam.synth.AcidBassSynth;
 import pl.livecoding.musicjam.synth.AnthemLeadSynth;
 import pl.livecoding.musicjam.synth.DelayMode;
 import pl.livecoding.musicjam.synth.EffectParams;
 import pl.livecoding.musicjam.synth.NovasawSynth;
+import pl.livecoding.musicjam.synth.SubBassSynth;
 import pl.livecoding.musicjam.synth.SynthParams;
 import pl.livecoding.musicjam.synth.TrancePluckSynth;
 import pl.livecoding.musicjam.synth.WidePadSynth;
@@ -41,11 +43,11 @@ import java.util.function.Supplier;
  */
 public final class SynthControls {
 
-    private static final double COLUMN_WIDTH = 318;
-    private static final double KNOB_WIDTH = 72;
+    private static final double COLUMN_WIDTH = 350;
+    private static final double KNOB_WIDTH = 62;
 
     private static final Param CUTOFF = Param.exponential("Cutoff", 40, 12000, "Hz", 0, 7200);
-    private static final Param RESONANCE = Param.linear("Resonance", 0, 0.95, "", 2, 0.55);
+    private static final Param RESONANCE = Param.linear("Res", 0, 0.95, "", 2, 0.55);
     private static final Param ATTACK = Param.exponential("Attack", 1, 2000, "ms", 0, 6);
     private static final Param DECAY = Param.exponential("Decay", 1, 3000, "ms", 0, 350);
     private static final Param SUSTAIN = Param.linear("Sustain", 0, 1, "", 2, 0.82);
@@ -77,6 +79,8 @@ public final class SynthControls {
         PATCHES.put("anthem", AnthemLeadSynth::new);
         PATCHES.put("pluck", TrancePluckSynth::new);
         PATCHES.put("pad", WidePadSynth::new);
+        PATCHES.put("sub bass", SubBassSynth::new);
+        PATCHES.put("acid bass", AcidBassSynth::new);
     }
 
     private final List<Knob> knobs = new ArrayList<>();
@@ -84,6 +88,7 @@ public final class SynthControls {
     private final List<VBox> frames = new ArrayList<>();
 
     private final Knob detune;
+    private final Knob sub;
     private final Knob vibrato;
     private final Knob motionRate;
     private final Knob drift;
@@ -131,6 +136,7 @@ public final class SynthControls {
     private SynthControls(Theme theme, int columns) {
         this.theme = theme;
         detune = knob(Param.linear("Detune", 0, 60, "ct", 1, 17), Theme.Accent.OSC, 62);
+        sub = knob(Param.linear("Sub", 0, 1, "", 2, 0), Theme.Accent.OSC, 62);
         vibrato = knob(Param.linear("Vibrato", 0, 12, "ct", 2, 1.4), Theme.Accent.OSC, 62);
         motionRate = knob(Param.exponential("Motion", 0.05, 12, "Hz", 2, 5.2), Theme.Accent.OSC, 62);
         drift = knob(Param.linear("Drift", 0, 1, "", 2, 0.34), Theme.Accent.OSC, 62);
@@ -140,7 +146,7 @@ public final class SynthControls {
         cutoff = knob(CUTOFF, Theme.Accent.FILTER, 72);
         resonance = knob(RESONANCE, Theme.Accent.FILTER, 62);
         envAmount = knob(Param.bipolar("Env→Filt", -4000, 8000, "Hz", 0, 1200), Theme.Accent.FILTER, 62);
-        keyTrack = knob(Param.linear("Key track", 0, 80, "Hz/semi", 0, 45), Theme.Accent.FILTER, 62);
+        keyTrack = knob(Param.linear("Key trk", 0, 80, "Hz/semi", 0, 45), Theme.Accent.FILTER, 62);
         pad = new XyPad(CUTOFF, RESONANCE, Theme.Accent.FILTER, COLUMN_WIDTH, 150, theme);
 
         attack = knob(ATTACK, Theme.Accent.AMP, 62);
@@ -187,7 +193,7 @@ public final class SynthControls {
         syncRow.setAlignment(Pos.CENTER_LEFT);
 
         List<VBox> groupBoxes = List.of(
-                section("Oscillator", Theme.Accent.OSC, null, detune, vibrato, motionRate, drift),
+                section("Oscillator", Theme.Accent.OSC, null, detune, sub, vibrato, motionRate, drift),
                 section("Amplifier", Theme.Accent.AMP, null, drive, trim),
                 section("Filter", Theme.Accent.FILTER, pad, cutoff, resonance, envAmount, keyTrack),
                 section("Envelope", Theme.Accent.AMP, envelope, attack, decay, sustain, release),
@@ -250,7 +256,8 @@ public final class SynthControls {
         return SynthParams.of(
                 (float) (attack.value() / 1000), (float) (decay.value() / 1000),
                 (float) sustain.value(), (float) (release.value() / 1000),
-                (float) detune.value(), (float) vibrato.value(), (float) motionRate.value(),
+                (float) detune.value(), (float) sub.value(), (float) vibrato.value(),
+                (float) motionRate.value(),
                 (float) drift.value(), (float) cutoff.value(), (float) resonance.value(),
                 (float) envAmount.value(), (float) keyTrack.value(),
                 (float) drive.value(), (float) trim.value());
@@ -261,6 +268,7 @@ public final class SynthControls {
         applying = true;
         try {
             detune.setValue(params.detuneCents());
+            sub.setValue(params.subLevel());
             vibrato.setValue(params.vibratoCents());
             motionRate.setValue(params.motionRateHz());
             drift.setValue(params.motion());
@@ -302,9 +310,11 @@ public final class SynthControls {
         SynthParams params = params();
         EffectParams effects = effects();
         return String.format(Locale.ROOT,
-                "detune=%.1fct vibrato=%.2fct motion=%.2fHz drift=%.2f | cutoff=%.0fHz res=%.2f env=%+.0fHz"
-                        + " keyTrack=%.0f | drive=%.2f trim=%.2f | A=%.0fms D=%.0fms S=%.2f R=%.0fms",
-                params.detuneCents(), params.vibratoCents(), params.motionRateHz(), params.motion(),
+                "detune=%.1fct sub=%.2f vibrato=%.2fct motion=%.2fHz drift=%.2f | cutoff=%.0fHz"
+                        + " res=%.2f env=%+.0fHz keyTrack=%.0f | drive=%.2f trim=%.2f"
+                        + " | A=%.0fms D=%.0fms S=%.2f R=%.0fms",
+                params.detuneCents(), params.subLevel(), params.vibratoCents(), params.motionRateHz(),
+                params.motion(),
                 params.cutoffHz(), params.resonance(), params.filterEnvAmountHz(),
                 params.keyTrackHzPerSemitone(), params.drive(), params.outputTrim(),
                 params.attackSeconds() * 1000, params.decaySeconds() * 1000, params.sustainLevel(),
