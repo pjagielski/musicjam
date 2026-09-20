@@ -79,3 +79,10 @@ tasks.register<JavaExec>("midiPanic") {
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass = "pl.livecoding.musicjam.MidiPanic"
 }
+
+tasks.register<JavaExec>("knobs") {
+    group = "workshop"
+    description = "Prototyp panelu syntezatora: pokretla, pad XY i obwiednia w JavaFX (nie gra jeszcze dzwieku)."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass = "pl.livecoding.musicjam.studio.knobs.KnobsLauncher"
+}
