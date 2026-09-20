@@ -200,6 +200,7 @@ public final class BeatStudio extends Application {
         melodyToMidi.setOnAction(event -> reconfigure(() -> { }));
         filter.setOnChange(value -> sendFilter());
         cc.valueProperty().addListener((property, before, after) -> sendFilter());
+        makeTypeable(cc);
         midiLatency.setOnChange(millis -> applyMidiLatency());
 
         boolean presentation = getParameters().getRaw().contains("--presentation");
@@ -544,6 +545,35 @@ public final class BeatStudio extends Application {
         connect.setSelected(false);
         melodyToMidi.setSelected(false);
         melodyToMidi.setDisable(true);
+    }
+
+    /**
+     * A JavaFX spinner is read-only unless asked otherwise, and even then it keeps its old value
+     * when the typed text is simply left behind. This one takes digits, commits them on Enter and
+     * on the way out, and puts the number back when what was typed is not one.
+     */
+    private static void makeTypeable(Spinner<Integer> spinner) {
+        spinner.setEditable(true);
+        spinner.getEditor().setOnAction(event -> commit(spinner));
+        spinner.focusedProperty().addListener((property, before, after) -> {
+            if (!after) {
+                commit(spinner);
+            }
+        });
+    }
+
+    private static void commit(Spinner<Integer> spinner) {
+        spinner.getValueFactory().setValue(controllerFrom(spinner.getEditor().getText(), spinner.getValue()));
+        spinner.getEditor().setText(String.valueOf(spinner.getValue()));
+    }
+
+    /** What the editor's text means: a controller number, or {@code fallback} when it is not one. */
+    static int controllerFrom(String text, int fallback) {
+        try {
+            return Math.max(0, Math.min(127, Integer.parseInt(text.trim())));
+        } catch (NumberFormatException notANumber) {
+            return fallback;
+        }
     }
 
     private void sendFilter() {
