@@ -22,10 +22,12 @@ import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TitledPane;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
@@ -44,6 +46,9 @@ import pl.livecoding.musicjam.model.DrumTrack;
 import pl.livecoding.musicjam.model.MelodyTrack;
 import pl.livecoding.musicjam.model.Song;
 import pl.livecoding.musicjam.model.Track;
+import pl.livecoding.musicjam.studio.knobs.SynthControls;
+import pl.livecoding.musicjam.synth.LiveNovasawSynth;
+import pl.livecoding.musicjam.synth.NovasawSynth;
 import pl.livecoding.musicjam.synth.PitchSynth;
 
 import javax.sound.midi.MidiSystem;
@@ -76,7 +81,7 @@ public final class BeatStudio extends Application {
     private static final List<String> LOOP_LENGTHS =
             List.of("1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32");
     private static final String STARTING_LOOP = "8";
-    private static final double CELL_HEIGHT = 34;
+    private static final double CELL_HEIGHT = 28;
     private static final double CELL_GAP = 4;
     private static final double BAR_WIDTH = 16 * CELL_HEIGHT + 15 * CELL_GAP;
     private static final String STARTER_CODE = """
@@ -93,33 +98,36 @@ public final class BeatStudio extends Application {
     private final List<GridRow> rows = new ArrayList<>();
     private final List<Button[]> cells = new ArrayList<>();
     private final VBox grid = new VBox(CELL_GAP);
-    private final Button play = new Button("Graj");
+    private final Button play = new Button("Play");
     private final ComboBox<String> presets = new ComboBox<>();
     private final Slider bpm = new Slider(40, 200, 120);
     private final Label bpmLabel = new Label();
     private final ObservableList<String> loopLengths = FXCollections.observableArrayList(LOOP_LENGTHS);
     private final Spinner<String> bars = new Spinner<>(new SpinnerValueFactory.ListSpinnerValueFactory<>(loopLengths));
     private final TextArea code = new TextArea(STARTER_CODE);
-    private final Button runCode = new Button("Uruchom (Ctrl+Enter)");
+    private final Button runCode = new Button("Run (Ctrl+Enter)");
     private final Label codeError = new Label();
-    private final CheckBox melodyOn = new CheckBox("Melodia");
+    private final CheckBox melodyOn = new CheckBox("Melody");
     private final Slider melodyVolume = new Slider(0, 1, 1);
     private final TextField device = new TextField();
-    private final ToggleButton connect = new ToggleButton("Połącz MIDI");
-    private final CheckBox melodyToMidi = new CheckBox("Melodia przez MIDI");
+    private final ToggleButton connect = new ToggleButton("Connect MIDI");
+    private final CheckBox melodyToMidi = new CheckBox("Melody over MIDI");
     private final Spinner<Integer> cc = new Spinner<>(0, 127, 74);
     private final Slider filter = new Slider(0, 127, 64);
     private final Slider midiLatency = new Slider(0, 400, PhraseRequest.DEFAULT_MIDI_LATENCY_MILLIS);
     private final Label midiLatencyLabel = new Label();
+    private final SynthControls synthControls = SynthControls.light(2);
     private final ProgressBar loopProgress = new ProgressBar(0);
-    private final Label status = new Label("Zatrzymane");
+    private final Label status = new Label("Stopped");
 
     private PhraseRequest request;
     private Sequence sequence;
     private PitchSynth synth;
+    private LiveNovasawSynth liveSynth;
     private AudioEngine engine;
     private MelodyTrack melody;
     private AudioEngine.LiveSession session;
+    private AudioEngine.LiveSession ringing;
     private ExternalMidiOutput midi;
     private boolean loading;
     private double barFraction = -1;
@@ -133,6 +141,12 @@ public final class BeatStudio extends Application {
         engine = new AudioEngine(SampleBank.load(Path.of("samples"), AudioEngine.DEFAULT_SAMPLE_RATE));
         findJams(config);
         presets.getItems().setAll(jams.keySet());
+        synthControls.setOnChange((params, effects) -> {
+            if (liveSynth != null) {
+                liveSynth.setParams(params);
+                liveSynth.setEffectParams(effects);
+            }
+        });
         melodyOn.setSelected(true);
         melodyToMidi.setDisable(true);
         applyMidiLatency();
@@ -153,6 +167,7 @@ public final class BeatStudio extends Application {
         });
         bpm.valueProperty().addListener((property, before, after) -> {
             updateBpmLabel();
+            synthControls.setTempo(bpm.getValue());
             publish();
         });
         bars.valueProperty().addListener((property, before, after) -> reloadMelody());
@@ -211,6 +226,10 @@ public final class BeatStudio extends Application {
     @Override
     public void stop() {
         stopPlayback();
+        if (ringing != null) {
+            ringing.close();
+            ringing = null;
+        }
         closeMidi();
     }
 
@@ -241,8 +260,8 @@ public final class BeatStudio extends Application {
         VBox content = layout();
         ScrollPane scroll = new ScrollPane(new Group(content));
         scroll.setPannable(true);
-        scroll.setPrefViewportWidth(1100);
-        scroll.setPrefViewportHeight(700);
+        scroll.setPrefViewportWidth(1430);
+        scroll.setPrefViewportHeight(780);
 
         Label zoomLabel = new Label("100%");
         Button smaller = new Button("−");
@@ -251,16 +270,24 @@ public final class BeatStudio extends Application {
         larger.setOnAction(event -> setZoom(content, zoomLabel, zoom + 0.15));
         Button normal = new Button("100%");
         normal.setOnAction(event -> setZoom(content, zoomLabel, 1.0));
-        Button nextScreen = new Button("Drugi ekran");
+        Button nextScreen = new Button("Next screen");
         nextScreen.setDisable(Screen.getScreens().size() < 2);
         nextScreen.setOnAction(event -> moveToNextScreen(stage));
-        Button fullScreen = new Button("Pełny ekran");
+        Button fullScreen = new Button("Full screen");
         fullScreen.setOnAction(event -> stage.setFullScreen(!stage.isFullScreen()));
 
-        HBox tools = row(new Label("Powiększenie"), smaller, zoomLabel, larger, normal,
+        HBox tools = row(new Label("Zoom"), smaller, zoomLabel, larger, normal,
                 nextScreen, fullScreen);
-        tools.setPadding(new Insets(8, 12, 8, 12));
-        return new BorderPane(scroll, tools, null, null, null);
+        HBox transport = row(play, new Label("Jam"), presets, new Label("Tempo"), bpm, bpmLabel,
+                new Label("Loop (bars)"), bars, loopProgress, status);
+        HBox.setHgrow(loopProgress, Priority.ALWAYS);
+
+        // pinned above the scroll pane: what you reach for while it plays should not scroll away
+        VBox pinned = new VBox(8, tools, transport);
+        pinned.setPadding(new Insets(8, 12, 10, 12));
+        pinned.setStyle("-fx-background-color: #f8f9fa; -fx-border-color: transparent transparent"
+                + " #dee2e6 transparent; -fx-border-width: 0 0 1 0;");
+        return new BorderPane(scroll, pinned, null, null, null);
     }
 
     private void setZoom(VBox content, Label label, double requested) {
@@ -315,11 +342,12 @@ public final class BeatStudio extends Application {
             request = next;
             midiLatency.setValue(next.midiLatencyMillis());
             sequence = nextSequence;
-            synth = nextSynth;
+            setSynth(next.synth(), nextSynth);
             rows.clear();
             pattern.forEach(track -> rows.add(GridRow.fromTrack(track)));
             bpm.setValue(MidiFileReader.readTempo(nextSequence));
             updateBpmLabel();
+            synthControls.setTempo(bpm.getValue());
             String length = loopLabel(next.bars());
             if (!loopLengths.contains(length)) {
                 loopLengths.add(length);
@@ -334,6 +362,23 @@ public final class BeatStudio extends Application {
             loading = false;
         }
         publish();
+    }
+
+    /**
+     * A ported patch becomes a {@link LiveNovasawSynth}, so the panel's knobs reach the notes that
+     * are sounding; anything else plays as it always did, with the panel switched off.
+     */
+    private void setSynth(String name, PitchSynth next) {
+        if (next instanceof NovasawSynth patch) {
+            liveSynth = new LiveNovasawSynth(patch);
+            synth = liveSynth;
+            synthControls.node().setDisable(false);
+            synthControls.selectPreset(name);
+        } else {
+            liveSynth = null;
+            synth = next;
+            synthControls.node().setDisable(true);
+        }
     }
 
     private void reloadMelody() {
@@ -380,7 +425,7 @@ public final class BeatStudio extends Application {
         for (int index = 0; index < rows.size(); index++) {
             GridRow row = rows.get(index);
             Label name = new Label(row.label());
-            name.setMinWidth(90);
+            name.setMinWidth(76);
             int steps = row.accents().length;
             double width = (BAR_WIDTH - (steps - 1) * CELL_GAP) / steps;
             HBox line = new HBox(CELL_GAP, name);
@@ -437,6 +482,11 @@ public final class BeatStudio extends Application {
             stopPlayback();
             return;
         }
+        if (ringing != null) {
+            // a tail from the last stop is still sounding; it makes way for the new jam
+            ringing.close();
+            ringing = null;
+        }
         try {
             NoteListener externalMelody = melodyToMidi.isSelected() && midi != null ? BeatApp.melodyListener(midi) : null;
             session = engine.playLive(jam::get, externalMelody);
@@ -447,15 +497,17 @@ public final class BeatStudio extends Application {
         }
     }
 
+    /** The jam stops, but its last notes, repeats and reverb are left to die away on their own. */
     private void stopPlayback() {
         if (session != null) {
-            session.close();
+            session.release();
+            ringing = session;
             session = null;
         }
-        play.setText("Graj");
+        play.setText("Play");
         barFraction = -1;
         loopProgress.setProgress(0);
-        status.setText("Zatrzymane");
+        status.setText("Stopped");
         paintGrid();
     }
 
@@ -534,11 +586,11 @@ public final class BeatStudio extends Application {
                 if (moved) {
                     paintGrid();
                 }
-                status.setText(String.format(Locale.ROOT, "Takt %d z %s, %.1f BPM%s",
+                status.setText(String.format(Locale.ROOT, "Bar %d of %s, %.1f BPM%s",
                         (int) (position.beat() / BEATS_PER_BAR) + 1,
                         loopLabel(position.lengthBeats() / BEATS_PER_BAR),
                         position.song().bpm(),
-                        position.song() == jam.get().song() ? "" : "  |  zmiany wejdą od następnej pętli"));
+                        position.song() == jam.get().song() ? "" : "  |  changes land on the next loop"));
             }
         };
     }
@@ -556,20 +608,31 @@ public final class BeatStudio extends Application {
         code.setStyle("-fx-font-family: 'Consolas', 'Menlo', monospace; -fx-font-size: 14px;");
         codeError.setStyle("-fx-text-fill: #c92a2a;");
 
-        VBox root = new VBox(14,
-                row(play, new Label("Jam"), presets, new Label("Tempo"), bpm, bpmLabel,
-                        new Label("Pętla (takty)"), bars),
+        // the grid sets the left column's width; the code area follows it rather than the window
+        code.setPrefWidth(BAR_WIDTH + 86);
+        VBox jamColumn = new VBox(14,
                 grid,
                 code,
                 row(runCode, codeError),
-                loopProgress,
-                row(melodyOn, new Label("Głośność"), melodyVolume),
-                row(new Label("Urządzenie MIDI"), device, connect, melodyToMidi,
-                        new Label("CC"), cc, new Label("Filtr"), filter),
-                row(new Label("Opóźnienie syntezatora"), midiLatency, midiLatencyLabel),
-                status);
+                row(melodyOn, new Label("Volume"), melodyVolume),
+                row(new Label("MIDI device"), device, connect, melodyToMidi),
+                row(new Label("CC"), cc, new Label("Filter"), filter,
+                        new Label("Synth latency"), midiLatency, midiLatencyLabel));
+
+        HBox columns = new HBox(18, jamColumn, synthPanel());
+        columns.setAlignment(Pos.TOP_LEFT);
+        columns.setFillHeight(false);
+
+        VBox root = new VBox(14, columns);
         root.setPadding(new Insets(16));
         return root;
+    }
+
+    /** The synth's front panel, which folds away for anyone who only wants the grid. */
+    private TitledPane synthPanel() {
+        TitledPane pane = new TitledPane("Synth", synthControls.node());
+        pane.setExpanded(true);
+        return pane;
     }
 
     private void updateBpmLabel() {
