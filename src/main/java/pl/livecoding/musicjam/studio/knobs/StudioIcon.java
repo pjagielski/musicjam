@@ -4,11 +4,19 @@ import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.image.Image;
+import javafx.scene.image.PixelReader;
 import javafx.scene.image.WritableImage;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.ArcType;
 import javafx.scene.shape.StrokeLineCap;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -26,7 +34,29 @@ public final class StudioIcon {
     }
 
     public static List<Image> sizes() {
-        return java.util.Arrays.stream(SIZES).mapToObj(StudioIcon::draw).map(Image.class::cast).toList();
+        return Arrays.stream(SIZES).mapToObj(StudioIcon::icon).toList();
+    }
+
+    /**
+     * Drawn on a canvas, then handed over as PNG bytes: the window manager ignores the
+     * {@link WritableImage} a snapshot returns, and takes an image read from a stream.
+     */
+    private static Image icon(int size) {
+        WritableImage drawn = draw(size);
+        BufferedImage png = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        PixelReader pixels = drawn.getPixelReader();
+        for (int y = 0; y < size; y++) {
+            for (int x = 0; x < size; x++) {
+                png.setRGB(x, y, pixels.getArgb(x, y));
+            }
+        }
+        var bytes = new ByteArrayOutputStream();
+        try {
+            ImageIO.write(png, "png", bytes);
+        } catch (IOException failure) {
+            throw new UncheckedIOException(failure);
+        }
+        return new Image(new ByteArrayInputStream(bytes.toByteArray()));
     }
 
     private static WritableImage draw(int size) {

@@ -52,6 +52,8 @@ final class XyPad extends Canvas {
     private void moveTo(MouseEvent event) {
         across.set(clamp(event.getX() / getWidth()));
         up.set(clamp(1 - event.getY() / getHeight()));
+        // consumed so that a drag across the pad moves the filter, not the scroll pane behind it
+        event.consume();
     }
 
     private static double clamp(double value) {

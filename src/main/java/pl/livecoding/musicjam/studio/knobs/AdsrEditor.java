@@ -56,9 +56,19 @@ final class AdsrEditor extends Canvas {
             property.addListener((ignored, before, after) -> draw());
         }
 
-        setOnMousePressed(event -> dragging = nearestHandle(event));
-        setOnMouseDragged(this::drag);
-        setOnMouseReleased(event -> dragging = null);
+        // consumed so that dragging a handle shapes the envelope instead of panning the view
+        setOnMousePressed(event -> {
+            dragging = nearestHandle(event);
+            event.consume();
+        });
+        setOnMouseDragged(event -> {
+            drag(event);
+            event.consume();
+        });
+        setOnMouseReleased(event -> {
+            dragging = null;
+            event.consume();
+        });
         draw();
     }
 

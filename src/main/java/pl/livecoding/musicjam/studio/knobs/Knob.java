@@ -55,19 +55,26 @@ final class Knob extends VBox {
                 + "\ndrag up or down, Shift for fine steps, double-click for the starting value"));
 
         position.addListener((property, before, after) -> draw());
+        // every one of these is consumed: a knob inside a pannable ScrollPane would otherwise drag
+        // the whole view along with the value, cursor and all
         setOnMousePressed(event -> {
             requestFocus();
             dragFrom = event.getSceneY();
             if (event.getButton() == MouseButton.PRIMARY && event.getClickCount() == 2) {
                 setValue(param.initial());
             }
+            event.consume();
         });
         setOnMouseDragged(event -> {
             double pixels = dragFrom - event.getSceneY();
             dragFrom = event.getSceneY();
             nudge(pixels / FULL_TURN_PIXELS / (event.isShiftDown() ? SHIFT_SLOWDOWN : 1));
+            event.consume();
         });
-        setOnScroll(event -> nudge(Math.signum(event.getDeltaY()) * (event.isShiftDown() ? 0.002 : 0.02)));
+        setOnScroll(event -> {
+            nudge(Math.signum(event.getDeltaY()) * (event.isShiftDown() ? 0.002 : 0.02));
+            event.consume();
+        });
         setOnKeyPressed(event -> {
             double step = event.isShiftDown() ? 0.002 : 0.02;
             if (event.getCode() == KeyCode.UP || event.getCode() == KeyCode.RIGHT) {
