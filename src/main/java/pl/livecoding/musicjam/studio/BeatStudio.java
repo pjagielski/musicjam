@@ -46,6 +46,8 @@ import pl.livecoding.musicjam.model.DrumTrack;
 import pl.livecoding.musicjam.model.MelodyTrack;
 import pl.livecoding.musicjam.model.Song;
 import pl.livecoding.musicjam.model.Track;
+import pl.livecoding.musicjam.studio.knobs.PanelKnob;
+import pl.livecoding.musicjam.studio.knobs.StudioPanels;
 import pl.livecoding.musicjam.studio.knobs.SynthControls;
 import pl.livecoding.musicjam.synth.LiveNovasawSynth;
 import pl.livecoding.musicjam.synth.NovasawSynth;
@@ -108,14 +110,14 @@ public final class BeatStudio extends Application {
     private final Button runCode = new Button("Run (Ctrl+Enter)");
     private final Label codeError = new Label();
     private final CheckBox melodyOn = new CheckBox("Melody");
-    private final Slider melodyVolume = new Slider(0, 1, 1);
+    private final PanelKnob melodyVolume = StudioPanels.knob("Volume", 0, 1, "", 2, 1);
     private final TextField device = new TextField();
     private final ToggleButton connect = new ToggleButton("Connect MIDI");
     private final CheckBox melodyToMidi = new CheckBox("Melody over MIDI");
     private final Spinner<Integer> cc = new Spinner<>(0, 127, 74);
-    private final Slider filter = new Slider(0, 127, 64);
-    private final Slider midiLatency = new Slider(0, 400, PhraseRequest.DEFAULT_MIDI_LATENCY_MILLIS);
-    private final Label midiLatencyLabel = new Label();
+    private final PanelKnob filter = StudioPanels.knob("Filter", 0, 127, "", 0, 64);
+    private final PanelKnob midiLatency =
+            StudioPanels.knob("Latency", 0, 400, "ms", 0, PhraseRequest.DEFAULT_MIDI_LATENCY_MILLIS);
     private final SynthControls synthControls = SynthControls.light(2);
     private final ProgressBar loopProgress = new ProgressBar(0);
     private final Label status = new Label("Stopped");
@@ -185,7 +187,7 @@ public final class BeatStudio extends Application {
         });
         runCode.setOnAction(event -> runCode());
         melodyOn.selectedProperty().addListener((property, before, after) -> publish());
-        melodyVolume.valueProperty().addListener((property, before, after) -> publish());
+        melodyVolume.setOnChange(volume -> publish());
         connect.setOnAction(event -> {
             if (connect.isSelected()) {
                 openMidi();
@@ -196,9 +198,9 @@ public final class BeatStudio extends Application {
             }
         });
         melodyToMidi.setOnAction(event -> reconfigure(() -> { }));
-        filter.valueProperty().addListener((property, before, after) -> sendFilter());
+        filter.setOnChange(value -> sendFilter());
         cc.valueProperty().addListener((property, before, after) -> sendFilter());
-        midiLatency.valueProperty().addListener((property, before, after) -> applyMidiLatency());
+        midiLatency.setOnChange(millis -> applyMidiLatency());
 
         boolean presentation = getParameters().getRaw().contains("--presentation");
         Scene scene = new Scene(windowLayout(stage));
@@ -412,7 +414,7 @@ public final class BeatStudio extends Application {
             return;
         }
         double lengthBeats = melody.patternLengthBeats();
-        float gain = melodyOn.isSelected() ? (float) melodyVolume.getValue() : 0.0f;
+        float gain = melodyOn.isSelected() ? (float) melodyVolume.value() : 0.0f;
         List<Track> tracks = List.of(
                 new MelodyTrack(GridRow.notes(rows, BEATS_PER_BAR, lengthBeats), lengthBeats, 1.0f),
                 new MelodyTrack(melody.notes(), lengthBeats, gain));
@@ -546,7 +548,7 @@ public final class BeatStudio extends Application {
 
     private void sendFilter() {
         int controller = cc.getValue();
-        int value = (int) Math.round(filter.getValue());
+        int value = (int) Math.round(filter.value());
         if (midi == null || (controller == sentController && value == sentFilter)) {
             return;
         }
@@ -556,9 +558,8 @@ public final class BeatStudio extends Application {
     }
 
     private void applyMidiLatency() {
-        midiLatencyLabel.setText(String.format(Locale.ROOT, "%.0f ms", midiLatency.getValue()));
         if (session != null) {
-            session.setExternalLatencyMillis(midiLatency.getValue());
+            session.setExternalLatencyMillis(midiLatency.value());
         }
     }
 
@@ -600,9 +601,6 @@ public final class BeatStudio extends Application {
         cc.setPrefWidth(80);
         device.setPrefColumnCount(10);
         bpm.setPrefWidth(220);
-        melodyVolume.setPrefWidth(160);
-        filter.setPrefWidth(220);
-        midiLatency.setPrefWidth(160);
         loopProgress.setMaxWidth(Double.MAX_VALUE);
         code.setPrefRowCount(7);
         code.setStyle("-fx-font-family: 'Consolas', 'Menlo', monospace; -fx-font-size: 14px;");
@@ -614,10 +612,7 @@ public final class BeatStudio extends Application {
                 grid,
                 code,
                 row(runCode, codeError),
-                row(melodyOn, new Label("Volume"), melodyVolume),
-                row(new Label("MIDI device"), device, connect, melodyToMidi),
-                row(new Label("CC"), cc, new Label("Filter"), filter,
-                        new Label("Synth latency"), midiLatency, midiLatencyLabel));
+                melodyAndMidiPanels());
 
         HBox columns = new HBox(18, jamColumn, synthPanel());
         columns.setAlignment(Pos.TOP_LEFT);
@@ -626,6 +621,19 @@ public final class BeatStudio extends Application {
         VBox root = new VBox(14, columns);
         root.setPadding(new Insets(16));
         return root;
+    }
+
+    /** The melody and the external synth, framed like the knob panel so the window reads as one. */
+    private HBox melodyAndMidiPanels() {
+        HBox panels = new HBox(14,
+                StudioPanels.frame("Melody",
+                        StudioPanels.row(melodyOn, melodyVolume.node())),
+                StudioPanels.frame("External MIDI",
+                        StudioPanels.row(new Label("Device"), device, connect, melodyToMidi),
+                        StudioPanels.row(new Label("CC"), cc, filter.node(), midiLatency.node())));
+        panels.setFillHeight(false);
+        panels.setAlignment(Pos.TOP_LEFT);
+        return panels;
     }
 
     /** The synth's front panel, which folds away for anyone who only wants the grid. */
