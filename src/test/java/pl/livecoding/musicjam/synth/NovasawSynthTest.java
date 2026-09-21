@@ -26,7 +26,7 @@ class NovasawSynthTest {
 
     @Test
     void everyPatchKeepsItsOwnFingerprint() {
-        assertEquals("8599 0.171009 -0.102297 0.000591 35.564352",
+        assertEquals("13450 -0.099492 0.004655 0.003071 41.621979",
                 fingerprint(new TrancePluckSynth().render(72, 5_512, SAMPLE_RATE)));
         assertEquals("52920 0.068558 0.117932 0.011762 201.642778",
                 fingerprint(new WidePadSynth().render(48, 22_050, SAMPLE_RATE)));
@@ -52,6 +52,41 @@ class NovasawSynthTest {
                 fingerprint(new SubBassSynth().render(40, 44_100, SAMPLE_RATE)));
         assertEquals("47628 0.052664 -0.006201 0.000492 113.447781",
                 fingerprint(new AcidBassSynth().render(45, 44_100, SAMPLE_RATE)));
+    }
+
+    @Test
+    void theFilterEnvelopeDarkensANoteWhoseLevelHolds() {
+        // the level holds at full for the whole second; only the filter's envelope moves
+        SynthParams held = SynthParams.of(0.002f, 0.2f, 1.0f, 0.1f, 12, 0, 0, 1, 0,
+                300, 0.2f, 8000, 0, 0.001f, 0.15f, 0.0f, 0.1f, 0.5f, 1.0f);
+        SynthParams following = held.withFilterEnvelope(0.002f, 0.2f, 1.0f, 0.1f);
+
+        float[] pluck = NovasawSynth.render(57, SAMPLE_RATE, SAMPLE_RATE, held).copyMono();
+        float[] open = NovasawSynth.render(57, SAMPLE_RATE, SAMPLE_RATE, following).copyMono();
+
+        assertTrue(brightness(pluck, 22_050) < brightness(pluck, 0) * 0.3,
+                "the brightness should be gone half a second in");
+        assertTrue(rms(pluck, 22_050) > rms(pluck, 0) * 0.4, "while the note itself still sounds");
+        assertTrue(brightness(open, 22_050) > brightness(open, 0) * 0.5,
+                "a filter following a held level stays open");
+    }
+
+    /** How much of a stretch is edges rather than body: the size of its steps against its size. */
+    private static double brightness(float[] samples, int from) {
+        double steps = 0;
+        for (int frame = from + 1; frame < from + 2_205; frame++) {
+            double step = samples[frame] - samples[frame - 1];
+            steps += step * step;
+        }
+        return Math.sqrt(steps / 2_204) / rms(samples, from);
+    }
+
+    private static double rms(float[] samples, int from) {
+        double sum = 0;
+        for (int frame = from; frame < from + 2_205; frame++) {
+            sum += samples[frame] * samples[frame];
+        }
+        return Math.sqrt(sum / 2_205);
     }
 
     /** How much of {@code hertz} a sample holds, by correlating it with that frequency. */

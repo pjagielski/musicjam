@@ -4,10 +4,10 @@ import pl.livecoding.musicjam.audio.VoiceSource;
 
 import java.util.function.Supplier;
 
+import static pl.livecoding.musicjam.synth.NovasawDsp.Adsr;
 import static pl.livecoding.musicjam.synth.NovasawDsp.LowpassFilter;
 import static pl.livecoding.musicjam.synth.NovasawDsp.clamp;
 import static pl.livecoding.musicjam.synth.NovasawDsp.deterministicPhaseJitter;
-import static pl.livecoding.musicjam.synth.NovasawDsp.envelopeCoefficient;
 import static pl.livecoding.musicjam.synth.NovasawDsp.polyBlepSaw;
 import static pl.livecoding.musicjam.synth.NovasawDsp.shapeDiode;
 import static pl.livecoding.musicjam.synth.NovasawDsp.wrapTwoPi;
@@ -15,7 +15,9 @@ import static pl.livecoding.musicjam.synth.NovasawDsp.wrapUnitPhase;
 
 /**
  * One sounding note of the novasaw engine: 7 unison sawtooths, a diode waveshaper and a resonant
- * lowpass, advanced one frame at a time. All the state the old {@code render} loop kept in local
+ * lowpass, advanced one frame at a time. Two envelopes run side by side: one sets the level, the
+ * other opens the filter by {@code filterEnvAmountHz}, so a note can keep sounding after its
+ * brightness has gone, which is what makes a pluck rather than just a short note. All the state the old {@code render} loop kept in local
  * variables lives here instead, so the note can be played out over many blocks.
  *
  * <p>The parameters are read from the supplier on every frame rather than captured once. Hand it a
@@ -39,11 +41,12 @@ public final class NovasawVoice implements VoiceSource {
     private final double[] phase = new double[UNISON_VOICES];
     private final double[] driftPhase = new double[UNISON_VOICES];
     private final LowpassFilter filter = new LowpassFilter();
+    private final Adsr amplitude = new Adsr();
+    private final Adsr filterEnvelope = new Adsr();
     private final float deClickStep;
 
     private double motionPhase;
     private double subPhase;
-    private float envelope;
     private float deClick;
     private int frame;
 
@@ -65,17 +68,11 @@ public final class NovasawVoice implements VoiceSource {
     @Override
     public float next() {
         SynthParams current = params.get();
-        if (frame < heldFrames) {
-            if (envelope < 1.0f && frame < (int) (current.attackSeconds() * sampleRate)) {
-                envelope = Math.min(1.0f,
-                        envelope + (1.0f - envelope) * envelopeCoefficient(current.attackSeconds(), sampleRate));
-            } else if (envelope > current.sustainLevel()) {
-                envelope = Math.max(current.sustainLevel(), envelope + (current.sustainLevel() - envelope)
-                        * envelopeCoefficient(current.decaySeconds(), sampleRate));
-            }
-        } else {
-            envelope += (0.0f - envelope) * envelopeCoefficient(current.releaseSeconds(), sampleRate);
-        }
+        float envelope = amplitude.next(frame, heldFrames, current.attackSeconds(), current.decaySeconds(),
+                current.sustainLevel(), current.releaseSeconds(), sampleRate);
+        float filterLevel = filterEnvelope.next(frame, heldFrames, current.filterAttackSeconds(),
+                current.filterDecaySeconds(), current.filterSustainLevel(), current.filterReleaseSeconds(),
+                sampleRate);
         deClick = Math.min(1.0f, deClick + deClickStep);
 
         double vibrato = Math.sin(motionPhase) * current.vibratoCents();
@@ -108,7 +105,7 @@ public final class NovasawVoice implements VoiceSource {
         float shaped = shapeDiode(voiceSample * current.unisonGain() * 0.55f, current.drive())
                 * MAX_OUTPUT_GAIN * current.outputTrim();
         float dynamicCutoff = clamp(
-                current.cutoffHz() + envelope * current.filterEnvAmountHz()
+                current.cutoffHz() + filterLevel * current.filterEnvAmountHz()
                         + (midiNote - 60) * current.keyTrackHzPerSemitone(),
                 80.0f, 18000.0f);
         frame++;

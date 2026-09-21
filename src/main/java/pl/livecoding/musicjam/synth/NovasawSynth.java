@@ -10,7 +10,7 @@ import static pl.livecoding.musicjam.synth.NovasawDsp.smoothStep;
 /**
  * Shared engine behind every novasaw patch port (Sandbox/novasaw, Source/MainComponent.cpp): a
  * 7-voice unison PolyBLEP sawtooth with drift/vibrato, a diode waveshaper and a resonant lowpass
- * driven by the amplitude envelope and key tracking. The algorithm never changes between patches
+ * driven by its own envelope and key tracking. The algorithm never changes between patches
  * — only the recipe constants and the preset's macro knobs do — so subclasses just pass those to
  * the constructor; the sound itself is made by {@link NovasawVoice}, one frame at a time.
  *
@@ -55,6 +55,28 @@ public abstract class NovasawSynth implements PitchSynth {
             float driveBase, float driveRange, float outputTrim,
             float presetIntensity, float presetTone, float presetMotion, float subLevel
     ) {
+        this(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneBaseCents, detuneRangeCents,
+                cutoffBaseHz, cutoffRangeHz, filterEnvAmountHz, keyTrackHzPerSemitone,
+                motionRateHz, vibratoCentsBase, driveBase, driveRange, outputTrim,
+                presetIntensity, presetTone, presetMotion, subLevel,
+                attackSeconds, decaySeconds, sustainLevel, releaseSeconds);
+    }
+
+    /**
+     * As above, with the filter on an envelope of its own rather than following the level's: the
+     * last four are its attack, decay, sustain and release. A pluck wants this — the brightness
+     * gone in a tenth of a second, the note ringing on after it.
+     */
+    protected NovasawSynth(
+            float attackSeconds, float decaySeconds, float sustainLevel, float releaseSeconds,
+            float detuneBaseCents, float detuneRangeCents,
+            float cutoffBaseHz, float cutoffRangeHz, float filterEnvAmountHz, float keyTrackHzPerSemitone,
+            float motionRateHz, float vibratoCentsBase,
+            float driveBase, float driveRange, float outputTrim,
+            float presetIntensity, float presetTone, float presetMotion, float subLevel,
+            float filterAttackSeconds, float filterDecaySeconds, float filterSustainLevel,
+            float filterReleaseSeconds
+    ) {
         float intensity = shapeEnergy(presetIntensity);
         float tone = shapeTone(presetTone);
         float motion = smoothStep(presetMotion);
@@ -65,6 +87,7 @@ public abstract class NovasawSynth implements PitchSynth {
                 cutoffBaseHz + tone * cutoffRangeHz + intensity * 1200.0f,
                 clamp(0.12f + tone * 0.20f + intensity * 0.16f + motion * 0.08f, 0.0f, 0.82f),
                 filterEnvAmountHz * (0.25f + intensity * 0.75f), keyTrackHzPerSemitone,
+                filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
                 driveBase + intensity * driveRange, outputTrim);
     }
 

@@ -86,6 +86,30 @@ final class NovasawDsp {
         return (seed & 0x00ffffff) / (double) 0x01000000;
     }
 
+    /**
+     * One ADSR, one frame at a time, in novasaw's own shape: exponential segments, the attack
+     * ending on time or on reaching full level, whichever is first. The voice runs two, one for
+     * the level and one for the filter, so both move alike when given the same four numbers.
+     */
+    static final class Adsr {
+        private float level;
+
+        float next(int frame, int heldFrames, float attackSeconds, float decaySeconds, float sustainLevel,
+                   float releaseSeconds, int sampleRate) {
+            if (frame < heldFrames) {
+                if (level < 1.0f && frame < (int) (attackSeconds * sampleRate)) {
+                    level = Math.min(1.0f, level + (1.0f - level) * envelopeCoefficient(attackSeconds, sampleRate));
+                } else if (level > sustainLevel) {
+                    level = Math.max(sustainLevel, level + (sustainLevel - level)
+                            * envelopeCoefficient(decaySeconds, sampleRate));
+                }
+            } else {
+                level += (0.0f - level) * envelopeCoefficient(releaseSeconds, sampleRate);
+            }
+            return level;
+        }
+    }
+
     static final class LowpassFilter {
         private float low;
         private float band;

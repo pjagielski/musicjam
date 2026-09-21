@@ -9,6 +9,7 @@ import javafx.scene.control.ListCell;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import pl.livecoding.musicjam.synth.AcidBassSynth;
 import pl.livecoding.musicjam.synth.AnthemLeadSynth;
@@ -54,6 +55,26 @@ public final class SynthControls {
     private static final Param DECAY = Param.exponential("Decay", 1, 3000, "ms", 0, 350);
     private static final Param SUSTAIN = Param.linear("Sustain", 0, 1, "", 2, 0.82);
     private static final Param RELEASE = Param.exponential("Release", 1, 4000, "ms", 0, 110);
+    private static final Param FILTER_ATTACK = Param.exponential("Attack", 1, 2000, "ms", 0, 6);
+    private static final Param FILTER_DECAY = Param.exponential("Decay", 1, 3000, "ms", 0, 350);
+    private static final Param FILTER_SUSTAIN = Param.linear("Sustain", 0, 1, "", 2, 0.82);
+    private static final Param FILTER_RELEASE = Param.exponential("Release", 1, 4000, "ms", 0, 110);
+
+    /** Which envelope the Envelope group is showing: the level's, or the filter's own. */
+    enum EnvelopeView {
+        AMP("Amp"), FILTER("Filter");
+
+        private final String label;
+
+        EnvelopeView(String label) {
+            this.label = label;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
 
     /** What a delay repeat is worth in beats, so the echo lands with the jam instead of near it. */
     enum Sync {
@@ -105,6 +126,10 @@ public final class SynthControls {
     private final Knob decay;
     private final Knob sustain;
     private final Knob release;
+    private final Knob filterAttack;
+    private final Knob filterDecay;
+    private final Knob filterSustain;
+    private final Knob filterRelease;
     private final Knob delayTime;
     private final Knob delayFeedback;
     private final Knob delayTone;
@@ -116,6 +141,8 @@ public final class SynthControls {
     private final Knob duckRecover;
     private final XyPad pad;
     private final AdsrEditor envelope;
+    private final AdsrEditor filterEnvelope;
+    private final Choice<EnvelopeView> envelopeView;
     private final ComboBox<String> preset = new ComboBox<>();
     private final Choice<Sync> sync;
     private final Label syncLabel = new Label("Sync");
@@ -160,6 +187,12 @@ public final class SynthControls {
         sustain = knob(SUSTAIN, Theme.Accent.AMP, 62);
         release = knob(RELEASE, Theme.Accent.AMP, 62);
         envelope = new AdsrEditor(ATTACK, DECAY, SUSTAIN, RELEASE, Theme.Accent.AMP, COLUMN_WIDTH, 150, theme);
+        filterAttack = knob(FILTER_ATTACK, Theme.Accent.FILTER, 62);
+        filterDecay = knob(FILTER_DECAY, Theme.Accent.FILTER, 62);
+        filterSustain = knob(FILTER_SUSTAIN, Theme.Accent.FILTER, 62);
+        filterRelease = knob(FILTER_RELEASE, Theme.Accent.FILTER, 62);
+        filterEnvelope = new AdsrEditor(FILTER_ATTACK, FILTER_DECAY, FILTER_SUSTAIN, FILTER_RELEASE,
+                Theme.Accent.FILTER, COLUMN_WIDTH, 150, theme);
 
         EffectParams start = EffectParams.DEFAULT;
         delayTime = knob(Param.exponential("Time", 20, 2000, "ms", 0, start.delayMillis()), Theme.Accent.FX, 62);
@@ -180,6 +213,10 @@ public final class SynthControls {
         decay.position().bindBidirectional(envelope.decayAt());
         sustain.position().bindBidirectional(envelope.sustainAt());
         release.position().bindBidirectional(envelope.releaseAt());
+        filterAttack.position().bindBidirectional(filterEnvelope.attackAt());
+        filterDecay.position().bindBidirectional(filterEnvelope.decayAt());
+        filterSustain.position().bindBidirectional(filterEnvelope.sustainAt());
+        filterRelease.position().bindBidirectional(filterEnvelope.releaseAt());
         knobs.forEach(knob -> knob.position().addListener((property, before, after) -> publish()));
 
         preset.getItems().setAll(PATCHES.keySet());
@@ -203,11 +240,23 @@ public final class SynthControls {
         VBox delayPicture = new VBox(8, delayMode, delayDiagram, syncRow);
         reverbDiagram = new ReverbDiagram(COLUMN_WIDTH, 128, Theme.Accent.FX, theme);
 
+        // one group, two envelopes: the level's and the filter's share the frame, a switch between them
+        envelopeView = new Choice<>(Choice.Look.SEGMENTS, List.of(EnvelopeView.values()), EnvelopeView.AMP,
+                Theme.Accent.FILTER, theme);
+        VBox ampEnvelope = envelopeBox(envelope, attack, decay, sustain, release);
+        VBox ownFilterEnvelope = envelopeBox(filterEnvelope, filterAttack, filterDecay, filterSustain, filterRelease);
+        ownFilterEnvelope.setVisible(false);
+        envelopeView.setOnChange(view -> {
+            ampEnvelope.setVisible(view == EnvelopeView.AMP);
+            ownFilterEnvelope.setVisible(view == EnvelopeView.FILTER);
+        });
+        VBox envelopes = new VBox(8, envelopeView, new StackPane(ampEnvelope, ownFilterEnvelope));
+
         List<VBox> groupBoxes = List.of(
                 section("Oscillator", Theme.Accent.OSC, null, detune, sub, vibrato, motionRate, drift),
                 section("Amp · Sidechain", Theme.Accent.AMP, null, drive, trim, duckDepth, duckRecover),
                 section("Filter", Theme.Accent.FILTER, pad, cutoff, resonance, envAmount, keyTrack),
-                section("Envelope", Theme.Accent.AMP, envelope, attack, decay, sustain, release),
+                section("Envelope", Theme.Accent.AMP, envelopes),
                 section("Delay", Theme.Accent.FX, delayPicture, delayTime, delayFeedback, delayTone, delayMix),
                 section("Reverb", Theme.Accent.FX, reverbDiagram, reverbSize, reverbDamping, reverbMix));
         GridPane groups = new GridPane();
@@ -272,6 +321,8 @@ public final class SynthControls {
                 (float) motionRate.value(),
                 (float) drift.value(), (float) cutoff.value(), (float) resonance.value(),
                 (float) envAmount.value(), (float) keyTrack.value(),
+                (float) (filterAttack.value() / 1000), (float) (filterDecay.value() / 1000),
+                (float) filterSustain.value(), (float) (filterRelease.value() / 1000),
                 (float) drive.value(), (float) trim.value());
     }
 
@@ -294,6 +345,10 @@ public final class SynthControls {
             decay.setValue(params.decaySeconds() * 1000);
             sustain.setValue(params.sustainLevel());
             release.setValue(params.releaseSeconds() * 1000);
+            filterAttack.setValue(params.filterAttackSeconds() * 1000);
+            filterDecay.setValue(params.filterDecaySeconds() * 1000);
+            filterSustain.setValue(params.filterSustainLevel());
+            filterRelease.setValue(params.filterReleaseSeconds() * 1000);
         } finally {
             applying = false;
         }
@@ -324,13 +379,15 @@ public final class SynthControls {
         return String.format(Locale.ROOT,
                 "detune=%.1fct sub=%.2f vibrato=%.2fct motion=%.2fHz drift=%.2f | cutoff=%.0fHz"
                         + " res=%.2f env=%+.0fHz keyTrack=%.0f | drive=%.2f trim=%.2f"
-                        + " | A=%.0fms D=%.0fms S=%.2f R=%.0fms",
+                        + " | A=%.0fms D=%.0fms S=%.2f R=%.0fms | filter A=%.0fms D=%.0fms S=%.2f R=%.0fms",
                 params.detuneCents(), params.subLevel(), params.vibratoCents(), params.motionRateHz(),
                 params.motion(),
                 params.cutoffHz(), params.resonance(), params.filterEnvAmountHz(),
                 params.keyTrackHzPerSemitone(), params.drive(), params.outputTrim(),
                 params.attackSeconds() * 1000, params.decaySeconds() * 1000, params.sustainLevel(),
-                params.releaseSeconds() * 1000)
+                params.releaseSeconds() * 1000,
+                params.filterAttackSeconds() * 1000, params.filterDecaySeconds() * 1000,
+                params.filterSustainLevel(), params.filterReleaseSeconds() * 1000)
                 + String.format(Locale.ROOT,
                 " | delay %s %.0fms fb=%.2f tone=%.2f mix=%.2f | reverb size=%.2f damp=%.2f mix=%.2f"
                         + " | duck=%.2f %.0fms",
@@ -365,6 +422,8 @@ public final class SynthControls {
         knobs.forEach(knob -> knob.setTheme(next));
         pad.setTheme(next);
         envelope.setTheme(next);
+        filterEnvelope.setTheme(next);
+        envelopeView.setTheme(next);
         String muted = "-fx-text-fill: " + Theme.web(next.mutedText()) + "; -fx-font-size: 11px;";
         presetLabel.setStyle(muted);
         syncLabel.setStyle(muted);
@@ -398,6 +457,14 @@ public final class SynthControls {
         };
     }
 
+    /** An envelope's picture with its four knobs under it, one column wide. */
+    private static VBox envelopeBox(AdsrEditor editor, Knob... controls) {
+        HBox row = new HBox(10, controls);
+        row.setAlignment(Pos.CENTER);
+        row.setPrefWidth(COLUMN_WIDTH);
+        return new VBox(10, editor, row);
+    }
+
     private Knob knob(Param param, Theme.Accent accent, double size) {
         Knob knob = new Knob(param, accent, size, theme);
         // one width for every knob, so four of them fill a column and two sit centred in one
@@ -418,8 +485,8 @@ public final class SynthControls {
 
         Label header = new Label(name.toUpperCase());
         headers.put(header, accent);
-        VBox box = picture == null
-                ? new VBox(10, header, row)
+        VBox box = picture == null ? new VBox(10, header, row)
+                : controls.length == 0 ? new VBox(10, header, picture)
                 : new VBox(10, header, picture, row);
         box.setPadding(new Insets(12, 14, 14, 14));
         box.setPrefWidth(COLUMN_WIDTH + 28);

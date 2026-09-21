@@ -13,7 +13,7 @@ blank page.
   delay and a Freeverb-style reverb, ducked under the kick when the panel asks for it. Stop
   releases rather than cuts, so tails ring out.
 - **Synth.** One engine (`NovasawSynth`), seven unison saws, a sub sine, a diode shaper, a
-  state-variable lowpass. Six patches, levelled against one another: anthem, pluck, pad,
+  state-variable lowpass on an envelope of its own. Six patches, levelled against one another: anthem, pluck, pad,
   chords, sub bass, acid bass.
 - **Control.** A panel of knobs, an XY pad and a draggable envelope, all publishing `SynthParams`
   and `EffectParams`. Presets load a patch's own numbers; the delay can lock to the jam's tempo.
@@ -52,7 +52,7 @@ mixer is the thing that makes the studio feel like a studio rather than a demo.
 
 | Step | What | Effort |
 | --- | --- | --- |
-| 2.1 | ★ **A filter envelope of its own.** Today `Env→Filt` reuses the amplitude envelope; a separate ADSR for the filter is what separates a preset from an instrument. Strudel keeps `lpenv` apart from the amp envelope for the same reason. | M |
+| 2.1 | ✓ **Done.** ★ **A filter envelope of its own.** Today `Env→Filt` reuses the amplitude envelope; a separate ADSR for the filter is what separates a preset from an instrument. Strudel keeps `lpenv` apart from the amp envelope for the same reason. | M |
 | 2.2 | **Glide (portamento)**, so a mono bass line slides between notes. The acid patch is half-finished without it. | M |
 | 2.3 | **Highpass and bandpass** alongside the lowpass, chosen per patch. | S |
 | 2.4 | **Unison voice count** as a parameter (7 is a lead; a bass wants 1–3). | S |
