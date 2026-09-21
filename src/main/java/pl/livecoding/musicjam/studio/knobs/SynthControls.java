@@ -29,11 +29,11 @@ import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 
 /**
- * The synth's front panel as one node: four framed groups in a 2x2 grid of equal columns — the
- * oscillator and the amplifier above, the filter and the envelope below. The two lower groups
- * carry a picture of what their knobs do, drawn right above them: the XY pad for the filter, the
- * envelope's own shape for its four times. Knob and picture are two views of one value, so moving
- * either moves the other.
+ * The synth's front panel as one node: six framed groups in a grid of equal columns — oscillator
+ * and amplifier, filter and envelope, delay and reverb. Four of them carry a picture of what their
+ * knobs do, drawn right above them: the XY pad for the filter, the envelope's own shape, where the
+ * delay's repeats land ear by ear, and the reverb's tail dying away. The filter's and the envelope's
+ * pictures can be dragged too; knob and picture are two views of one value.
  *
  * <p>Every move publishes a whole new {@link SynthParams} to whoever is listening — in the studio, a
  * {@link pl.livecoding.musicjam.synth.LiveNovasawSynth} that is playing right now.
@@ -112,10 +112,11 @@ public final class SynthControls {
     private final XyPad pad;
     private final AdsrEditor envelope;
     private final ComboBox<String> preset = new ComboBox<>();
-    private final ComboBox<Sync> sync = new ComboBox<>();
+    private final Choice<Sync> sync;
     private final Label syncLabel = new Label("Sync");
-    private final ComboBox<DelayMode> delayMode = new ComboBox<>();
-    private final Label delayModeLabel = new Label("Mode");
+    private final Choice<DelayMode> delayMode;
+    private final DelayDiagram delayDiagram;
+    private final ReverbDiagram reverbDiagram;
     private double bpm = 120;
     private final Label presetLabel = new Label("Preset");
     private final VBox panel;
@@ -183,22 +184,24 @@ public final class SynthControls {
         HBox presetRow = new HBox(10, presetLabel, preset);
         presetRow.setAlignment(Pos.CENTER_LEFT);
 
-        sync.getItems().setAll(Sync.values());
-        sync.setValue(Sync.FREE);
-        sync.setOnAction(event -> applySync());
-        delayMode.getItems().setAll(DelayMode.values());
-        delayMode.setValue(EffectParams.DEFAULT.delayMode());
-        delayMode.setOnAction(event -> publish());
-        HBox syncRow = new HBox(8, delayModeLabel, delayMode, syncLabel, sync);
+        delayMode = new Choice<>(Choice.Look.SEGMENTS, List.of(DelayMode.values()),
+                EffectParams.DEFAULT.delayMode(), Theme.Accent.FX, theme);
+        delayMode.setOnChange(mode -> publish());
+        sync = new Choice<>(Choice.Look.CHIPS, List.of(Sync.values()), Sync.FREE, Theme.Accent.FX, theme);
+        sync.setOnChange(division -> applySync());
+        HBox syncRow = new HBox(8, syncLabel, sync);
         syncRow.setAlignment(Pos.CENTER_LEFT);
+        delayDiagram = new DelayDiagram(COLUMN_WIDTH, Theme.Accent.FX, theme);
+        VBox delayPicture = new VBox(8, delayMode, delayDiagram, syncRow);
+        reverbDiagram = new ReverbDiagram(COLUMN_WIDTH, 128, Theme.Accent.FX, theme);
 
         List<VBox> groupBoxes = List.of(
                 section("Oscillator", Theme.Accent.OSC, null, detune, sub, vibrato, motionRate, drift),
                 section("Amplifier", Theme.Accent.AMP, null, drive, trim),
                 section("Filter", Theme.Accent.FILTER, pad, cutoff, resonance, envAmount, keyTrack),
                 section("Envelope", Theme.Accent.AMP, envelope, attack, decay, sustain, release),
-                section("Delay", Theme.Accent.FX, syncRow, delayTime, delayFeedback, delayTone, delayMix),
-                section("Reverb", Theme.Accent.FX, null, reverbSize, reverbDamping, reverbMix));
+                section("Delay", Theme.Accent.FX, delayPicture, delayTime, delayFeedback, delayTone, delayMix),
+                section("Reverb", Theme.Accent.FX, reverbDiagram, reverbSize, reverbDamping, reverbMix));
         GridPane groups = new GridPane();
         groups.setHgap(14);
         groups.setVgap(12);
@@ -208,6 +211,7 @@ public final class SynthControls {
 
         panel = new VBox(12, presetRow, groups);
         setTheme(theme);
+        redrawEffects();
     }
 
     public Region node() {
@@ -230,7 +234,7 @@ public final class SynthControls {
 
     /** With a division chosen, the Time knob is driven by the tempo and left for the panel to set. */
     private void applySync() {
-        Sync chosen = sync.getValue();
+        Sync chosen = sync.value();
         delayTime.setDisable(chosen != null && chosen != Sync.FREE);
         if (chosen == null || chosen == Sync.FREE || bpm <= 0) {
             return;
@@ -245,7 +249,7 @@ public final class SynthControls {
 
     /** The delay and reverb knobs, as the synth channel's effects read them. */
     public EffectParams effects() {
-        return new EffectParams(delayMode.getValue(),
+        return new EffectParams(delayMode.value(),
                 (float) delayTime.value(), (float) delayFeedback.value(), (float) delayTone.value(),
                 (float) delayMix.value(), (float) reverbSize.value(), (float) reverbDamping.value(),
                 (float) reverbMix.value());
@@ -327,8 +331,18 @@ public final class SynthControls {
     }
 
     private void publish() {
+        redrawEffects();
         if (!applying) {
             onChange.accept(params(), effects());
+        }
+    }
+
+    /** The two pictures follow the effect knobs, whoever moved them. */
+    private void redrawEffects() {
+        if (delayDiagram != null) {
+            EffectParams current = effects();
+            delayDiagram.update(current);
+            reverbDiagram.update(current);
         }
     }
 
@@ -344,15 +358,10 @@ public final class SynthControls {
         String muted = "-fx-text-fill: " + Theme.web(next.mutedText()) + "; -fx-font-size: 11px;";
         presetLabel.setStyle(muted);
         syncLabel.setStyle(muted);
-        delayModeLabel.setStyle(muted);
-        String comboStyle = "-fx-background-color: " + Theme.web(next.buttonFace())
-                + "; -fx-background-radius: 6;";
-        sync.setStyle(comboStyle);
-        sync.setButtonCell(themedCell(next));
-        sync.setCellFactory(list -> themedCell(next));
-        delayMode.setStyle(comboStyle);
-        delayMode.setButtonCell(themedCell(next));
-        delayMode.setCellFactory(list -> themedCell(next));
+        sync.setTheme(next);
+        delayMode.setTheme(next);
+        delayDiagram.setTheme(next);
+        reverbDiagram.setTheme(next);
         preset.setStyle("-fx-background-color: " + Theme.web(next.buttonFace())
                 + "; -fx-background-radius: 6;");
         // an inline style cannot reach a combo's cells, and a dark theme would leave them unreadable

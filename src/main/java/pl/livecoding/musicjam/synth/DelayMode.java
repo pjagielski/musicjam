@@ -15,7 +15,7 @@ public enum DelayMode {
     MONO("Mono"), PING_PONG("Ping-pong"), STEREO("Stereo"), TAPE("Tape");
 
     /** The right line's share of the left line's time in {@link #STEREO}. */
-    static final float STEREO_RATIO = 2.0f / 3;
+    public static final float STEREO_RATIO = 2.0f / 3;
 
     /** How far the tape drifts, as a share of the delay time, and how often. */
     static final float TAPE_DEPTH = 0.004f;
