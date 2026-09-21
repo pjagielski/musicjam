@@ -159,6 +159,85 @@ class AudioEngineLiveTest {
     }
 
     @Test
+    void aStutterRepeatsTheMixAndStoppingLetsGoOfIt() {
+        Song song = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "X...", 1.0f)));
+        var renderer = engine().liveRenderer(() -> jam(song), null);
+        renderer.stutter(0.5);
+
+        float[] held = render(renderer, 4);
+        assertEquals(1.0f, held[0], 1e-6f, "the kick");
+        assertEquals(1.0f, held[250], 1e-6f, "the kick again, an eighth later, from the repeat");
+
+        renderer.stopScheduling();
+        float[] after = render(renderer, BLOCKS);
+        for (int frame = 16; frame < after.length; frame++) {
+            assertEquals(0.0f, after[frame], 1e-6f, "a stopped jam should not keep repeating");
+        }
+    }
+
+    @Test
+    void aStutterPlaysItsNotesAgainThroughTheSynthAsItIsNow() {
+        var level = new AtomicReference<>(0.25f);
+        Song song = new Song(120, 4, List.of(new MelodyTrack(
+                List.of(new Note(0.0, new Voice.Pitch(60), 0.25, 1.0f)), 4.0, 1.0f)));
+        var renderer = engine().liveRenderer(
+                () -> new AudioEngine.Jam(song, constantLevelSynth(level)), null);
+        renderer.stutter(0.5);
+        float[] mix = new float[BLOCK * 2];
+
+        renderer.renderNext(mix);
+        assertEquals(0.25f, mix[0], "the note as the song plays it");
+
+        level.set(0.75f);
+        float[] left = render(renderer, 3);
+
+        // frame 250 of the render is frame 122 here: the slice's first repeat, with the new level
+        assertEquals(0.75f, left[250 - BLOCK], 1e-6f);
+        assertEquals(0.0f, left[200 - BLOCK], 1e-6f, "a repeat is cut to the slice, not smeared over it");
+    }
+
+    @Test
+    void aHeldStutterKeepsItsSliceWhileTheSongMovesOnUnderneath() {
+        Song kicks = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "X...", 0.5f)));
+        Song snares = new Song(120, 4, List.of(new DrumTrack(Drum.SNARE, ".X..", 0.25f)));
+        var renderer = engine().liveRenderer(firstThen(jam(kicks), jam(snares)), null);
+        renderer.stutter(0.5);
+
+        float[] left = render(renderer, BLOCKS);
+
+        assertEquals(0.5f, left[2_000], 1e-6f, "still the first loop's kick, in the second loop");
+        assertEquals(0.5f, left[2_500], 1e-6f, "and the second loop's snare is not played over it");
+    }
+
+    @Test
+    void aStutterHeldForManyBarsKeepsRepeating() {
+        Song song = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "X...", 0.5f)));
+        var renderer = engine().liveRenderer(() -> jam(song), null);
+        renderer.stutter(0.5);
+
+        // twenty seconds at 1000 frames a second: far longer than the song is remembered for
+        float[] left = render(renderer, 160);
+
+        assertEquals(0.5f, left[19_750], 1e-6f, "the slice's kick, still repeating an eighth apart");
+    }
+
+    @Test
+    void lettingGoOfAStutterPicksTheSongUpWhereItHasGot() {
+        Song song = new Song(120, 4, List.of(
+                new DrumTrack(Drum.KICK, "X...", 0.5f), new DrumTrack(Drum.SNARE, "..X.", 0.25f)));
+        var renderer = engine().liveRenderer(() -> jam(song), null);
+        renderer.stutter(0.5);
+        float[] held = render(renderer, 4);
+        renderer.stutter(0);
+
+        float[] after = render(renderer, 12);
+
+        assertEquals(0.5f, held[250], 1e-6f, "repeating while held");
+        assertEquals(0.25f, after[1_000 - 4 * BLOCK], 1e-6f, "the song's snare, on time, after letting go");
+        assertEquals(0.0f, after[750 - 4 * BLOCK], 1e-6f, "and no more repeats");
+    }
+
+    @Test
     void effectsSitAcrossTheSynthOnly() {
         var level = new AtomicReference<>(0.25f);
         Song song = new Song(120, 4, List.of(

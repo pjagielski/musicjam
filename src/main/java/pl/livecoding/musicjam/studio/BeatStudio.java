@@ -48,6 +48,7 @@ import pl.livecoding.musicjam.model.DrumTrack;
 import pl.livecoding.musicjam.model.MelodyTrack;
 import pl.livecoding.musicjam.model.Song;
 import pl.livecoding.musicjam.model.Track;
+import pl.livecoding.musicjam.studio.knobs.FxStrip;
 import pl.livecoding.musicjam.studio.knobs.PanelKnob;
 import pl.livecoding.musicjam.studio.knobs.StudioIcon;
 import pl.livecoding.musicjam.studio.knobs.StudioPanels;
@@ -133,6 +134,7 @@ public final class BeatStudio extends Application {
     private MelodyTrack melody;
     private AudioEngine.LiveSession session;
     private AudioEngine.LiveSession ringing;
+    private FxStrip stutter;
     private ExternalMidiOutput midi;
     private boolean loading;
     private double barFraction = -1;
@@ -566,6 +568,10 @@ public final class BeatStudio extends Application {
 
     /** The jam stops, but its last notes, repeats and reverb are left to die away on their own. */
     private void stopPlayback() {
+        if (stutter != null) {
+            // Stop ends a locked stutter too, so the tail can die away and the next Play starts clean
+            stutter.release();
+        }
         if (session != null) {
             session.release();
             ringing = session;
@@ -727,10 +733,30 @@ public final class BeatStudio extends Application {
         VBox frame = StudioPanels.frame("Melody and external MIDI",
                 StudioPanels.row(melodyOn, device, connect, melodyToMidi, new Label("CC"), cc),
                 StudioPanels.knobRow(melodyVolume.node(), filter.node(), midiLatency.node()));
-        frame.setPrefWidth(BAR_WIDTH + 86);
-        frame.setMinWidth(BAR_WIDTH + 86);
-        frame.setMaxWidth(BAR_WIDTH + 86);
-        return new VBox(12, frame);
+        VBox effects = performancePanel();
+        for (VBox box : List.of(frame, effects)) {
+            box.setPrefWidth(BAR_WIDTH + 86);
+            box.setMinWidth(BAR_WIDTH + 86);
+            box.setMaxWidth(BAR_WIDTH + 86);
+        }
+        return new VBox(12, frame, effects);
+    }
+
+    /**
+     * Effects played over the whole mix, a sampler's FX screen: a strip per effect, held to play.
+     * Stutter's zones are its slice lengths, the shortest at the top — slide up for a faster roll.
+     */
+    private VBox performancePanel() {
+        double[] slices = {0.125, 0.25, 0.5, 1.0};
+        stutter = new FxStrip("Stutter", List.of("1/32", "1/16", "1/8", "1/4"), zone -> {
+            if (session != null) {
+                session.stutter(zone < 0 ? 0 : slices[zone]);
+            }
+        });
+        Label hint = new Label("Hold a zone to play it and slide to change it; right-click to lock it on, right-click again to let go.");
+        hint.setStyle("-fx-text-fill: #868e96; -fx-font-size: 11px;");
+        hint.setWrapText(true);
+        return StudioPanels.frame("Performance FX", row(stutter), hint);
     }
 
     /** The synth's front panel, which folds away for anyone who only wants the grid. */

@@ -17,6 +17,7 @@ import javax.sound.sampled.SourceDataLine;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -35,6 +36,8 @@ public final class AudioEngine {
     public static final int DEFAULT_SAMPLE_RATE = 44_100;
     public static final int DEFAULT_BLOCK_SIZE = 512;
     public static final int DEFAULT_MAX_VOICES = 32;
+    // how far back a stutter can reach for its slice: more than the longest slice at the slowest tempo
+    private static final int STUTTER_MEMORY_SECONDS = 4;
 
     private static final int CHANNELS = 2;
     private static final PitchSynth DEFAULT_SYNTH = new AnthemLeadSynth()::render;
@@ -316,8 +319,26 @@ public final class AudioEngine {
     record ExternalNote(long frame, boolean on, int midiNote, int velocity) {
     }
 
-    /** A hit waiting for its frame: a rendered sample, or a voice that makes its sound as it plays. */
-    private record LiveHit(long frame, Sample sample, VoiceSource source, float gain, boolean kick) {
+    /**
+     * A hit waiting for its frame: a rendered sample, or a note for a live synth, whose voice is made
+     * when the hit is played. Keeping the recipe rather than the voice is what lets a stutter play
+     * the same note again, through the synth as its knobs are now.
+     */
+    private record LiveHit(long frame, Sample sample, LivePitchSynth synth, int midiNote, int heldFrames,
+                           float gain, boolean kick) {
+
+        static LiveHit sample(long frame, Sample sample, float gain, boolean kick) {
+            return new LiveHit(frame, sample, null, 0, 0, gain, kick);
+        }
+
+        static LiveHit note(long frame, LivePitchSynth synth, int midiNote, int heldFrames, float gain) {
+            return new LiveHit(frame, null, synth, midiNote, heldFrames, gain, false);
+        }
+
+        /** The same hit at {@code at}, held no longer than {@code room}: a stutter chops, it does not smear. */
+        LiveHit repeatedAt(long at, long room) {
+            return new LiveHit(at, sample, synth, midiNote, (int) Math.min(heldFrames, room), gain, kick);
+        }
     }
 
     private record LoopMark(long startFrame, Song song, double lengthBeats) {
@@ -345,6 +366,17 @@ public final class AudioEngine {
         // where in this block a kick landed: the sidechain's key, played to the effects in time
         private final int[] kickOffsets = new int[blockSize];
         private int kickCount;
+        // the song's hits of the last few seconds, played or not: where a stutter's slice comes from
+        private final ArrayDeque<LiveHit> recent = new ArrayDeque<>();
+        // a stutter's repeats of its slice, due at their frames alongside the song's own hits
+        private final ArrayDeque<LiveHit> repeats = new ArrayDeque<>();
+        // the slice's hits, kept from its first repeat on: the song's memory moves on, the slice must not
+        private final List<LiveHit> slice = new ArrayList<>();
+        private volatile double stutterRequested;
+        private double stutterBeats;
+        private long sliceStart;
+        private long sliceFrames;
+        private long nextRepeat;
         private AudioEffect effects;
         private volatile Loops loops = new Loops(null, null);
         private volatile boolean scheduling = true;
@@ -360,11 +392,21 @@ public final class AudioEngine {
         }
 
         /**
+         * Repeats the slice of the grid, {@code beats} long, that the next block falls in — drums and
+         * synth notes alike — until called with 0. Safe from any thread.
+         */
+        void stutter(double beats) {
+            stutterRequested = Math.max(0, beats);
+        }
+
+        /**
          * No more loops and no more notes: what is already sounding plays out, and the effects keep
-         * ringing. This is what a Stop that lets the delay finish its repeats is made of.
+         * ringing. This is what a Stop that lets the delay finish its repeats is made of. A stutter
+         * stops with it, or its repeats would never let the tail end.
          */
         void stopScheduling() {
             scheduling = false;
+            stutterRequested = 0;
             hits.clear();
         }
 
@@ -376,27 +418,108 @@ public final class AudioEngine {
             while (scheduling && nextLoopStart < blockEnd) {
                 compileNextLoop();
             }
+            updateStutter(blockEnd);
             long segmentStart = position;
-            while (!hits.isEmpty() && hits.peekFirst().frame() < blockEnd) {
-                long frame = hits.peekFirst().frame();
+            LiveHit hit;
+            while ((hit = pollNext(blockEnd)) != null) {
+                long frame = Math.max(segmentStart, hit.frame());
                 renderVoices(voices, mix, bus, position, segmentStart, frame);
-                do {
-                    LiveHit hit = hits.pollFirst();
-                    if (hit.kick() && (kickCount == 0 || kickOffsets[kickCount - 1] != (int) Math.max(0, frame - position))) {
-                        kickOffsets[kickCount++] = (int) Math.max(0, frame - position);
-                    }
-                    VoiceSlot slot = allocateVoice(voices, frame);
-                    if (hit.source() != null) {
-                        slot.trigger(hit.source(), frame, hit.gain());
-                    } else {
-                        slot.trigger(hit.sample(), frame, hit.gain());
-                    }
-                } while (!hits.isEmpty() && hits.peekFirst().frame() == frame);
                 segmentStart = frame;
+                play(hit, frame);
             }
             renderVoices(voices, mix, bus, position, segmentStart, blockEnd);
             mixInBus(mix);
             position = blockEnd;
+        }
+
+        private void play(LiveHit hit, long frame) {
+            int offset = (int) Math.max(0, frame - position);
+            if (hit.kick() && (kickCount == 0 || kickOffsets[kickCount - 1] != offset)) {
+                kickOffsets[kickCount++] = offset;
+            }
+            VoiceSlot slot = allocateVoice(voices, frame);
+            if (hit.synth() != null) {
+                slot.trigger(hit.synth().voice(hit.midiNote(), hit.heldFrames(), sampleRate), frame, hit.gain());
+            } else {
+                slot.trigger(hit.sample(), frame, hit.gain());
+            }
+        }
+
+        /**
+         * The next hit due before {@code blockEnd}, the song's or a repeat's, whichever comes first.
+         * While a stutter holds, the song keeps going underneath — its hits are noted, so a new
+         * slice can be taken from them — but past the end of the slice they are not played.
+         */
+        private LiveHit pollNext(long blockEnd) {
+            while (true) {
+                LiveHit song = hits.peekFirst();
+                LiveHit repeat = repeats.peekFirst();
+                boolean fromSong = song != null && (repeat == null || song.frame() <= repeat.frame());
+                LiveHit next = fromSong ? song : repeat;
+                if (next == null || next.frame() >= blockEnd) {
+                    return null;
+                }
+                if (!fromSong) {
+                    return repeats.pollFirst();
+                }
+                hits.pollFirst();
+                recent.addLast(next);
+                if (stutterBeats > 0 && next.frame() >= sliceStart + sliceFrames) {
+                    continue;
+                }
+                return next;
+            }
+        }
+
+        /**
+         * Takes up a stutter asked for since the last block, or lets it go, and lines up the repeats
+         * due in this block. The slice is the one of the grid this block starts in, so the repeat is
+         * in time from its first pass; the rest of that slice plays as it happens, and only then does
+         * it start over. Each repeat plays the slice's hits again — the drum samples, and fresh voices
+         * for the synth's notes, which read the knobs as they are now.
+         */
+        private void updateStutter(long blockEnd) {
+            double wanted = stutterRequested;
+            if (wanted != stutterBeats) {
+                repeats.clear();
+                slice.clear();
+                stutterBeats = 0;
+                Position here = positionAt(position);
+                if (wanted > 0 && here != null) {
+                    double framesPerBeat = 60.0 * sampleRate / here.song().bpm();
+                    sliceFrames = Math.max(1, Math.round(wanted * framesPerBeat));
+                    long heard = Math.min(sliceFrames - 1, Math.round(here.beat() % wanted * framesPerBeat));
+                    sliceStart = position - heard;
+                    nextRepeat = sliceStart + sliceFrames;
+                    stutterBeats = wanted;
+                }
+            }
+            long keepFrom = position - (long) STUTTER_MEMORY_SECONDS * sampleRate;
+            while (!recent.isEmpty() && recent.peekFirst().frame() < keepFrom) {
+                recent.pollFirst();
+            }
+            if (stutterBeats == 0) {
+                return;
+            }
+            long sliceEnd = sliceStart + sliceFrames;
+            if (nextRepeat < blockEnd && nextRepeat == sliceEnd) {
+                // the first repeat is due, so the whole slice is known: some of its hits already
+                // played or passed over, the rest still waiting. Kept now, before they are forgotten.
+                for (ArrayDeque<LiveHit> source : List.of(recent, hits)) {
+                    for (LiveHit hit : source) {
+                        if (hit.frame() >= sliceStart && hit.frame() < sliceEnd) {
+                            slice.add(hit);
+                        }
+                    }
+                }
+            }
+            while (nextRepeat < blockEnd) {
+                for (LiveHit hit : slice) {
+                    long into = hit.frame() - sliceStart;
+                    repeats.addLast(hit.repeatedAt(nextRepeat + into, sliceFrames - into));
+                }
+                nextRepeat += sliceFrames;
+            }
         }
 
         /**
@@ -459,10 +582,9 @@ public final class AudioEngine {
                     // a voice of its own, reading the synth's parameters as it plays, so a knob
                     // moved now is heard in this note rather than in the loop after it
                     int heldFrames = (int) transport.frameAtBeat(note.durationBeats());
-                    hits.addLast(new LiveHit(frame, null, live.voice(pitch.midiNote(), heldFrames, sampleRate),
-                            note.velocity(), false));
+                    hits.addLast(LiveHit.note(frame, live, pitch.midiNote(), heldFrames, note.velocity()));
                 } else {
-                    hits.addLast(new LiveHit(frame, sampleFor(note, transport, jam.synth()), null, note.velocity(),
+                    hits.addLast(LiveHit.sample(frame, sampleFor(note, transport, jam.synth()), note.velocity(),
                             note.voice() == Drum.KICK));
                 }
             }
@@ -528,6 +650,15 @@ public final class AudioEngine {
          */
         public void setExternalLatencyMillis(double millis) {
             externalLatencyMillis = millis;
+        }
+
+        /**
+         * Holds a beat repeat over everything that plays — drums, synth and its effects — slicing
+         * the grid into {@code beats}-long pieces (0.25 is a sixteenth); 0 lets go, and the jam
+         * carries on from wherever it got to underneath.
+         */
+        public void stutter(double beats) {
+            renderer.stutter(beats);
         }
 
         public Optional<Throwable> failure() {
