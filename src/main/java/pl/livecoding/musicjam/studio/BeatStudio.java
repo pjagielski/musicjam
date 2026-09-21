@@ -4,6 +4,8 @@ import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.application.Platform;
+import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
@@ -136,7 +138,11 @@ public final class BeatStudio extends Application {
     private double barFraction = -1;
     private int sentController = -1;
     private int sentFilter = -1;
+    private static final double MIN_ZOOM = 0.5;
+    private static final double MAX_ZOOM = 2.0;
+
     private double zoom = 1.0;
+    private Runnable fitOnStart = () -> { };
 
     @Override
     public void start(Stage stage) throws Exception {
@@ -224,7 +230,11 @@ public final class BeatStudio extends Application {
         stage.show();
         if (presentation) {
             stage.setFullScreen(true);
+        } else if (!getParameters().getRaw().contains("--screen")) {
+            useScreenHeight(stage);
         }
+        // two pulses: one for the window's new size to be laid out, one to measure it
+        Platform.runLater(() -> Platform.runLater(fitOnStart));
         playhead().start();
     }
 
@@ -275,13 +285,17 @@ public final class BeatStudio extends Application {
         larger.setOnAction(event -> setZoom(content, zoomLabel, zoom + 0.15));
         Button normal = new Button("100%");
         normal.setOnAction(event -> setZoom(content, zoomLabel, 1.0));
+        Button fit = new Button("Fit");
+        fit.setOnAction(event -> fitToWindow(content, scroll, zoomLabel, MAX_ZOOM));
+        // the first layout pass is what tells us how big the content is, so fit only after it
+        fitOnStart = () -> fitToWindow(content, scroll, zoomLabel, 1.0);
         Button nextScreen = new Button("Next screen");
         nextScreen.setDisable(Screen.getScreens().size() < 2);
         nextScreen.setOnAction(event -> moveToNextScreen(stage));
         Button fullScreen = new Button("Full screen");
         fullScreen.setOnAction(event -> stage.setFullScreen(!stage.isFullScreen()));
 
-        HBox tools = row(new Label("Zoom"), smaller, zoomLabel, larger, normal,
+        HBox tools = row(new Label("Zoom"), smaller, zoomLabel, larger, normal, fit,
                 nextScreen, fullScreen);
         HBox transport = row(play, new Label("Jam"), presets, new Label("Tempo"), bpm, bpmLabel,
                 new Label("Loop (bars)"), bars, loopProgress, status);
@@ -295,10 +309,39 @@ public final class BeatStudio extends Application {
         return new BorderPane(scroll, pinned, null, null, null);
     }
 
+    /**
+     * Scales the content so all of it shows without scrolling: shrinks it on a small screen, and
+     * grows it up to {@code largest} on a big one — a projector, say.
+     */
+    private void fitToWindow(VBox content, ScrollPane scroll, Label label, double largest) {
+        Bounds natural = content.getLayoutBounds();
+        Bounds viewport = scroll.getViewportBounds();
+        if (natural.getWidth() <= 0 || natural.getHeight() <= 0 || viewport.getWidth() <= 0) {
+            return;
+        }
+        // a hair under the exact fit, or the scroll bars appear for the sake of a pixel
+        double fitting = 0.99 * Math.min(viewport.getWidth() / natural.getWidth(),
+                viewport.getHeight() / natural.getHeight());
+        setZoom(content, label, Math.min(largest, fitting));
+    }
+
     private void setZoom(VBox content, Label label, double requested) {
-        zoom = Math.max(0.7, Math.min(2.0, requested));
+        zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, requested));
         content.getTransforms().setAll(new Scale(zoom, zoom, 0, 0));
         label.setText(Math.round(zoom * 100) + "%");
+    }
+
+    /**
+     * The window as tall as the screen allows, and no wider than it: the jam and the synth panel
+     * need height more than anything, and a window taller than the screen hides its own bottom.
+     */
+    private static void useScreenHeight(Stage stage) {
+        Rectangle2D bounds = Screen.getPrimary().getVisualBounds();
+        double width = Math.min(stage.getWidth(), bounds.getWidth());
+        stage.setWidth(width);
+        stage.setHeight(bounds.getHeight());
+        stage.setX(bounds.getMinX() + (bounds.getWidth() - width) / 2);
+        stage.setY(bounds.getMinY());
     }
 
     private static void moveToNextScreen(Stage stage) {
