@@ -143,6 +143,7 @@ public final class BeatStudio extends Application {
 
     private double zoom = 1.0;
     private Runnable fitOnStart = () -> { };
+    private boolean sizeWindowToContent;
 
     @Override
     public void start(Stage stage) throws Exception {
@@ -230,9 +231,8 @@ public final class BeatStudio extends Application {
         stage.show();
         if (presentation) {
             stage.setFullScreen(true);
-        } else if (!getParameters().getRaw().contains("--screen")) {
-            useScreenHeight(stage);
         }
+        sizeWindowToContent = !presentation && !getParameters().getRaw().contains("--screen");
         // two pulses: one for the window's new size to be laid out, one to measure it
         Platform.runLater(() -> Platform.runLater(fitOnStart));
         playhead().start();
@@ -287,8 +287,14 @@ public final class BeatStudio extends Application {
         normal.setOnAction(event -> setZoom(content, zoomLabel, 1.0));
         Button fit = new Button("Fit");
         fit.setOnAction(event -> fitToWindow(content, scroll, zoomLabel, MAX_ZOOM));
-        // the first layout pass is what tells us how big the content is, so fit only after it
-        fitOnStart = () -> fitToWindow(content, scroll, zoomLabel, 1.0);
+        // the first layout pass is what tells us how big the content is, so size and fit only after it
+        fitOnStart = () -> {
+            if (sizeWindowToContent) {
+                setZoom(content, zoomLabel, sizeToContent(stage, content, scroll));
+            } else {
+                fitToWindow(content, scroll, zoomLabel, 1.0);
+            }
+        };
         Button nextScreen = new Button("Next screen");
         nextScreen.setDisable(Screen.getScreens().size() < 2);
         nextScreen.setOnAction(event -> moveToNextScreen(stage));
@@ -332,16 +338,29 @@ public final class BeatStudio extends Application {
     }
 
     /**
-     * The window as tall as the screen allows, and no wider than it: the jam and the synth panel
-     * need height more than anything, and a window taller than the screen hides its own bottom.
+     * The window just big enough for what it shows, and never bigger than the screen: whatever the
+     * window adds around the content (its frame, the pinned toolbar, the scroll pane's edges) is
+     * measured rather than guessed, as the difference between the window and its viewport.
+     *
+     * @return the zoom that makes the content fit the window: 1 when the screen had room for it,
+     *     less when the screen cut the window short. Worked out here rather than measured after
+     *     the resize, which the viewport only reports a layout pass or two later.
      */
-    private static void useScreenHeight(Stage stage) {
-        Rectangle2D bounds = Screen.getPrimary().getVisualBounds();
-        double width = Math.min(stage.getWidth(), bounds.getWidth());
+    private static double sizeToContent(Stage stage, VBox content, ScrollPane scroll) {
+        Bounds natural = content.getLayoutBounds();
+        Bounds viewport = scroll.getViewportBounds();
+        Rectangle2D screen = Screen.getPrimary().getVisualBounds();
+        double frameWidth = stage.getWidth() - viewport.getWidth() + 4;
+        double frameHeight = stage.getHeight() - viewport.getHeight() + 4;
+        double width = Math.min(screen.getWidth(), natural.getWidth() + frameWidth);
+        double height = Math.min(screen.getHeight(), natural.getHeight() + frameHeight);
         stage.setWidth(width);
-        stage.setHeight(bounds.getHeight());
-        stage.setX(bounds.getMinX() + (bounds.getWidth() - width) / 2);
-        stage.setY(bounds.getMinY());
+        stage.setHeight(height);
+        stage.setX(screen.getMinX() + (screen.getWidth() - width) / 2);
+        stage.setY(screen.getMinY() + (screen.getHeight() - height) / 2);
+        boolean roomForAll = width == natural.getWidth() + frameWidth && height == natural.getHeight() + frameHeight;
+        return roomForAll ? 1.0 : 0.99 * Math.min((width - frameWidth) / natural.getWidth(),
+                (height - frameHeight) / natural.getHeight());
     }
 
     private static void moveToNextScreen(Stage stage) {
