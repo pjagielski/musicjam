@@ -17,7 +17,7 @@ java {
 
 // JavaFX nie jest czescia JDK. Artefakty sa per platforma, a Gradle nie rozwiazuje profili
 // Mavena, ktorymi openjfx wybiera klasyfikator - stad jawna lista modulow z klasyfikatorem.
-val javafxVersion = "21.0.12"
+val javafxVersion = "25.0.4"
 val javafxPlatform = System.getProperty("os.name").lowercase().let { os ->
     val arm = System.getProperty("os.arch").contains("aarch64")
     when {
@@ -41,6 +41,13 @@ application {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+// JavaFX loads its native libraries (windows, graphics) through System.load. Since JDK 24 that
+// warns on every start unless native access is granted, and a later release will refuse it
+// outright, so every task that may bring JavaFX up grants it.
+tasks.withType<JavaExec>().configureEach {
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
 tasks.register<JavaExec>("naivePlayerDemo") {
