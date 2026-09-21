@@ -134,6 +134,37 @@ Two things to check before 8.2:
 If 8.2 shows dropouts, the fallback is Oboe (C++, AAudio underneath) for the output, fed with the
 same blocks — but the spike should come first, because it may well not be needed.
 
+## Phase 9 — Performance FX, the Koala way
+
+Koala Sampler's Perform screen has sixteen touch effects over the whole mix, each played by holding
+and sliding a finger on a strip. The `FxStrip` under the melody panel is the start of that screen;
+this is the rest of it. Most of them are a few lines of DSP on the finished mix — what they share
+is the plumbing in 9.1.
+
+| Step | What | Effort |
+| --- | --- | --- |
+| 9.1 | ★ **The plumbing**: a mix-wide effect slot after `mixInBus` (the stereo mix, drums and synth together), and a continuous mode for `FxStrip` — a value from bottom to top instead of zones, with a centre for the two-way effects (Filter, Pitch, VibroFlange). Lock works as it does for Stutter. | S |
+| 9.2 | ✓ **Stutter.** Done, with one difference from Koala's: it repeats the slice's *notes*, not its audio, so the knobs stay live under a held repeat. Koala goes from ½ bar to 1/64; ours from 1/4 to 1/32. | — |
+| 9.3 | ★ **Crush**: sample-rate reduction (slide up for less), with a little transistor-style clipping. A sample-and-hold and a rounding step. | S |
+| 9.4 | ★ **Filter**: one strip, low-pass below the centre and high-pass above, resonant. Our state-variable filter already gives both outputs. | S |
+| 9.5 | **Cutter**: a tempo-synced gate chopping the mix from 1 bar to 1/64 — Stutter's grid, applied to the volume instead of the notes. | S |
+| 9.6 | **Dirty**: overdrive. `NovasawDsp.shapeDiode` on the mix, with the slide as drive. | S |
+| 9.7 | **Ring**: ring modulation, slide up for a faster carrier. | S |
+| 9.8 | **Comb**: a short feedback delay, slide up for a longer one — the metallic, pitched ring. | S |
+| 9.9 | **Gate**: mutes whatever falls below a threshold, slide up to raise it; with a fast release it chops tails and reverb away. | S |
+| 9.10 | **Tempo Delay** and **Dub**: `SynthEffects`' delay over the whole mix, synced; Dub adds feedback as it slides, until it runs away. | S |
+| 9.11 | **Reverb**: our Freeverb over the whole mix, slide up for a bigger room — a wash to throw a break into. | S |
+| 9.12 | **VibroFlange**: above the centre a flanger (a short swept delay), below it a pitch wobble (a modulated delay without feedback). | M |
+| 9.13 | **Compressor**: one knob, the higher the harder it pumps; an envelope follower, threshold and ratio together. | M |
+| 9.14 | **Reverse**: plays the last stretch of the mix backwards, slide up for a longer stretch — a buffer read in reverse, lined up with the beat so it lands on time. | M |
+| 9.15 | ★ **Talkbox**: a formant filter — two or three band-passes per vowel — sweeping a-e-i-o-u as the finger slides. The most voice-like of the set, and a good exercise in filters. | M |
+| 9.16 | **Pitch**: all of it up or down from the centre. In the note domain, as Stutter is: transpose the synth's notes and resample the drums, rather than a pitch shifter on the audio. | M |
+
+Worth doing in the order of the stars: the plumbing, then Crush and Filter (quick, and heard at
+once), then Talkbox. Koala's mixer effects (EQ, limiter, bit cooker, tape delay and the rest) are a
+different thing — per-channel inserts — and belong with Phase 1's desk; a limiter on the master,
+at least, would save the mix from clipping once a few of these are stacked.
+
 ---
 
 ## If only three things happen
@@ -153,5 +184,7 @@ same blocks — but the spike should come first, because it may well not be need
 - Ableton Live 12 reference manual, *Session View* — clips, tracks, scenes and launch behaviour.
 - Ableton Link repository — header-only C++, dual GPLv2+/proprietary licence.
 - MIDI Association, *MIDI 2.0* — MIDI-CI, UMP, and why this stays out of scope.
+- Koala Sampler manual, *Effects* (manual.koalasampler.com) — the Perform FX and what each one
+  does as the finger slides.
 - Android platform APIs — `AudioTrack` (low-latency performance mode), Oboe/AAudio, and
   `android.media.midi` for USB MIDI; none of `javax.sound.*` exists there.
