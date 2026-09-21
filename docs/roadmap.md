@@ -10,7 +10,8 @@ blank page.
   song can change while it plays. Drums are samples; the synth is a live `VoiceSource` making frames
   as it goes, which is why a knob is heard inside a sounding note.
 - **Routing.** Two paths only: drums mixed dry, synth voices through one bus carrying a ping-pong
-  delay and a Freeverb-style reverb. Stop releases rather than cuts, so tails ring out.
+  delay and a Freeverb-style reverb, ducked under the kick when the panel asks for it. Stop
+  releases rather than cuts, so tails ring out.
 - **Synth.** One engine (`NovasawSynth`), seven unison saws, a sub sine, a diode shaper, a
   state-variable lowpass. Five patches: anthem, pluck, pad, sub bass, acid bass.
 - **Control.** A panel of knobs, an XY pad and a draggable envelope, all publishing `SynthParams`
@@ -40,7 +41,7 @@ The single synth bus is already the seam for this; widening it is the biggest so
 | --- | --- | --- |
 | 1.1 | **A bus per track**: each drum track and the synth get gain, pan, mute and solo. | M |
 | 1.2 | **Sends**: one delay and one reverb shared by the tracks that want them, each with a send level — Strudel calls this an *orbit*, one delay and one reverb per orbit. | M |
-| 1.3 | ★ **Sidechain ducking**: the kick ducks the synth bus. Strudel's `duck` works on the whole orbit; ours can start with one source and one target. | S |
+| 1.3 | ✓ **Done.** ★ **Sidechain ducking**: the kick ducks the synth bus. Strudel's `duck` works on the whole orbit; ours can start with one source and one target. | S |
 | 1.4 | **Meters**: a level readout per track, drawn like the knobs. | S |
 
 Why first: pumping bass under a kick is the sound of the genre the workshop plays in, and the

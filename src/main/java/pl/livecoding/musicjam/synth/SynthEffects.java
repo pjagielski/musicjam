@@ -19,6 +19,12 @@ import java.util.function.Supplier;
  * trip round the loop goes through a one-pole lowpass (the Tone knob) and a soft clip, which is what
  * keeps a high feedback setting from either turning into a bright screech or running away.
  *
+ * <p>Last comes the sidechain: on each {@link #duck()} — a kick — the whole channel, echoes and room
+ * included, drops by the Duck depth and comes back along a half cosine over the Duck release. The
+ * curve starts flat, so the dip holds for a moment before it swells back, which is what makes the
+ * synth pump rather than merely get quieter. A millisecond or two of smoothing on the gain keeps
+ * the drop and a kick landing mid-swell from clicking.
+ *
  * <p>Like the voices, everything is read from {@link EffectParams} on every frame, so a knob is
  * heard in the tail that is already ringing.
  */
@@ -37,6 +43,7 @@ public final class SynthEffects implements AudioEffect {
     private static final int CHANNELS = 2;
     private static final float TIME_SMOOTHING = 0.0005f;
     private static final float HIGHPASS_COEFFICIENT = 0.995f;
+    private static final double DUCK_SMOOTHING_SECONDS = 0.0015;
 
     private final Supplier<EffectParams> params;
     private final int sampleRate;
@@ -53,13 +60,18 @@ public final class SynthEffects implements AudioEffect {
     private final float[][][] allpasses = new float[CHANNELS][ALLPASS_FRAMES.length][];
     private final int[][] allpassPositions = new int[CHANNELS][ALLPASS_FRAMES.length];
 
+    private final float duckSmoothing;
+
     private float delayFrames;
     private double tapePhase;
+    private long framesSinceKick = Long.MAX_VALUE / 2;
+    private float duckGain = 1.0f;
 
     public SynthEffects(int sampleRate, Supplier<EffectParams> params) {
         this.sampleRate = sampleRate;
         this.params = params;
         this.delayFrames = params.get().delayMillis() * sampleRate / 1000.0f;
+        this.duckSmoothing = (float) (1 - Math.exp(-1 / (DUCK_SMOOTHING_SECONDS * sampleRate)));
         for (int channel = 0; channel < CHANNELS; channel++) {
             delayLines[channel] = new float[2 * sampleRate + 1];
             int spread = channel * STEREO_SPREAD;
@@ -84,6 +96,27 @@ public final class SynthEffects implements AudioEffect {
         for (int channel = 0; channel < CHANNELS; channel++) {
             stereoOut[channel] = reverb(channel, stereoOut[channel], current);
         }
+        float gain = ducked(current);
+        stereoOut[0] *= gain;
+        stereoOut[1] *= gain;
+    }
+
+    @Override
+    public void duck() {
+        framesSinceKick = 0;
+    }
+
+    /** How loud the channel is this frame, somewhere between 1 and 1 − depth, following the last kick. */
+    private float ducked(EffectParams current) {
+        float target = 1.0f;
+        float releaseFrames = current.duckMillis() * sampleRate / 1000.0f;
+        if (current.duckDepth() > 0 && framesSinceKick < releaseFrames) {
+            double swell = 0.5 * (1 + Math.cos(Math.PI * framesSinceKick / releaseFrames));
+            target = (float) (1 - current.duckDepth() * swell);
+        }
+        framesSinceKick++;
+        duckGain += (target - duckGain) * duckSmoothing;
+        return duckGain;
     }
 
     private void delay(float input, EffectParams current, float[] stereoOut) {

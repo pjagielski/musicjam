@@ -317,7 +317,7 @@ public final class AudioEngine {
     }
 
     /** A hit waiting for its frame: a rendered sample, or a voice that makes its sound as it plays. */
-    private record LiveHit(long frame, Sample sample, VoiceSource source, float gain) {
+    private record LiveHit(long frame, Sample sample, VoiceSource source, float gain, boolean kick) {
     }
 
     private record LoopMark(long startFrame, Song song, double lengthBeats) {
@@ -342,6 +342,9 @@ public final class AudioEngine {
         // the synth channel, kept apart from the drums so its effects only colour the synth
         private final float[] bus = new float[blockSize * CHANNELS];
         private final float[] stereo = new float[CHANNELS];
+        // where in this block a kick landed: the sidechain's key, played to the effects in time
+        private final int[] kickOffsets = new int[blockSize];
+        private int kickCount;
         private AudioEffect effects;
         private volatile Loops loops = new Loops(null, null);
         private volatile boolean scheduling = true;
@@ -368,6 +371,7 @@ public final class AudioEngine {
         void renderNext(float[] mix) {
             Arrays.fill(mix, 0.0f);
             Arrays.fill(bus, 0.0f);
+            kickCount = 0;
             long blockEnd = position + blockSize;
             while (scheduling && nextLoopStart < blockEnd) {
                 compileNextLoop();
@@ -378,6 +382,9 @@ public final class AudioEngine {
                 renderVoices(voices, mix, bus, position, segmentStart, frame);
                 do {
                     LiveHit hit = hits.pollFirst();
+                    if (hit.kick() && (kickCount == 0 || kickOffsets[kickCount - 1] != (int) Math.max(0, frame - position))) {
+                        kickOffsets[kickCount++] = (int) Math.max(0, frame - position);
+                    }
                     VoiceSlot slot = allocateVoice(voices, frame);
                     if (hit.source() != null) {
                         slot.trigger(hit.source(), frame, hit.gain());
@@ -397,12 +404,17 @@ public final class AudioEngine {
          * silence included, or a delay's repeats and a reverb's tail would stop with the last note.
          */
         private void mixInBus(float[] mix) {
+            int nextKick = 0;
             for (int frame = 0; frame < blockSize; frame++) {
                 float value = bus[frame * CHANNELS];
                 if (effects == null) {
                     mix[frame * CHANNELS] += value;
                     mix[frame * CHANNELS + 1] += value;
                     continue;
+                }
+                if (nextKick < kickCount && kickOffsets[nextKick] == frame) {
+                    effects.duck();
+                    nextKick++;
                 }
                 effects.process(value, stereo);
                 mix[frame * CHANNELS] += stereo[0];
@@ -448,9 +460,10 @@ public final class AudioEngine {
                     // moved now is heard in this note rather than in the loop after it
                     int heldFrames = (int) transport.frameAtBeat(note.durationBeats());
                     hits.addLast(new LiveHit(frame, null, live.voice(pitch.midiNote(), heldFrames, sampleRate),
-                            note.velocity()));
+                            note.velocity(), false));
                 } else {
-                    hits.addLast(new LiveHit(frame, sampleFor(note, transport, jam.synth()), null, note.velocity()));
+                    hits.addLast(new LiveHit(frame, sampleFor(note, transport, jam.synth()), null, note.velocity(),
+                            note.voice() == Drum.KICK));
                 }
             }
             nextLoopStart = loopStart + Math.max(1L, transport.frameAtBeat(lengthBeats));

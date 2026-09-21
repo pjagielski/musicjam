@@ -193,6 +193,51 @@ class AudioEngineLiveTest {
         assertEquals(0.5f, mix[2], 1e-6f);
     }
 
+    @Test
+    void everyKickReachesTheSynthsEffectsOnItsOwnFrame() {
+        var level = new AtomicReference<>(0.25f);
+        Song song = new Song(120, 4, List.of(
+                new DrumTrack(Drum.KICK, "X.X.", 1.0f),
+                new DrumTrack(Drum.SNARE, ".X.X", 1.0f),
+                new MelodyTrack(List.of(new Note(0.0, new Voice.Pitch(60), 4.0, 1.0f)), 4.0, 1.0f)));
+        LivePitchSynth synth = constantLevelSynth(level);
+        var ducks = new ArrayList<Integer>();
+        var processed = new AtomicInteger();
+        var renderer = engine().liveRenderer(() -> new AudioEngine.Jam(song, new LivePitchSynth() {
+            @Override
+            public Sample render(int midiNote, int frameCount, int sampleRate) {
+                return synth.render(midiNote, frameCount, sampleRate);
+            }
+
+            @Override
+            public VoiceSource voice(int midiNote, int heldFrames, int sampleRate) {
+                return synth.voice(midiNote, heldFrames, sampleRate);
+            }
+
+            @Override
+            public AudioEffect effects(int sampleRate) {
+                return new AudioEffect() {
+                    @Override
+                    public void process(float input, float[] stereoOut) {
+                        processed.incrementAndGet();
+                        stereoOut[0] = input;
+                        stereoOut[1] = input;
+                    }
+
+                    @Override
+                    public void duck() {
+                        ducks.add(processed.get());
+                    }
+                };
+            }
+        }), null);
+
+        render(renderer, BLOCKS);
+
+        // the kicks only, never the snares, each one just before the frame it lands on
+        assertEquals(List.of(0, 1_000, 2_000, 3_000), ducks);
+    }
+
     /** A synth whose voices simply play whatever {@code level} says at that frame. */
     private static LivePitchSynth constantLevelSynth(AtomicReference<Float> level) {
         return new LivePitchSynth() {

@@ -14,4 +14,11 @@ public interface AudioEffect {
 
     /** Writes the left and right output for {@code input} into {@code stereoOut}, tails and all. */
     void process(float input, float[] stereoOut);
+
+    /**
+     * The sidechain's key: a kick has just landed, on the frame about to be processed. An effect
+     * that ducks under it dips now and comes back on its own; one that does not ignores it.
+     */
+    default void duck() {
+    }
 }

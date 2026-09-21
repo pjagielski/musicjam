@@ -30,9 +30,10 @@ import java.util.function.Supplier;
 
 /**
  * The synth's front panel as one node: six framed groups in a grid of equal columns — oscillator
- * and amplifier, filter and envelope, delay and reverb. Four of them carry a picture of what their
- * knobs do, drawn right above them: the XY pad for the filter, the envelope's own shape, where the
- * delay's repeats land ear by ear, and the reverb's tail dying away. The filter's and the envelope's
+ * and amplifier (with the sidechain that ducks the synth under the kick), filter and envelope,
+ * delay and reverb. Four of them carry a picture of what their knobs do, drawn right above them:
+ * the XY pad for the filter, the envelope's own shape, where the delay's repeats land ear by ear,
+ * and the reverb's tail dying away. The filter's and the envelope's
  * pictures can be dragged too; knob and picture are two views of one value.
  *
  * <p>Every move publishes a whole new {@link SynthParams} to whoever is listening — in the studio, a
@@ -109,6 +110,8 @@ public final class SynthControls {
     private final Knob reverbSize;
     private final Knob reverbDamping;
     private final Knob reverbMix;
+    private final Knob duckDepth;
+    private final Knob duckRecover;
     private final XyPad pad;
     private final AdsrEditor envelope;
     private final ComboBox<String> preset = new ComboBox<>();
@@ -164,6 +167,9 @@ public final class SynthControls {
         reverbSize = knob(Param.linear("Size", 0, 1, "", 2, start.reverbSize()), Theme.Accent.FX, 62);
         reverbDamping = knob(Param.linear("Damping", 0, 1, "", 2, start.reverbDamping()), Theme.Accent.FX, 62);
         reverbMix = knob(Param.linear("Mix", 0, 1, "", 2, start.reverbMix()), Theme.Accent.FX, 62);
+        duckDepth = knob(Param.linear("Duck", 0, 1, "", 2, start.duckDepth()), Theme.Accent.FX, 62);
+        duckRecover = knob(Param.exponential("Recover", 20, 1000, "ms", 0, start.duckMillis()),
+                Theme.Accent.FX, 62);
 
         // knob and picture are two views of the same 0..1 position, so neither can drift from the other
         cutoff.position().bindBidirectional(pad.across());
@@ -197,7 +203,7 @@ public final class SynthControls {
 
         List<VBox> groupBoxes = List.of(
                 section("Oscillator", Theme.Accent.OSC, null, detune, sub, vibrato, motionRate, drift),
-                section("Amplifier", Theme.Accent.AMP, null, drive, trim),
+                section("Amp · Sidechain", Theme.Accent.AMP, null, drive, trim, duckDepth, duckRecover),
                 section("Filter", Theme.Accent.FILTER, pad, cutoff, resonance, envAmount, keyTrack),
                 section("Envelope", Theme.Accent.AMP, envelope, attack, decay, sustain, release),
                 section("Delay", Theme.Accent.FX, delayPicture, delayTime, delayFeedback, delayTone, delayMix),
@@ -252,7 +258,7 @@ public final class SynthControls {
         return new EffectParams(delayMode.value(),
                 (float) delayTime.value(), (float) delayFeedback.value(), (float) delayTone.value(),
                 (float) delayMix.value(), (float) reverbSize.value(), (float) reverbDamping.value(),
-                (float) reverbMix.value());
+                (float) reverbMix.value(), (float) duckDepth.value(), (float) duckRecover.value());
     }
 
     /** The knobs as the synth reads them. */
@@ -324,10 +330,12 @@ public final class SynthControls {
                 params.attackSeconds() * 1000, params.decaySeconds() * 1000, params.sustainLevel(),
                 params.releaseSeconds() * 1000)
                 + String.format(Locale.ROOT,
-                " | delay %s %.0fms fb=%.2f tone=%.2f mix=%.2f | reverb size=%.2f damp=%.2f mix=%.2f",
+                " | delay %s %.0fms fb=%.2f tone=%.2f mix=%.2f | reverb size=%.2f damp=%.2f mix=%.2f"
+                        + " | duck=%.2f %.0fms",
                 effects.delayMode(), effects.delayMillis(), effects.delayFeedback(),
                 effects.delayTone(), effects.delayMix(),
-                effects.reverbSize(), effects.reverbDamping(), effects.reverbMix());
+                effects.reverbSize(), effects.reverbDamping(), effects.reverbMix(),
+                effects.duckDepth(), effects.duckMillis());
     }
 
     private void publish() {

@@ -163,4 +163,42 @@ class SynthEffectsTest {
         }
         return difference;
     }
+
+    @Test
+    void aKickDucksTheChannelAndItSwellsBackOverTheRelease() {
+        // dry only, so what comes out is the input times the sidechain's gain
+        var effects = new SynthEffects(44_100, () -> new EffectParams(
+                DelayMode.MONO, 100, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.8f, 200));
+        float[] out = new float[2];
+        for (int frame = 0; frame < 4_410; frame++) {
+            effects.process(1.0f, out);
+        }
+        assertEquals(1.0f, out[LEFT], 1e-4f);
+
+        effects.duck();
+        float[] heard = new float[44_100 / 2];
+        for (int frame = 0; frame < heard.length; frame++) {
+            effects.process(1.0f, out);
+            heard[frame] = out[LEFT];
+            assertEquals(out[LEFT], out[RIGHT], 1e-6f);
+        }
+
+        assertTrue(heard[0] > 0.9f, "no click: the drop takes a moment");
+        assertEquals(0.2f, heard[441], 0.02f, "10 ms in, down by the depth");
+        assertEquals(0.6f, heard[4_410], 0.03f, "half way through the release, half way back");
+        assertEquals(1.0f, heard[9_261], 1e-3f, "and whole again once the release is over");
+    }
+
+    @Test
+    void withoutDepthAKickChangesNothing() {
+        var effects = new SynthEffects(SAMPLE_RATE,
+                () -> new EffectParams(DelayMode.MONO, 100, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f));
+        float[] out = new float[2];
+
+        effects.duck();
+        for (int frame = 0; frame < 50; frame++) {
+            effects.process(0.5f, out);
+            assertEquals(0.5f, out[LEFT], 1e-6f);
+        }
+    }
 }
