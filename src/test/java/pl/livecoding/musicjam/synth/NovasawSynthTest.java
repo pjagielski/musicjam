@@ -21,15 +21,17 @@ class NovasawSynthTest {
         Sample rendered = new AnthemLeadSynth().render(64, 11_025, SAMPLE_RATE);
 
         assertEquals(15_876, rendered.frameCount());
-        assertEquals("15876 0.264105 0.072670 -0.008360 303.910358", fingerprint(rendered));
+        assertEquals("15876 0.134694 0.037062 -0.004263 79.047081", fingerprint(rendered));
     }
 
     @Test
     void everyPatchKeepsItsOwnFingerprint() {
         assertEquals("8599 0.171009 -0.102297 0.000591 35.564352",
                 fingerprint(new TrancePluckSynth().render(72, 5_512, SAMPLE_RATE)));
-        assertEquals("88200 0.004098 0.033554 -0.001882 28.389289",
+        assertEquals("52920 0.068558 0.117932 0.011762 201.642778",
                 fingerprint(new WidePadSynth().render(48, 22_050, SAMPLE_RATE)));
+        assertEquals("37485 -0.047769 -0.006545 0.000311 186.599356",
+                fingerprint(new ChordsSynth().render(60, 22_050, SAMPLE_RATE)));
     }
 
     @Test

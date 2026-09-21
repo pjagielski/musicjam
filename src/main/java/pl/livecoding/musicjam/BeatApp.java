@@ -16,6 +16,7 @@ import pl.livecoding.musicjam.model.Track;
 import pl.livecoding.musicjam.model.Voice;
 import pl.livecoding.musicjam.synth.AcidBassSynth;
 import pl.livecoding.musicjam.synth.AnthemLeadSynth;
+import pl.livecoding.musicjam.synth.ChordsSynth;
 import pl.livecoding.musicjam.synth.PitchSynth;
 import pl.livecoding.musicjam.synth.SubBassSynth;
 import pl.livecoding.musicjam.synth.TrancePluckSynth;
@@ -43,6 +44,7 @@ public final class BeatApp {
     private static final Map<String, PitchSynth> SYNTHS = Map.of(
             "anthem", new AnthemLeadSynth(),
             "pad", new WidePadSynth(),
+            "chords", new ChordsSynth(),
             "pluck", new TrancePluckSynth(),
             "sub", new SubBassSynth(),
             "acid", new AcidBassSynth()
@@ -317,7 +319,7 @@ public final class BeatApp {
 
                 Argumenty: plik.mid [trackIndex=1] [startBar=0] [bars=2] [loops=4] [synth=anthem] [midiDevice]
 
-                Syntezatory melodii (argument [synth]): anthem (domyslny), pad, pluck
+                Syntezatory melodii (argument [synth]): anthem (domyslny), pad, chords, pluck, sub, acid
 
                 Plik .properties dla --config (tylko "file" wymagany):
                   file=sciezka/do/pliku.mid

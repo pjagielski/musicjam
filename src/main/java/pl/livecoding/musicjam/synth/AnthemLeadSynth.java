@@ -13,7 +13,7 @@ public final class AnthemLeadSynth extends NovasawSynth {
                 4.0f, 18.0f,
                 1800.0f, 7600.0f, 1200.0f, 45.0f,
                 5.2f, 4.0f,
-                0.15f, 1.30f, 1.00f,
+                0.15f, 1.30f, 0.51f,
                 0.72f, 0.68f, 0.34f
         );
     }

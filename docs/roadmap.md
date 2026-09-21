@@ -13,7 +13,8 @@ blank page.
   delay and a Freeverb-style reverb, ducked under the kick when the panel asks for it. Stop
   releases rather than cuts, so tails ring out.
 - **Synth.** One engine (`NovasawSynth`), seven unison saws, a sub sine, a diode shaper, a
-  state-variable lowpass. Five patches: anthem, pluck, pad, sub bass, acid bass.
+  state-variable lowpass. Six patches, levelled against one another: anthem, pluck, pad,
+  chords, sub bass, acid bass.
 - **Control.** A panel of knobs, an XY pad and a draggable envelope, all publishing `SynthParams`
   and `EffectParams`. Presets load a patch's own numbers; the delay can lock to the jam's tempo.
 - **Live code.** `s("bd(3,8,5)")`-style mini-notation drives the drum grid; the melody comes from a

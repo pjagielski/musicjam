@@ -12,6 +12,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import pl.livecoding.musicjam.synth.AcidBassSynth;
 import pl.livecoding.musicjam.synth.AnthemLeadSynth;
+import pl.livecoding.musicjam.synth.ChordsSynth;
 import pl.livecoding.musicjam.synth.DelayMode;
 import pl.livecoding.musicjam.synth.EffectParams;
 import pl.livecoding.musicjam.synth.NovasawSynth;
@@ -80,6 +81,7 @@ public final class SynthControls {
         PATCHES.put("anthem", AnthemLeadSynth::new);
         PATCHES.put("pluck", TrancePluckSynth::new);
         PATCHES.put("pad", WidePadSynth::new);
+        PATCHES.put("chords", ChordsSynth::new);
         PATCHES.put("sub bass", SubBassSynth::new);
         PATCHES.put("acid bass", AcidBassSynth::new);
     }
