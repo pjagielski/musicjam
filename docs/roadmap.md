@@ -104,6 +104,32 @@ The grid and the code understand each other; the melody does not.
 | 7.2 | A step built on the live voice: "make the filter follow the envelope" is a good exercise now that the engine plays voices rather than samples. | M |
 | 7.3 | Update the cheat sheets in `docs/sciagi` once the steps change. | S |
 
+## Phase 8 — On a phone
+
+Most of the studio is plain Java with no platform in it: the model, the synth and its effects, the
+live-code parser and the renderer, which only fills `float[]` blocks. Two things are missing on
+Android — `javax.sound.*` (no `sampled`, no `midi`) and JavaFX — and both sit at the edges.
+
+| Step | What | Effort |
+| --- | --- | --- |
+| 8.1 | ★ **A core module with no JavaFX and no `javax.sound`**: model, synth, effects, live code and `LiveRenderer`, with `LiveSession`'s `SourceDataLine` behind an output interface. Worth doing even if Android never happens — a cleaner seam, and tests that need no audio device. | M |
+| 8.2 | ★ **The spike**: a minimal Android app that plays a loop through our `LiveRenderer` into `AudioTrack` (low-latency mode), with one knob on the cutoff. It answers the only question that matters before anything else: can a phone compute seven saws per voice, frame by frame in Java, without dropouts, and how late does it sound. | M |
+| 8.3 | **MIDI** through `android.media.midi`. A USB-MIDI device over OTG — the NTS-1 among them — should show up there. | M |
+| 8.4 | **The interface in Jetpack Compose**, made for fingers rather than a mouse. The knobs, the XY pad and the envelope are canvas drawing, so their geometry carries over almost line for line; the drum grid, the code editor and the layout are new work, and most of the cost. | L |
+
+Two things to check before 8.2:
+
+- **The language level.** The project builds on Java 25; Android accepts only part of recent Java.
+  Records and sealed types are fine, but a few `switch` statements use Java 21 type patterns
+  (`case Drum drum ->` in `AudioEngine`) and may need rewriting as `instanceof`, depending on the
+  toolchain.
+- **Not via JavaFX.** Gluon runs JavaFX on Android through GraalVM native-image, but it is a heavy
+  toolchain and still leaves `javax.sound` missing. The audio adapter has to be written either way,
+  and a native UI is the better half to write.
+
+If 8.2 shows dropouts, the fallback is Oboe (C++, AAudio underneath) for the output, fed with the
+same blocks — but the spike should come first, because it may well not be needed.
+
 ---
 
 ## If only three things happen
@@ -123,3 +149,5 @@ The grid and the code understand each other; the melody does not.
 - Ableton Live 12 reference manual, *Session View* — clips, tracks, scenes and launch behaviour.
 - Ableton Link repository — header-only C++, dual GPLv2+/proprietary licence.
 - MIDI Association, *MIDI 2.0* — MIDI-CI, UMP, and why this stays out of scope.
+- Android platform APIs — `AudioTrack` (low-latency performance mode), Oboe/AAudio, and
+  `android.media.midi` for USB MIDI; none of `javax.sound.*` exists there.
