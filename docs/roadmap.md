@@ -58,6 +58,7 @@ mixer is the thing that makes the studio feel like a studio rather than a demo.
 | 2.4 | **Unison voice count** as a parameter (7 is a lead; a bass wants 1–3). | S |
 | 2.5 | **Pitch envelope** for drums-from-synth and for 909-style toms. | S |
 | 2.6 | **Oversampling** of the saw and the shaper, to take the fizz off very bright patches. | L |
+| 2.7 | ✓ **Done.** **Crush on the synth channel**, in front of the delay and reverb, so the repeats carry what the crusher left; the Drive knob was already the channel own dirt. The Performance FX strip of the same name crushes the whole mix, drums and all; this one only what the synth plays. | — |
 
 ## Phase 3 — Live code that reaches the melody
 

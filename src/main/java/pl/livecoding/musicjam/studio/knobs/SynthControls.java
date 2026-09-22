@@ -137,6 +137,7 @@ public final class SynthControls {
     private final Knob reverbSize;
     private final Knob reverbDamping;
     private final Knob reverbMix;
+    private final Knob crush;
     private final Knob duckDepth;
     private final Knob duckRecover;
     private final XyPad pad;
@@ -202,6 +203,7 @@ public final class SynthControls {
         reverbSize = knob(Param.linear("Size", 0, 1, "", 2, start.reverbSize()), Theme.Accent.FX, 62);
         reverbDamping = knob(Param.linear("Damping", 0, 1, "", 2, start.reverbDamping()), Theme.Accent.FX, 62);
         reverbMix = knob(Param.linear("Mix", 0, 1, "", 2, start.reverbMix()), Theme.Accent.FX, 62);
+        crush = knob(Param.linear("Crush", 0, 1, "", 2, start.crush()), Theme.Accent.AMP, 62);
         duckDepth = knob(Param.linear("Duck", 0, 1, "", 2, start.duckDepth()), Theme.Accent.FX, 62);
         duckRecover = knob(Param.exponential("Recover", 20, 1000, "ms", 0, start.duckMillis()),
                 Theme.Accent.FX, 62);
@@ -254,7 +256,7 @@ public final class SynthControls {
 
         List<VBox> groupBoxes = List.of(
                 section("Oscillator", Theme.Accent.OSC, null, detune, sub, vibrato, motionRate, drift),
-                section("Amp · Sidechain", Theme.Accent.AMP, null, drive, trim, duckDepth, duckRecover),
+                section("Amp · Sidechain", Theme.Accent.AMP, null, drive, trim, crush, duckDepth, duckRecover),
                 section("Filter", Theme.Accent.FILTER, pad, cutoff, resonance, envAmount, keyTrack),
                 section("Envelope", Theme.Accent.AMP, envelopes),
                 section("Delay", Theme.Accent.FX, delayPicture, delayTime, delayFeedback, delayTone, delayMix),
@@ -304,12 +306,13 @@ public final class SynthControls {
         return division.beats * 60_000 / bpm;
     }
 
-    /** The delay and reverb knobs, as the synth channel's effects read them. */
+    /** The crusher, delay, reverb and sidechain knobs, as the synth channel's effects read them. */
     public EffectParams effects() {
         return new EffectParams(delayMode.value(),
                 (float) delayTime.value(), (float) delayFeedback.value(), (float) delayTone.value(),
                 (float) delayMix.value(), (float) reverbSize.value(), (float) reverbDamping.value(),
-                (float) reverbMix.value(), (float) duckDepth.value(), (float) duckRecover.value());
+                (float) reverbMix.value(), (float) duckDepth.value(), (float) duckRecover.value(),
+                (float) crush.value());
     }
 
     /** The knobs as the synth reads them. */
@@ -390,11 +393,11 @@ public final class SynthControls {
                 params.filterSustainLevel(), params.filterReleaseSeconds() * 1000)
                 + String.format(Locale.ROOT,
                 " | delay %s %.0fms fb=%.2f tone=%.2f mix=%.2f | reverb size=%.2f damp=%.2f mix=%.2f"
-                        + " | duck=%.2f %.0fms",
+                        + " | duck=%.2f %.0fms | crush=%.2f",
                 effects.delayMode(), effects.delayMillis(), effects.delayFeedback(),
                 effects.delayTone(), effects.delayMix(),
                 effects.reverbSize(), effects.reverbDamping(), effects.reverbMix(),
-                effects.duckDepth(), effects.duckMillis());
+                effects.duckDepth(), effects.duckMillis(), effects.crush());
     }
 
     private void publish() {

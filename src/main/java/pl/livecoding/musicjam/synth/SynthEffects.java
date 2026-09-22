@@ -66,6 +66,8 @@ public final class SynthEffects implements AudioEffect {
     private double tapePhase;
     private long framesSinceKick = Long.MAX_VALUE / 2;
     private float duckGain = 1.0f;
+    private double crushPhase = 1;
+    private float crushHeld;
 
     public SynthEffects(int sampleRate, Supplier<EffectParams> params) {
         this.sampleRate = sampleRate;
@@ -92,13 +94,36 @@ public final class SynthEffects implements AudioEffect {
     @Override
     public void process(float input, float[] stereoOut) {
         EffectParams current = params.get();
-        delay(input, current, stereoOut);
+        delay(crushed(input, current), current, stereoOut);
         for (int channel = 0; channel < CHANNELS; channel++) {
             stereoOut[channel] = reverb(channel, stereoOut[channel], current);
         }
         float gain = ducked(current);
         stereoOut[0] *= gain;
         stereoOut[1] *= gain;
+    }
+
+    /**
+     * The channel through a cheap converter before anything else: held at a lower rate and rounded
+     * to fewer bits, so the delay and the reverb work on what the crusher left. Nothing filters the
+     * held signal, which is where the grit comes from. At 0 the channel passes untouched.
+     */
+    private float crushed(float input, EffectParams current) {
+        float crush = current.crush();
+        if (crush <= 0) {
+            crushPhase = 1;
+            return input;
+        }
+        // 22 kHz and 16 bits at the bottom of the knob, about 700 Hz and 4 bits at the top
+        double rate = 700 * Math.pow(31.5, 1 - crush);
+        crushPhase += rate / sampleRate;
+        if (crushPhase >= 1) {
+            crushPhase -= Math.floor(crushPhase);
+            double steps = Math.pow(2, 16 - 12 * crush - 1);
+            // rounding to the nearest keeps a level at zero, so a silent channel stays silent
+            crushHeld = (float) (Math.round(input * steps) / steps);
+        }
+        return crushHeld;
     }
 
     @Override

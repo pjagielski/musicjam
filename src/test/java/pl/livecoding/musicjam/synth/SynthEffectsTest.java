@@ -190,6 +190,43 @@ class SynthEffectsTest {
     }
 
     @Test
+    void theCrusherHoldsAndRoundsTheChannelBeforeTheDelayAndReverb() {
+        // 44.1 kHz, so the crusher's own rate is what holds the samples, not the channel's
+        var crushed = new SynthEffects(44_100,
+                () -> new EffectParams(DelayMode.MONO, 100, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f)
+                        .withCrush(1.0f));
+        float[] out = new float[2];
+        int changes = 0;
+        float before = 0;
+
+        for (int frame = 0; frame < 4_410; frame++) {
+            crushed.process((float) (0.5 * Math.sin(2 * Math.PI * 220 * frame / 44_100)), out);
+            if (frame > 0 && out[LEFT] != before) {
+                changes++;
+            }
+            before = out[LEFT];
+            // wide open, the crusher rounds to sixteen levels a side: nothing lands between them
+            assertEquals(Math.round(out[LEFT] * 8) / 8.0f, out[LEFT], 1e-6f);
+        }
+
+        // about 700 samples a second: some 70 of them in a tenth of a second, not 4410
+        assertEquals(70, changes, 12);
+    }
+
+    @Test
+    void withoutCrushTheChannelPassesAsItIs() {
+        var effects = new SynthEffects(44_100,
+                () -> new EffectParams(DelayMode.MONO, 100, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f));
+        float[] out = new float[2];
+
+        for (int frame = 0; frame < 500; frame++) {
+            float value = (float) (0.3 * Math.sin(frame * 0.1));
+            effects.process(value, out);
+            assertEquals(value, out[LEFT], 1e-6f);
+        }
+    }
+
+    @Test
     void withoutDepthAKickChangesNothing() {
         var effects = new SynthEffects(SAMPLE_RATE,
                 () -> new EffectParams(DelayMode.MONO, 100, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f));
