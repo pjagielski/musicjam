@@ -19,7 +19,7 @@ public final class TrancePluckSynth extends NovasawSynth {
                 7.0f, 22.0f,
                 100.0f, 0.0f, 8500.0f, 35.0f,
                 3.0f, 1.2f,
-                0.10f, 1.10f, 0.90f,
+                0.10f, 1.10f, 0.698f,
                 0.58f, 0.64f, 0.28f, 0.0f,
                 0.001f, 0.160f, 0.0f, 0.100f
         );

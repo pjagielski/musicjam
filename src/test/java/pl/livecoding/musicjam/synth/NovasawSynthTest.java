@@ -21,16 +21,16 @@ class NovasawSynthTest {
         Sample rendered = new AnthemLeadSynth().render(64, 11_025, SAMPLE_RATE);
 
         assertEquals(15_876, rendered.frameCount());
-        assertEquals("15876 0.134694 0.037062 -0.004263 79.047081", fingerprint(rendered));
+        assertEquals("15876 0.134562 0.037026 -0.004259 78.892710", fingerprint(rendered));
     }
 
     @Test
     void everyPatchKeepsItsOwnFingerprint() {
-        assertEquals("13450 -0.099492 0.004655 0.003071 41.621979",
+        assertEquals("13450 -0.099308 0.004646 0.003065 41.468222",
                 fingerprint(new TrancePluckSynth().render(72, 5_512, SAMPLE_RATE)));
-        assertEquals("52920 0.068558 0.117932 0.011762 201.642778",
+        assertEquals("52920 0.068561 0.117938 0.011763 201.661410",
                 fingerprint(new WidePadSynth().render(48, 22_050, SAMPLE_RATE)));
-        assertEquals("37485 -0.047769 -0.006545 0.000311 186.599356",
+        assertEquals("37485 -0.047852 -0.006557 0.000312 187.247375",
                 fingerprint(new ChordsSynth().render(60, 22_050, SAMPLE_RATE)));
     }
 
@@ -48,9 +48,9 @@ class NovasawSynthTest {
 
     @Test
     void theBassPatchesKeepTheirOwnFingerprints() {
-        assertEquals("48069 -0.024709 -0.062270 0.002613 247.637361",
+        assertEquals("48069 -0.024752 -0.062381 0.002618 248.515232",
                 fingerprint(new SubBassSynth().render(40, 44_100, SAMPLE_RATE)));
-        assertEquals("47628 0.052664 -0.006201 0.000492 113.447781",
+        assertEquals("47628 0.052817 -0.006219 0.000494 114.105109",
                 fingerprint(new AcidBassSynth().render(45, 44_100, SAMPLE_RATE)));
     }
 
@@ -72,6 +72,31 @@ class NovasawSynthTest {
     }
 
     /** How much of a stretch is edges rather than body: the size of its steps against its size. */
+    @Test
+    void theDriveKnobAddsGritRatherThanVolume() {
+        var patch = new AnthemLeadSynth().params();
+        float[] clean = NovasawSynth.render(60, SAMPLE_RATE / 2, SAMPLE_RATE, patch.withDrive(0.1f)).copyMono();
+        float[] middling = NovasawSynth.render(60, SAMPLE_RATE / 2, SAMPLE_RATE, patch.withDrive(1.0f)).copyMono();
+        float[] hard = NovasawSynth.render(60, SAMPLE_RATE / 2, SAMPLE_RATE, patch.withDrive(2.0f)).copyMono();
+
+        // the shaper on its own is some ten times louder at the top of the knob than at the bottom
+        assertEquals(rms(middling, 0), rms(clean, 0), rms(middling, 0) * 0.3, "quiet drive, same level");
+        assertEquals(rms(middling, 0), rms(hard, 0), rms(middling, 0) * 0.3, "hard drive, same level");
+        // what it does change is the sound: driven hard, the peaks are shaped off and the waveform
+        // squares up, so it sits closer to its own average level
+        assertTrue(crest(hard) < crest(clean) * 0.9,
+                "and grit with it: " + crest(hard) + " against " + crest(clean));
+    }
+
+    /** Peak against average: a clean waveform stands well above its own level, a shaped one less. */
+    private static double crest(float[] samples) {
+        double peak = 0;
+        for (float value : samples) {
+            peak = Math.max(peak, Math.abs(value));
+        }
+        return peak / rms(samples, 0);
+    }
+
     private static double brightness(float[] samples, int from) {
         double steps = 0;
         for (int frame = from + 1; frame < from + 2_205; frame++) {

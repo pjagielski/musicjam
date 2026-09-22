@@ -58,6 +58,13 @@ public record SynthParams(
                 filterReleaseSeconds, drive, outputTrim);
     }
 
+    public SynthParams withDrive(float amount) {
+        return of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, subLevel,
+                vibratoCents, motionRateHz, motion, cutoffHz, resonance, filterEnvAmountHz,
+                keyTrackHzPerSemitone, filterAttackSeconds, filterDecaySeconds, filterSustainLevel,
+                filterReleaseSeconds, amount, outputTrim);
+    }
+
     public SynthParams withResonance(float amount) {
         return of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, subLevel,
                 vibratoCents, motionRateHz, motion, cutoffHz, amount, filterEnvAmountHz,

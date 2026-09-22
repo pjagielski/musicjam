@@ -35,6 +35,26 @@ public final class NovasawDsp {
         return phase * 2.0f - 1.0f - polyBlep(phase, phaseIncrement);
     }
 
+    /**
+     * The diode shaper with its level taken out of it: what comes out is about as loud as what went
+     * in, whatever the drive, so the knob adds dirt rather than volume. The shaper alone runs from
+     * about 0.7 times the level at no drive to seven times it at full, which is most of what a drive
+     * knob sounds like when nothing corrects for it.
+     */
+    public static float shapeDiodeLevelled(float input, float drive) {
+        return shapeDiode(input, drive) / driveGain(drive);
+    }
+
+    /**
+     * What the shaper does to the level at {@code drive}: measured through it with a saw of the
+     * level a patch's voices reach, and fitted, since it is a curve rather than a line - the harder
+     * it is driven, the more of what it adds it clips straight back off.
+     */
+    static float driveGain(float drive) {
+        float positive = Math.max(0.0f, drive);
+        return 0.74f + 5.3f * positive / (1.0f + 0.32f * positive);
+    }
+
     public static float shapeDiode(float input, float drive) {
         float driven = input * (1.0f + drive * 7.0f);
         float positive = 1.0f - (float) Math.exp(-Math.max(0.0f, driven));

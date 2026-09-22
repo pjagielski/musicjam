@@ -16,7 +16,7 @@ public final class AcidBassSynth extends NovasawSynth {
                 2.0f, 6.0f,
                 180.0f, 500.0f, 4200.0f, 22.0f,
                 1.6f, 0.0f,
-                0.55f, 0.90f, 0.90f,
+                0.55f, 0.90f, 1.024f,
                 0.78f, 0.52f, 0.14f, 0.45f
         );
     }

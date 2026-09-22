@@ -15,7 +15,7 @@ public final class ChordsSynth extends NovasawSynth {
                 8.0f, 22.0f,
                 900.0f, 4700.0f, 1030.0f, 20.0f,
                 0.30f, 7.0f,
-                0.30f, 0.70f, 0.72f,
+                0.30f, 0.70f, 0.522f,
                 0.50f, 0.40f, 0.30f,
                 0.25f
         );

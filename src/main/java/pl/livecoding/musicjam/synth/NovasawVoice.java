@@ -9,7 +9,7 @@ import static pl.livecoding.musicjam.synth.NovasawDsp.LowpassFilter;
 import static pl.livecoding.musicjam.synth.NovasawDsp.clamp;
 import static pl.livecoding.musicjam.synth.NovasawDsp.deterministicPhaseJitter;
 import static pl.livecoding.musicjam.synth.NovasawDsp.polyBlepSaw;
-import static pl.livecoding.musicjam.synth.NovasawDsp.shapeDiode;
+import static pl.livecoding.musicjam.synth.NovasawDsp.shapeDiodeLevelled;
 import static pl.livecoding.musicjam.synth.NovasawDsp.wrapTwoPi;
 import static pl.livecoding.musicjam.synth.NovasawDsp.wrapUnitPhase;
 
@@ -29,7 +29,9 @@ public final class NovasawVoice implements VoiceSource {
     static final int UNISON_VOICES = 7;
 
     private static final double[] UNISON_OFFSETS = {-1.0, -0.58, -0.23, 0.0, 0.23, 0.58, 1.0};
-    private static final float MAX_OUTPUT_GAIN = 0.22f;
+    // the shaper used to carry the drive's own gain, some five times over at the drive a patch
+    // sits at; now that it is levelled, that gain lives here instead
+    private static final float MAX_OUTPUT_GAIN = 1.046f;
     /** Loud enough that a sub at 1.0 stands up to the seven saws without swamping them. */
     private static final float SUB_GAIN = 2.2f;
 
@@ -102,7 +104,7 @@ public final class NovasawVoice implements VoiceSource {
         }
 
         float voiceSample = mono * envelope * deClick;
-        float shaped = shapeDiode(voiceSample * current.unisonGain() * 0.55f, current.drive())
+        float shaped = shapeDiodeLevelled(voiceSample * current.unisonGain() * 0.55f, current.drive())
                 * MAX_OUTPUT_GAIN * current.outputTrim();
         float dynamicCutoff = clamp(
                 current.cutoffHz() + filterLevel * current.filterEnvAmountHz()

@@ -21,7 +21,7 @@ public final class WidePadSynth extends NovasawSynth {
                 12.0f, 22.0f,
                 700.0f, 2800.0f, 1680.0f, 28.0f,
                 0.18f, 2.5f,
-                0.35f, 0.50f, 0.80f,
+                0.35f, 0.50f, 0.535f,
                 0.44f, 0.48f, 0.52f,
                 0.20f
         );

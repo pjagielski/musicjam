@@ -59,6 +59,9 @@ mixer is the thing that makes the studio feel like a studio rather than a demo.
 | 2.5 | **Pitch envelope** for drums-from-synth and for 909-style toms. | S |
 | 2.6 | **Oversampling** of the saw and the shaper, to take the fizz off very bright patches. | L |
 | 2.7 | ✓ **Done.** **Crush on the synth channel**, in front of the delay and reverb, so the repeats carry what the crusher left; the Drive knob was already the channel own dirt. The Performance FX strip of the same name crushes the whole mix, drums and all; this one only what the synth plays. | — |
+| 2.8 | ✓ **Done.** **Drive that adds grit, not volume.** The diode shaper is some ten times louder at the top of the knob than at the bottom, which is what made the pad quiet at low drive and made Drive behave like a second Output. Its level is now measured, fitted and taken back off, as the Dirty strip does; every patch trim was re-levelled so the six patches sound exactly as loud as they did. | — |
+| 2.7 | ✓ **Done.** **Crush on the synth channel**, in front of the delay and reverb, so the repeats carry what the crusher left; the Drive knob was already the channel own dirt. The Performance FX strip of the same name crushes the whole mix, drums and all; this one only what the synth plays. | — |
+| 2.8 | ✓ **Done.** **Drive that adds grit, not volume.** The diode shaper is some ten times louder at the top of the knob than at the bottom, which is what made the pad quiet at low drive and made Drive behave like a second Output. Its level is now measured, fitted and taken back off, as the Dirty strip does; every patch trim was re-levelled so the six patches sound exactly as loud as they did. | — |
 
 ## Phase 3 — Live code that reaches the melody
 

@@ -365,21 +365,21 @@ public final class PerformanceFx {
 
         @Override
         void apply(float[] mix, int left) {
+            // the levelled shaper: the grit climbs with the strip, the level stays where it was
             float drive = (float) (0.05 + 0.5 * position);
-            // the shaper's own gain climbs with the drive: taken back off, so only the grit is heard
-            float trim = (float) (1 / (1 + 1.3 * position));
-            mix[left] = NovasawDsp.shapeDiode(mix[left], drive) * trim;
-            mix[left + 1] = NovasawDsp.shapeDiode(mix[left + 1], drive) * trim;
+            mix[left] = NovasawDsp.shapeDiodeLevelled(mix[left], drive);
+            mix[left + 1] = NovasawDsp.shapeDiodeLevelled(mix[left + 1], drive);
         }
     }
 
     /**
-     * A ping-pong delay over the whole mix, its time a dotted eighth of the jam's tempo: what goes
-     * in on the left comes back on the right, and again on the left, quieter and darker each time,
-     * as a dub delay's repeats lose their top. Sliding up feeds it harder.
+     * A ping-pong delay over the whole mix, in time with the jam: what goes in on the left comes
+     * back on the right, and again on the left, quieter and darker each time, as a delay's repeats
+     * lose their top. The time stays a dotted eighth and the strip feeds it, up to the edge of
+     * running away.
      *
-     * <p>It adds to the mix rather than replacing it, and keeps its own balance, so that letting go
-     * only stops what goes in: the repeats already in the line ring their way out.
+     * <p>It adds to the mix rather than replacing it, and keeps its own balance, so that
+     * letting go only stops what goes in: the repeats already in the line ring their way out.
      */
     private static final class Dub extends Effect {
         private static final double DELAY_BEATS = 0.75;
@@ -398,6 +398,7 @@ public final class PerformanceFx {
         private double dampedLeft;
         private double dampedRight;
         private double loudest;
+        private double bpm = 120;
 
         Dub(int sampleRate) {
             super(sampleRate);
@@ -409,9 +410,14 @@ public final class PerformanceFx {
             delayFrames = wantedDelayFrames = Math.min(frames - 2, sampleRate / 2.0);
         }
 
-        /** The delay's length: a dotted eighth at {@code bpm}, so its repeats land on the grid. */
+        /** The tempo its repeats are to land on the grid of. */
         void inTimeWith(double bpm) {
-            wantedDelayFrames = Math.min(lineLeft.length - 2, DELAY_BEATS * 60.0 / bpm * sampleRate);
+            this.bpm = bpm;
+        }
+
+        /** The delay's length in frames, a dotted eighth at the tempo now. */
+        private double lengthFrames() {
+            return Math.min(lineLeft.length - 2, DELAY_BEATS * 60.0 / bpm * sampleRate);
         }
 
         @Override
@@ -429,12 +435,13 @@ public final class PerformanceFx {
             Arrays.fill(lineLeft, 0.0f);
             Arrays.fill(lineRight, 0.0f);
             dampedLeft = dampedRight = loudest = 0;
-            delayFrames = wantedDelayFrames;
+            delayFrames = wantedDelayFrames = lengthFrames();
         }
 
         @Override
         void apply(float[] mix, int left) {
             // the time glides rather than jumps, so a new tempo bends the repeats instead of clicking
+            wantedDelayFrames = lengthFrames();
             delayFrames += (wantedDelayFrames - delayFrames) * glide;
             double feedback = 0.3 + 0.62 * position;
             double level = 0.3 + 0.25 * position;
