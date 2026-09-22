@@ -83,6 +83,7 @@ public final class FxStrip extends VBox {
         header.setStyle("-fx-text-fill: " + Theme.web(theme.accent(Theme.Accent.FX))
                 + "; -fx-font-size: 10px; -fx-font-weight: bold;");
 
+        NoPanning.on(pad);
         // consumed so that playing the strip never pans the view underneath it
         pad.addEventHandler(MouseEvent.MOUSE_PRESSED, event -> {
             if (event.getButton() == MouseButton.SECONDARY) {

@@ -29,6 +29,7 @@ final class XyPad extends Canvas {
         this.theme = theme;
         across.addListener((property, before, after) -> draw());
         up.addListener((property, before, after) -> draw());
+        NoPanning.on(this);
         setOnMousePressed(this::moveTo);
         setOnMouseDragged(this::moveTo);
         across.set(horizontal.positionOf(horizontal.initial()));

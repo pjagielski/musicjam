@@ -57,6 +57,7 @@ final class Knob extends VBox {
         position.addListener((property, before, after) -> draw());
         // every one of these is consumed: a knob inside a pannable ScrollPane would otherwise drag
         // the whole view along with the value, cursor and all
+        NoPanning.on(this);
         setOnMousePressed(event -> {
             requestFocus();
             dragFrom = event.getSceneY();

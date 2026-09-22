@@ -57,6 +57,7 @@ final class AdsrEditor extends Canvas {
         }
 
         // consumed so that dragging a handle shapes the envelope instead of panning the view
+        NoPanning.on(this);
         setOnMousePressed(event -> {
             dragging = nearestHandle(event);
             event.consume();
