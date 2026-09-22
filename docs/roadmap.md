@@ -40,7 +40,7 @@ The single synth bus is already the seam for this; widening it is the biggest so
 
 | Step | What | Effort |
 | --- | --- | --- |
-| 1.1 | **A bus per track**: each drum track and the synth get gain, pan, mute and solo. | M |
+| 1.1 | **A bus per track**: each drum track and the synth get gain, pan, mute and solo. Waits on 10.1 for there to be tracks to put a bus on. | M |
 | 1.2 | **Sends**: one delay and one reverb shared by the tracks that want them, each with a send level — Strudel calls this an *orbit*, one delay and one reverb per orbit. | M |
 | 1.3 | ✓ **Done.** ★ **Sidechain ducking**: the kick ducks the synth bus. Strudel's `duck` works on the whole orbit; ours can start with one source and one target. | S |
 | 1.4 | **Meters**: a level readout per track, drawn like the knobs. | S |
@@ -60,8 +60,6 @@ mixer is the thing that makes the studio feel like a studio rather than a demo.
 | 2.6 | **Oversampling** of the saw and the shaper, to take the fizz off very bright patches. | L |
 | 2.7 | ✓ **Done.** **Crush on the synth channel**, in front of the delay and reverb, so the repeats carry what the crusher left; the Drive knob was already the channel own dirt. The Performance FX strip of the same name crushes the whole mix, drums and all; this one only what the synth plays. | — |
 | 2.8 | ✓ **Done.** **Drive that adds grit, not volume.** The diode shaper is some ten times louder at the top of the knob than at the bottom, which is what made the pad quiet at low drive and made Drive behave like a second Output. Its level is now measured, fitted and taken back off, as the Dirty strip does; every patch trim was re-levelled so the six patches sound exactly as loud as they did. | — |
-| 2.7 | ✓ **Done.** **Crush on the synth channel**, in front of the delay and reverb, so the repeats carry what the crusher left; the Drive knob was already the channel own dirt. The Performance FX strip of the same name crushes the whole mix, drums and all; this one only what the synth plays. | — |
-| 2.8 | ✓ **Done.** **Drive that adds grit, not volume.** The diode shaper is some ten times louder at the top of the knob than at the bottom, which is what made the pad quiet at low drive and made Drive behave like a second Output. Its level is now measured, fitted and taken back off, as the Dirty strip does; every patch trim was re-levelled so the six patches sound exactly as loud as they did. | — |
 
 ## Phase 3 — Live code that reaches the melody
 
@@ -79,7 +77,7 @@ The grid and the code understand each other; the melody does not.
 | Step | What | Effort |
 | --- | --- | --- |
 | 4.1 | ★ **Clip grid (session view)**: columns are tracks, rows are scenes, one clip per track at a time, launched on the next bar. Ableton's rules are worth copying exactly — a track plays one clip, a scene launches a row, and launches are quantized. Our loop-boundary compile is already that mechanism. | L |
-| 4.2 | **Piano roll** for the melody, with the playhead and dragging. | L |
+| 4.2 | **Piano roll** for the melody, with the playhead and dragging — one melody track's editor (10.2), and the view a MIDI window is read into (10.3). | L |
 | 4.3 | **Recording**: capture clip launches and knob moves, then render the result to WAV (`writeWav` exists) and to a MIDI file. | M |
 | 4.4 | **Undo** for code runs and grid edits. | S |
 | 4.5 | ✓ **Done.** ★ **Tempo that changes now, not from the next loop.** Queued hits are kept in beats and placed through a `TempoMap` (the frame, beat and BPM of each recent change), so a change at frame F re-times every hit not yet played, the loop's end with them. The renderer reads the jam's tempo every block. `positionAt`, note lengths and a held stutter's slice all go through the map, and the melody for an external synth waits in beats too, turned into a frame only when it is due to be sent. Left for later: a tempo glide over a beat rather than a jump. | M |
@@ -168,6 +166,28 @@ Worth doing in the order of the stars: the plumbing, then Crush and Filter (quic
 once), then Talkbox. Koala's mixer effects (EQ, limiter, bit cooker, tape delay and the rest) are a
 different thing — per-channel inserts — and belong with Phase 1's desk; a limiter on the master,
 at least, would save the mix from clipping once a few of these are stacked.
+
+## Phase 10 — A jam of tracks
+
+The model has the shape of this already: a `Song` is a list of `Track`, and `Track` is a `DrumTrack`
+or a `MelodyTrack`. The studio does not use it. `publish()` builds exactly two tracks every time —
+the grid, as one `MelodyTrack` of drum notes, and the melody window read from a MIDI file — with one
+synth patch between them, one gain each, and one editor apiece bolted to the window. Everything
+below is about making the panel as free as the model already is: one drum track and as many melody
+tracks as a jam wants, each with its own notes, its own patch and its own way of being written.
+
+It is the piece several other steps are waiting on. 1.1's bus per track needs tracks to put a bus
+on; 4.1's clip grid needs columns to be tracks; 4.2's piano roll needs to be one track's editor
+rather than the melody's; 3.4's per-layer effects need a layer to hang on.
+
+| Step | What | Effort |
+| --- | --- | --- |
+| 10.1 | ★ **A track list in the studio**: add, remove, rename, reorder. One drum track, which is the grid as it stands, and any number of melody tracks. Each carries a name, a gain and a mute; the selected track is what the editor below shows. The engine takes them as the `Song`'s tracks, which is what it already reads — this step is mostly the panel and the wiring from it. | M |
+| 10.2 | ★ **A melody track knows where its notes come from**, and there are three ways: a **piano roll** (4.2), **live code** (`note("c3 e3 g3")`, which is 3.1), and a **MIDI file window** — the file, the track inside it and the bars taken from it, which is what `PhraseRequest` holds and the studio does today for its one melody. The source is the track's own, so a jam can have a bass written in code over a lead loaded from a file. | M |
+| 10.3 | ★ **The MIDI window drawn in the piano roll.** What is loaded from a file is notes like any other, so the roll should show them: the same view, read-only at first, then editable — at which point the window's notes become the track's own and the file is only where they came from. The picker for the file, the track index and the bar range stays as it is; it is the way of filling a track, not a kind of track. | M |
+| 10.4 | **A patch per melody track.** Today one `LivePitchSynth` serves the whole jam, so every melody note is played by the same patch and the panel of knobs edits that one. A track needs to name its own patch, and the panel to follow the selected track. The renderer already keeps the recipe rather than the voice for each hit, so the hit has to carry which synth plays it; the synth bus and its effects go per track with 1.1 and 1.2. | M |
+| 10.5 | **Each melody track can go out over MIDI** instead of being played here, rather than the one global "Melody over MIDI" switch — a channel per track, so two external synths can take two lines. The engine's external queue is one queue of beats today and would become one per track. | S |
+| 10.6 | **Saving a jam with its tracks** (6.x's territory): a jam file naming each track, its source and its patch, so a set survives the window closing. | M |
 
 ---
 
