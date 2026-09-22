@@ -33,7 +33,7 @@ class AudioEngineLiveTest {
     void anEditLandsOnTheNextLoopBoundary() {
         Song before = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "X...", 0.5f)));
         Song after = new Song(120, 4, List.of(new DrumTrack(Drum.SNARE, ".X..", 0.25f)));
-        var renderer = engine().liveRenderer(firstThen(jam(before), jam(after)), null);
+        var renderer = engine().liveRenderer(firstThen(jam(before), jam(after)), false);
 
         float[] left = render(renderer, BLOCKS);
 
@@ -44,20 +44,93 @@ class AudioEngineLiveTest {
     }
 
     @Test
-    void aNewTempoStartsExactlyWhereThePreviousLoopEnded() {
-        Song fast = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "X...", 1.0f)));
-        Song slow = new Song(60, 4, List.of(new DrumTrack(Drum.KICK, "XX..", 1.0f)));
-        var renderer = engine().liveRenderer(firstThen(jam(fast), jam(slow)), null);
+    void aNewTempoIsTakenUpAtOnceInsideTheLoop() {
+        Song fast = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "XXXX", 1.0f)));
+        Song slow = new Song(60, 4, List.of(new DrumTrack(Drum.KICK, "XXXX", 1.0f)));
+        var jam = new AtomicReference<>(jam(fast));
+        var renderer = engine().liveRenderer(jam::get, false);
 
-        float[] left = render(renderer, BLOCKS);
+        float[] before = render(renderer, 5);
+        jam.set(jam(slow));
+        float[] after = render(renderer, 26);
 
-        assertEquals(1.0f, left[2_000]);
-        assertEquals(0.0f, left[2_500]);
-        assertEquals(1.0f, left[3_000]);
-        var position = renderer.positionAt(3_000);
-        assertEquals(slow, position.song());
-        assertEquals(1.0, position.beat(), 1e-9);
-        assertEquals(4.0, position.lengthBeats());
+        // beat 1 at 120 BPM; the change comes at frame 640, beat 1.28, and beat 2 is 720 frames on
+        assertEquals(1.0f, before[500]);
+        assertEquals(0.0f, after[1_000 - 640], "no longer 500 frames a beat");
+        assertEquals(1.0f, after[1_360 - 640]);
+        assertEquals(1.0f, after[2_360 - 640]);
+        var position = renderer.positionAt(1_360);
+        assertEquals(2.0, position.beat(), 1e-9);
+        assertEquals(60.0, position.bpm(), 1e-9);
+    }
+
+    @Test
+    void aShorterLoopWrapsAtTheFirstMultipleOfItsLengthStillAhead() {
+        Song twoBars = new Song(120, 4, List.of(
+                new DrumTrack(Drum.KICK, "X...", 1.0f), new MelodyTrack(List.of(), 8.0, 1.0f)));
+        Song oneBar = new Song(120, 4, List.of(
+                new DrumTrack(Drum.SNARE, ".X..", 0.25f), new MelodyTrack(List.of(), 4.0, 1.0f)));
+        var jam = new AtomicReference<>(jam(twoBars));
+        var renderer = engine().liveRenderer(jam::get, false);
+
+        render(renderer, 5);
+        jam.set(jam(oneBar));
+        float[] left = render(renderer, 26);
+
+        // set in the first bar: the loop ends after it, and the second bar's kick never plays
+        assertEquals(0.0f, left[2_000 - 640]);
+        assertEquals(0.25f, left[2_500 - 640], "the new loop, from frame 2000");
+        assertEquals(4.0, renderer.positionAt(2_500).lengthBeats());
+    }
+
+    @Test
+    void aLongerLoopRunsOnPastTheOldEndWithTheLongerSongsHits() {
+        Song oneBar = new Song(120, 4, List.of(
+                new DrumTrack(Drum.KICK, "X...", 1.0f), new MelodyTrack(List.of(), 4.0, 1.0f)));
+        Song twoBars = new Song(120, 4, List.of(
+                new MelodyTrack(List.of(new Note(5.0, Drum.SNARE, 0.25, 0.25f)), 8.0, 1.0f)));
+        var jam = new AtomicReference<>(jam(oneBar));
+        var renderer = engine().liveRenderer(jam::get, false);
+
+        render(renderer, 5);
+        jam.set(jam(twoBars));
+        float[] left = render(renderer, 26);
+
+        assertEquals(0.25f, left[2_500 - 640], "beat 5 of the loop that was playing");
+        var position = renderer.positionAt(2_500);
+        assertEquals(5.0, position.beat(), 1e-9);
+        assertEquals(8.0, position.lengthBeats());
+    }
+
+    @Test
+    void externalNotesNotYetSentFollowANewTempo() {
+        var melody = new MelodyTrack(List.of(new Note(3.0, new Voice.Pitch(60), 0.5, 100 / 127f)), 4.0, 1.0f);
+        var jam = new AtomicReference<>(jam(new Song(120, 4, List.of(melody))));
+        var renderer = engine().liveRenderer(jam::get, true);
+
+        render(renderer, 5);
+        assertEquals(1_500, renderer.frameAt(3.0));
+        jam.set(jam(new Song(60, 4, List.of(melody))));
+        render(renderer, 1);
+
+        assertEquals(2_360, renderer.frameAt(3.0));
+    }
+
+    @Test
+    void aShorterLoopTakesBackTheExternalNotesPastItsEnd() {
+        var early = new Note(1.0, new Voice.Pitch(60), 0.5, 100 / 127f);
+        var late = new Note(6.0, new Voice.Pitch(64), 0.5, 100 / 127f);
+        var jam = new AtomicReference<>(jam(new Song(120, 4, List.of(new MelodyTrack(List.of(early, late), 8.0, 1.0f)))));
+        var renderer = engine().liveRenderer(jam::get, true);
+
+        render(renderer, 1);
+        jam.set(jam(new Song(120, 4, List.of(new MelodyTrack(List.of(early), 4.0, 1.0f)))));
+        render(renderer, 1);
+
+        assertEquals(List.of(
+                new AudioEngine.ExternalNote(1.0, true, 60, 100, 1.0),
+                new AudioEngine.ExternalNote(1.5, false, 60, 0, 1.0)
+        ), drain(renderer));
     }
 
     @Test
@@ -65,7 +138,7 @@ class AudioEngineLiveTest {
         Song halfBar = new Song(120, 4, List.of(
                 new DrumTrack(Drum.KICK, "X..X", 1.0f),
                 new MelodyTrack(List.of(), 2.0, 1.0f)));
-        var renderer = engine().liveRenderer(() -> jam(halfBar), null);
+        var renderer = engine().liveRenderer(() -> jam(halfBar), false);
 
         float[] left = render(renderer, BLOCKS);
 
@@ -82,7 +155,7 @@ class AudioEngineLiveTest {
         var hit = new Note(0.0, Drum.OPEN_HAT, 1.0, 1.0f, new Envelope(0.002, 0.0));
         Song song = new Song(120, 4, List.of(new MelodyTrack(List.of(hit), 4.0, 1.0f)));
 
-        float[] left = render(engine.liveRenderer(() -> jam(song), null), BLOCKS);
+        float[] left = render(engine.liveRenderer(() -> jam(song), false), BLOCKS);
 
         assertEquals(1.0f, left[0]);
         assertEquals((float) Math.pow(1000, -0.5), left[1], 1e-6f);
@@ -90,20 +163,20 @@ class AudioEngineLiveTest {
     }
 
     @Test
-    void externalMelodyIsHandedOnWithAbsoluteFramesInsteadOfRendered() {
+    void externalMelodyIsHandedOnInBeatsInsteadOfRendered() {
         var melody = new MelodyTrack(List.of(new Note(1.0, new Voice.Pitch(60), 0.5, 100 / 127f)), 4.0, 1.0f);
         Song song = new Song(120, 4, List.of(melody));
-        var sent = new ArrayList<AudioEngine.ExternalNote>();
-        var renderer = engine().liveRenderer(() -> jam(song), sent::add);
+        var renderer = engine().liveRenderer(() -> jam(song), true);
 
         float[] left = render(renderer, BLOCKS);
 
         assertEquals(List.of(
-                new AudioEngine.ExternalNote(500, true, 60, 100),
-                new AudioEngine.ExternalNote(750, false, 60, 0),
-                new AudioEngine.ExternalNote(2_500, true, 60, 100),
-                new AudioEngine.ExternalNote(2_750, false, 60, 0)
-        ), sent);
+                new AudioEngine.ExternalNote(1.0, true, 60, 100, 1.0),
+                new AudioEngine.ExternalNote(1.5, false, 60, 0, 1.0),
+                new AudioEngine.ExternalNote(5.0, true, 60, 100, 5.0),
+                new AudioEngine.ExternalNote(5.5, false, 60, 0, 5.0)
+        ), drain(renderer));
+        assertEquals(2_500, renderer.frameAt(5.0));
         for (float sample : left) {
             assertEquals(0.0f, sample);
         }
@@ -113,12 +186,11 @@ class AudioEngineLiveTest {
     void aMutedMelodySendsNothing() {
         var melody = new MelodyTrack(List.of(new Note(1.0, new Voice.Pitch(60), 0.5, 1.0f)), 4.0, 0.0f);
         Song song = new Song(120, 4, List.of(melody));
-        var sent = new ArrayList<AudioEngine.ExternalNote>();
-        var renderer = engine().liveRenderer(() -> jam(song), sent::add);
+        var renderer = engine().liveRenderer(() -> jam(song), true);
 
         render(renderer, BLOCKS);
 
-        assertEquals(List.of(), sent);
+        assertEquals(List.of(), drain(renderer));
     }
 
     @Test
@@ -127,7 +199,7 @@ class AudioEngineLiveTest {
         Song song = new Song(120, 4, List.of(new MelodyTrack(
                 List.of(new Note(0.0, new Voice.Pitch(60), 4.0, 1.0f)), 4.0, 1.0f)));
         var renderer = engine().liveRenderer(
-                () -> new AudioEngine.Jam(song, constantLevelSynth(level)), null);
+                () -> new AudioEngine.Jam(song, constantLevelSynth(level)), false);
         float[] mix = new float[BLOCK * 2];
 
         renderer.renderNext(mix);
@@ -143,7 +215,7 @@ class AudioEngineLiveTest {
     @Test
     void afterSchedulingStopsTheTailPlaysOnButNoNewNoteStarts() {
         Song song = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "X...", 1.0f)));
-        var renderer = engine().liveRenderer(() -> jam(song), null);
+        var renderer = engine().liveRenderer(() -> jam(song), false);
         float[] mix = new float[BLOCK * 2];
 
         renderer.renderNext(mix);
@@ -161,7 +233,7 @@ class AudioEngineLiveTest {
     @Test
     void aStutterRepeatsTheMixAndStoppingLetsGoOfIt() {
         Song song = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "X...", 1.0f)));
-        var renderer = engine().liveRenderer(() -> jam(song), null);
+        var renderer = engine().liveRenderer(() -> jam(song), false);
         renderer.stutter(0.5);
 
         float[] held = render(renderer, 4);
@@ -181,7 +253,7 @@ class AudioEngineLiveTest {
         Song song = new Song(120, 4, List.of(new MelodyTrack(
                 List.of(new Note(0.0, new Voice.Pitch(60), 0.25, 1.0f)), 4.0, 1.0f)));
         var renderer = engine().liveRenderer(
-                () -> new AudioEngine.Jam(song, constantLevelSynth(level)), null);
+                () -> new AudioEngine.Jam(song, constantLevelSynth(level)), false);
         renderer.stutter(0.5);
         float[] mix = new float[BLOCK * 2];
 
@@ -200,7 +272,7 @@ class AudioEngineLiveTest {
     void aHeldStutterKeepsItsSliceWhileTheSongMovesOnUnderneath() {
         Song kicks = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "X...", 0.5f)));
         Song snares = new Song(120, 4, List.of(new DrumTrack(Drum.SNARE, ".X..", 0.25f)));
-        var renderer = engine().liveRenderer(firstThen(jam(kicks), jam(snares)), null);
+        var renderer = engine().liveRenderer(firstThen(jam(kicks), jam(snares)), false);
         renderer.stutter(0.5);
 
         float[] left = render(renderer, BLOCKS);
@@ -212,7 +284,7 @@ class AudioEngineLiveTest {
     @Test
     void aStutterHeldForManyBarsKeepsRepeating() {
         Song song = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "X...", 0.5f)));
-        var renderer = engine().liveRenderer(() -> jam(song), null);
+        var renderer = engine().liveRenderer(() -> jam(song), false);
         renderer.stutter(0.5);
 
         // twenty seconds at 1000 frames a second: far longer than the song is remembered for
@@ -225,7 +297,7 @@ class AudioEngineLiveTest {
     void lettingGoOfAStutterPicksTheSongUpWhereItHasGot() {
         Song song = new Song(120, 4, List.of(
                 new DrumTrack(Drum.KICK, "X...", 0.5f), new DrumTrack(Drum.SNARE, "..X.", 0.25f)));
-        var renderer = engine().liveRenderer(() -> jam(song), null);
+        var renderer = engine().liveRenderer(() -> jam(song), false);
         renderer.stutter(0.5);
         float[] held = render(renderer, 4);
         renderer.stutter(0);
@@ -262,7 +334,7 @@ class AudioEngineLiveTest {
                     stereoOut[1] = input * 2;
                 };
             }
-        }), null);
+        }), false);
         float[] mix = new float[BLOCK * 2];
 
         renderer.renderNext(mix);
@@ -309,7 +381,7 @@ class AudioEngineLiveTest {
                     }
                 };
             }
-        }), null);
+        }), false);
 
         render(renderer, BLOCKS);
 
@@ -360,6 +432,16 @@ class AudioEngineLiveTest {
     private static <T> Supplier<T> firstThen(T first, T rest) {
         var calls = new AtomicInteger();
         return () -> calls.getAndIncrement() == 0 ? first : rest;
+    }
+
+    /** What the renderer has queued for an external synth, in the order it would be sent. */
+    private static List<AudioEngine.ExternalNote> drain(AudioEngine.LiveRenderer renderer) {
+        var sent = new ArrayList<AudioEngine.ExternalNote>();
+        AudioEngine.ExternalNote note;
+        while ((note = renderer.externalMelody().poll()) != null) {
+            sent.add(note);
+        }
+        return sent;
     }
 
     private static float[] render(AudioEngine.LiveRenderer renderer, int blocks) {

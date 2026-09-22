@@ -475,7 +475,19 @@ public final class BeatStudio extends Application {
         code.selectRange(edit.selectionStart(), edit.selectionEnd());
     }
 
-    /** Hands the engine a new jam; it picks it up when the next loop starts. */
+    /**
+     * Whether the jam holds edits the loop being heard does not play yet. Tempo and loop length are
+     * not among them: the engine takes those up at once.
+     */
+    private boolean waiting(Song heard) {
+        Song next = jam.get().song();
+        return heard != next && !heard.tracks().equals(next.tracks());
+    }
+
+    /**
+     * Hands the engine a new jam. Its notes are picked up when the next loop starts, its tempo and
+     * loop length at once.
+     */
     private void publish() {
         if (loading || melody == null) {
             return;
@@ -690,8 +702,8 @@ public final class BeatStudio extends Application {
                 status.setText(String.format(Locale.ROOT, "Bar %d of %s, %.1f BPM%s",
                         (int) (position.beat() / BEATS_PER_BAR) + 1,
                         loopLabel(position.lengthBeats() / BEATS_PER_BAR),
-                        position.song().bpm(),
-                        position.song() == jam.get().song() ? "" : "  |  changes land on the next loop"));
+                        position.bpm(),
+                        waiting(position.song()) ? "  |  changes land on the next loop" : ""));
             }
         };
     }

@@ -29,15 +29,12 @@ import java.util.Set;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 public final class AudioEngine {
     public static final int DEFAULT_SAMPLE_RATE = 44_100;
     public static final int DEFAULT_BLOCK_SIZE = 512;
     public static final int DEFAULT_MAX_VOICES = 32;
-    // how far back a stutter can reach for its slice: more than the longest slice at the slowest tempo
-    private static final int STUTTER_MEMORY_SECONDS = 4;
 
     private static final int CHANNELS = 2;
     private static final PitchSynth DEFAULT_SYNTH = new AnthemLeadSynth()::render;
@@ -146,7 +143,8 @@ public final class AudioEngine {
     /**
      * Plays a jam that can change while it plays. Each loop is compiled from whatever {@code jam}
      * returns just before that loop starts - song and synth alike - so edits land on the next loop
-     * boundary, with the same sample accuracy as {@link #play}. When {@code externalMelody} is not
+     * boundary, with the same sample accuracy as {@link #play}. The song's tempo and loop length are
+     * read every block and taken up at once, in the loop that is playing. When {@code externalMelody} is not
      * null, the melody's notes go there instead of through the synth, each one sent when the audio
      * device reaches its frame, less {@link LiveSession#setExternalLatencyMillis the synth's latency},
      * so an external synth stays in time with the drums.
@@ -301,12 +299,15 @@ public final class AudioEngine {
         return shortest;
     }
 
-    LiveRenderer liveRenderer(Supplier<Jam> jams, Consumer<ExternalNote> externalMelody) {
+    LiveRenderer liveRenderer(Supplier<Jam> jams, boolean externalMelody) {
         return new LiveRenderer(jams, externalMelody);
     }
 
-    /** What is audible right now: the song of the loop being heard, and how far into that loop. */
-    public record Position(Song song, double beat, double lengthBeats) {
+    /**
+     * What is audible right now: the song of the loop being heard, how far into that loop, and the
+     * tempo it is playing at — which can be newer than the song's own, as a tempo is taken up at once.
+     */
+    public record Position(Song song, double beat, double lengthBeats, double bpm) {
     }
 
     /** One loop's worth of what to play live: the song, and the synth its melody is rendered with. */
@@ -316,32 +317,39 @@ public final class AudioEngine {
     private record LiveSynthKey(PitchSynth synth, int midiNote, int frameCount) {
     }
 
-    record ExternalNote(long frame, boolean on, int midiNote, int velocity) {
+    /**
+     * A melody note for an external synth, placed in beats from the start of the jam, so it moves
+     * with the tempo until it is sent. {@code startBeat} is the beat of the note it belongs to: its
+     * own for a note-on, the note-on's for a note-off.
+     */
+    record ExternalNote(double beat, boolean on, int midiNote, int velocity, double startBeat) {
     }
 
     /**
-     * A hit waiting for its frame: a rendered sample, or a note for a live synth, whose voice is made
+     * A hit waiting for its beat: a rendered sample, or a note for a live synth, whose voice is made
      * when the hit is played. Keeping the recipe rather than the voice is what lets a stutter play
-     * the same note again, through the synth as its knobs are now.
+     * the same note again, through the synth as its knobs are now; keeping beats rather than frames
+     * is what lets a new tempo move every hit not yet played.
      */
-    private record LiveHit(long frame, Sample sample, LivePitchSynth synth, int midiNote, int heldFrames,
+    private record LiveHit(double beat, Sample sample, LivePitchSynth synth, int midiNote, double heldBeats,
                            float gain, boolean kick) {
 
-        static LiveHit sample(long frame, Sample sample, float gain, boolean kick) {
-            return new LiveHit(frame, sample, null, 0, 0, gain, kick);
+        static LiveHit sample(double beat, Sample sample, float gain, boolean kick) {
+            return new LiveHit(beat, sample, null, 0, 0, gain, kick);
         }
 
-        static LiveHit note(long frame, LivePitchSynth synth, int midiNote, int heldFrames, float gain) {
-            return new LiveHit(frame, null, synth, midiNote, heldFrames, gain, false);
+        static LiveHit note(double beat, LivePitchSynth synth, int midiNote, double heldBeats, float gain) {
+            return new LiveHit(beat, null, synth, midiNote, heldBeats, gain, false);
         }
 
         /** The same hit at {@code at}, held no longer than {@code room}: a stutter chops, it does not smear. */
-        LiveHit repeatedAt(long at, long room) {
-            return new LiveHit(at, sample, synth, midiNote, (int) Math.min(heldFrames, room), gain, kick);
+        LiveHit repeatedAt(double at, double room) {
+            return new LiveHit(at, sample, synth, midiNote, Math.min(heldBeats, room), gain, kick);
         }
     }
 
-    private record LoopMark(long startFrame, Song song, double lengthBeats) {
+    /** A loop, from the beat of the jam it starts on; {@code lengthBeats} is how long it will actually run. */
+    private record LoopMark(double startBeat, Song song, double lengthBeats) {
     }
 
     private record Loops(LoopMark previous, LoopMark current) {
@@ -349,13 +357,18 @@ public final class AudioEngine {
 
     /**
      * Renders an endless song block by block. A loop is compiled from whatever the supplier returns
-     * when the block about to be rendered reaches that loop's first frame; within the loop every hit
-     * is placed at its exact frame, as in {@link RenderSession}. The render position never resets,
-     * so a loop at a new tempo starts exactly where the previous one ended.
+     * when the block about to be rendered reaches that loop's first beat; within the loop every hit
+     * is placed at its exact frame, as in {@link RenderSession}. Two things are taken up sooner, at
+     * the next block: the tempo, which re-times every hit not yet played, and the loop's length,
+     * which cuts the loop short or runs it on (see {@link #followLoopLength}). The render position
+     * never resets.
      */
     final class LiveRenderer {
+        // how far back a stutter can reach for its slice: more than the longest slice
+        private static final double STUTTER_MEMORY_BEATS = 16;
+
         private final Supplier<Jam> jams;
-        private final Consumer<ExternalNote> externalMelody;
+        private final PriorityBlockingQueue<ExternalNote> externalMelody;
         private final Map<LiveSynthKey, Sample> synthCache = new HashMap<>();
         private final Map<ShapeKey, Sample> shapeCache = new HashMap<>();
         private final VoiceSlot[] voices = new VoiceSlot[maxVoices];
@@ -366,29 +379,43 @@ public final class AudioEngine {
         // where in this block a kick landed: the sidechain's key, played to the effects in time
         private final int[] kickOffsets = new int[blockSize];
         private int kickCount;
-        // the song's hits of the last few seconds, played or not: where a stutter's slice comes from
+        // the song's hits of the last few bars, played or not: where a stutter's slice comes from
         private final ArrayDeque<LiveHit> recent = new ArrayDeque<>();
-        // a stutter's repeats of its slice, due at their frames alongside the song's own hits
+        // a stutter's repeats of its slice, due at their beats alongside the song's own hits
         private final ArrayDeque<LiveHit> repeats = new ArrayDeque<>();
         // the slice's hits, kept from its first repeat on: the song's memory moves on, the slice must not
         private final List<LiveHit> slice = new ArrayList<>();
         private volatile double stutterRequested;
         private double stutterBeats;
-        private long sliceStart;
-        private long sliceFrames;
-        private long nextRepeat;
+        private double sliceStart;
+        private double nextRepeat;
         private AudioEffect effects;
         private volatile Loops loops = new Loops(null, null);
+        private volatile TempoMap tempo = TempoMap.starting(120, sampleRate);
         private volatile boolean scheduling = true;
         private long position;
-        private long nextLoopStart;
+        private double nextLoopBeat;
 
-        private LiveRenderer(Supplier<Jam> jams, Consumer<ExternalNote> externalMelody) {
+        /** With {@code externalMelody}, the melody is queued for an external synth rather than played. */
+        private LiveRenderer(Supplier<Jam> jams, boolean externalMelody) {
             this.jams = jams;
-            this.externalMelody = externalMelody;
+            this.externalMelody = externalMelody
+                    ? new PriorityBlockingQueue<>(64, Comparator.comparingDouble(ExternalNote::beat)
+                            .thenComparing(ExternalNote::on))
+                    : null;
             for (int i = 0; i < voices.length; i++) {
                 voices[i] = new VoiceSlot();
             }
+        }
+
+        /** The melody's notes for an external synth, earliest first; null when the melody plays here. */
+        PriorityBlockingQueue<ExternalNote> externalMelody() {
+            return externalMelody;
+        }
+
+        /** The frame {@code beat} of the jam falls on, at the tempo as it stands. Safe from any thread. */
+        long frameAt(double beat) {
+            return tempo.frameAt(beat);
         }
 
         /**
@@ -415,14 +442,19 @@ public final class AudioEngine {
             Arrays.fill(bus, 0.0f);
             kickCount = 0;
             long blockEnd = position + blockSize;
-            while (scheduling && nextLoopStart < blockEnd) {
-                compileNextLoop();
+            if (scheduling) {
+                Jam jam = jams.get();
+                tempo = tempo.at(position, jam.song().bpm());
+                followLoopLength(jam);
+                while (tempo.frameAt(nextLoopBeat) < blockEnd) {
+                    compileNextLoop(jam);
+                }
             }
             updateStutter(blockEnd);
             long segmentStart = position;
             LiveHit hit;
             while ((hit = pollNext(blockEnd)) != null) {
-                long frame = Math.max(segmentStart, hit.frame());
+                long frame = Math.max(segmentStart, tempo.frameAt(hit.beat()));
                 renderVoices(voices, mix, bus, position, segmentStart, frame);
                 segmentStart = frame;
                 play(hit, frame);
@@ -439,7 +471,9 @@ public final class AudioEngine {
             }
             VoiceSlot slot = allocateVoice(voices, frame);
             if (hit.synth() != null) {
-                slot.trigger(hit.synth().voice(hit.midiNote(), hit.heldFrames(), sampleRate), frame, hit.gain());
+                // the note's length at the tempo it starts in
+                int heldFrames = (int) tempo.frames(hit.heldBeats());
+                slot.trigger(hit.synth().voice(hit.midiNote(), heldFrames, sampleRate), frame, hit.gain());
             } else {
                 slot.trigger(hit.sample(), frame, hit.gain());
             }
@@ -454,9 +488,9 @@ public final class AudioEngine {
             while (true) {
                 LiveHit song = hits.peekFirst();
                 LiveHit repeat = repeats.peekFirst();
-                boolean fromSong = song != null && (repeat == null || song.frame() <= repeat.frame());
+                boolean fromSong = song != null && (repeat == null || song.beat() <= repeat.beat());
                 LiveHit next = fromSong ? song : repeat;
-                if (next == null || next.frame() >= blockEnd) {
+                if (next == null || tempo.frameAt(next.beat()) >= blockEnd) {
                     return null;
                 }
                 if (!fromSong) {
@@ -464,7 +498,7 @@ public final class AudioEngine {
                 }
                 hits.pollFirst();
                 recent.addLast(next);
-                if (stutterBeats > 0 && next.frame() >= sliceStart + sliceFrames) {
+                if (stutterBeats > 0 && next.beat() >= sliceStart + stutterBeats) {
                     continue;
                 }
                 return next;
@@ -479,46 +513,47 @@ public final class AudioEngine {
          * for the synth's notes, which read the knobs as they are now.
          */
         private void updateStutter(long blockEnd) {
+            double now = tempo.beatAt(position);
             double wanted = stutterRequested;
             if (wanted != stutterBeats) {
                 repeats.clear();
                 slice.clear();
                 stutterBeats = 0;
-                Position here = positionAt(position);
-                if (wanted > 0 && here != null) {
-                    double framesPerBeat = 60.0 * sampleRate / here.song().bpm();
-                    sliceFrames = Math.max(1, Math.round(wanted * framesPerBeat));
-                    long heard = Math.min(sliceFrames - 1, Math.round(here.beat() % wanted * framesPerBeat));
-                    sliceStart = position - heard;
-                    nextRepeat = sliceStart + sliceFrames;
+                Loops snapshot = loops;
+                // the loop this block starts in, which is not the one compiled for later in the block
+                LoopMark loop = snapshot.current() != null && snapshot.current().startBeat() > now
+                        ? snapshot.previous()
+                        : snapshot.current();
+                if (wanted > 0 && loop != null) {
+                    sliceStart = now - Math.max(0.0, now - loop.startBeat()) % wanted;
+                    nextRepeat = sliceStart + wanted;
                     stutterBeats = wanted;
                 }
             }
-            long keepFrom = position - (long) STUTTER_MEMORY_SECONDS * sampleRate;
-            while (!recent.isEmpty() && recent.peekFirst().frame() < keepFrom) {
+            while (!recent.isEmpty() && recent.peekFirst().beat() < now - STUTTER_MEMORY_BEATS) {
                 recent.pollFirst();
             }
             if (stutterBeats == 0) {
                 return;
             }
-            long sliceEnd = sliceStart + sliceFrames;
-            if (nextRepeat < blockEnd && nextRepeat == sliceEnd) {
+            double sliceEnd = sliceStart + stutterBeats;
+            if (tempo.frameAt(nextRepeat) < blockEnd && nextRepeat == sliceEnd) {
                 // the first repeat is due, so the whole slice is known: some of its hits already
                 // played or passed over, the rest still waiting. Kept now, before they are forgotten.
                 for (ArrayDeque<LiveHit> source : List.of(recent, hits)) {
                     for (LiveHit hit : source) {
-                        if (hit.frame() >= sliceStart && hit.frame() < sliceEnd) {
+                        if (hit.beat() >= sliceStart && hit.beat() < sliceEnd) {
                             slice.add(hit);
                         }
                     }
                 }
             }
-            while (nextRepeat < blockEnd) {
+            while (tempo.frameAt(nextRepeat) < blockEnd) {
                 for (LiveHit hit : slice) {
-                    long into = hit.frame() - sliceStart;
-                    repeats.addLast(hit.repeatedAt(nextRepeat + into, sliceFrames - into));
+                    double into = hit.beat() - sliceStart;
+                    repeats.addLast(hit.repeatedAt(nextRepeat + into, stutterBeats - into));
                 }
-                nextRepeat += sliceFrames;
+                nextRepeat += stutterBeats;
             }
         }
 
@@ -547,49 +582,98 @@ public final class AudioEngine {
 
         Position positionAt(long frame) {
             Loops snapshot = loops;
-            LoopMark mark = snapshot.current() != null && frame >= snapshot.current().startFrame()
+            TempoMap map = tempo;
+            double beat = map.beatAt(frame);
+            LoopMark mark = snapshot.current() != null && beat >= snapshot.current().startBeat()
                     ? snapshot.current()
                     : snapshot.previous();
             if (mark == null) {
                 return null;
             }
-            double beat = (frame - mark.startFrame()) * mark.song().bpm() / 60.0 / sampleRate;
-            return new Position(mark.song(), Math.max(0.0, beat), mark.lengthBeats());
+            return new Position(mark.song(), Math.max(0.0, beat - mark.startBeat()), mark.lengthBeats(),
+                    map.bpmAt(frame));
         }
 
-        private void compileNextLoop() {
-            Jam jam = jams.get();
+        /**
+         * Takes up a new loop length in the loop that is playing, rather than waiting for its end. A
+         * shorter loop wraps at the first multiple of its length still ahead — set to 4 bars in bar 3
+         * of 8, it wraps after bar 4; in bar 5, after bar 8 — and the hits queued past that point are
+         * dropped. A longer one runs on: the longer song's hits past the old end are queued, and the
+         * loop ends where the longer song does.
+         */
+        private void followLoopLength(Jam jam) {
+            LoopMark loop = loops.current();
+            if (loop == null) {
+                return;
+            }
+            double wanted = lengthOf(jam.song());
+            double length = loop.lengthBeats();
+            if (wanted == length) {
+                return;
+            }
+            double into = tempo.beatAt(position) - loop.startBeat();
+            if (wanted > length) {
+                queue(jam, loop.startBeat(), length, wanted);
+                setLength(loop, jam.song(), wanted);
+                return;
+            }
+            double end = Math.max(1.0, Math.ceil(into / wanted)) * wanted;
+            if (end >= length) {
+                return;
+            }
+            double cut = loop.startBeat() + end;
+            hits.removeIf(hit -> hit.beat() >= cut);
+            if (externalMelody != null) {
+                externalMelody.removeIf(note -> note.startBeat() >= cut);
+            }
+            setLength(loop, jam.song(), end);
+        }
+
+        private void setLength(LoopMark loop, Song song, double lengthBeats) {
+            nextLoopBeat = loop.startBeat() + lengthBeats;
+            loops = new Loops(loops.previous(), new LoopMark(loop.startBeat(), song, lengthBeats));
+        }
+
+        private void compileNextLoop(Jam jam) {
+            double loopStart = nextLoopBeat;
+            double lengthBeats = lengthOf(jam.song());
+            queue(jam, loopStart, 0.0, lengthBeats);
+            nextLoopBeat = loopStart + lengthBeats;
+            loops = new Loops(loops.current(), new LoopMark(loopStart, jam.song(), lengthBeats));
+        }
+
+        /** A loop's length in beats, never less than a frame at the tempo now, so a loop always moves on. */
+        private double lengthOf(Song song) {
+            return Math.max(PatternCompiler.totalBeats(song), 1.0 / tempo.frames(1.0));
+        }
+
+        /** Queues the song's hits from {@code fromBeat} up to {@code toBeat} of a loop starting at {@code loopStart}. */
+        private void queue(Jam jam, double loopStart, double fromBeat, double toBeat) {
             Song song = jam.song();
             Transport transport = new Transport(song.bpm(), sampleRate);
-            double lengthBeats = PatternCompiler.totalBeats(song);
-            long loopStart = nextLoopStart;
             for (Note note : PatternCompiler.compile(song)) {
                 // a hit past the loop end would land after the next loop's first hits and break their order
-                if (note.velocity() <= 0.0f || note.beat() >= lengthBeats) {
+                if (note.velocity() <= 0.0f || note.beat() < fromBeat || note.beat() >= toBeat) {
                     continue;
                 }
-                long frame = loopStart + transport.frameAtBeat(note.beat());
+                double beat = loopStart + note.beat();
                 if (externalMelody != null && note.voice() instanceof Voice.Pitch pitch) {
-                    long offFrame = loopStart + transport.frameAtBeat(note.beat() + note.durationBeats());
                     // velocity 0 on a note-on would be read as a note-off by the receiving synth
                     int velocity = Math.max(1, Math.round(note.velocity() * 127.0f));
-                    externalMelody.accept(new ExternalNote(frame, true, pitch.midiNote(), velocity));
-                    externalMelody.accept(new ExternalNote(offFrame, false, pitch.midiNote(), 0));
+                    externalMelody.add(new ExternalNote(beat, true, pitch.midiNote(), velocity, beat));
+                    externalMelody.add(new ExternalNote(beat + note.durationBeats(), false, pitch.midiNote(), 0, beat));
                 } else if (jam.synth() instanceof LivePitchSynth live && note.voice() instanceof Voice.Pitch pitch) {
                     if (effects == null) {
                         effects = live.effects(sampleRate);
                     }
                     // a voice of its own, reading the synth's parameters as it plays, so a knob
                     // moved now is heard in this note rather than in the loop after it
-                    int heldFrames = (int) transport.frameAtBeat(note.durationBeats());
-                    hits.addLast(LiveHit.note(frame, live, pitch.midiNote(), heldFrames, note.velocity()));
+                    hits.addLast(LiveHit.note(beat, live, pitch.midiNote(), note.durationBeats(), note.velocity()));
                 } else {
-                    hits.addLast(LiveHit.sample(frame, sampleFor(note, transport, jam.synth()), note.velocity(),
+                    hits.addLast(LiveHit.sample(beat, sampleFor(note, transport, jam.synth()), note.velocity(),
                             note.voice() == Drum.KICK));
                 }
             }
-            nextLoopStart = loopStart + Math.max(1L, transport.frameAtBeat(lengthBeats));
-            loops = new Loops(loops.current(), new LoopMark(loopStart, song, lengthBeats));
         }
 
         private Sample sampleFor(Note note, Transport transport, PitchSynth synth) {
@@ -611,8 +695,6 @@ public final class AudioEngine {
         private final LiveRenderer renderer;
         private final SourceDataLine line;
         private final NoteListener externalMelody;
-        private final PriorityBlockingQueue<ExternalNote> pendingMelody = new PriorityBlockingQueue<>(
-                64, Comparator.comparingLong(ExternalNote::frame).thenComparing(ExternalNote::on));
         private final AtomicReference<Throwable> failure = new AtomicReference<>();
         private final Thread renderThread;
         private final Thread melodyThread;
@@ -627,11 +709,11 @@ public final class AudioEngine {
         private LiveSession(Supplier<Jam> jams, NoteListener externalMelody)
                 throws LineUnavailableException {
             this.externalMelody = externalMelody;
-            this.renderer = new LiveRenderer(jams, externalMelody == null ? null : pendingMelody::add);
+            this.renderer = new LiveRenderer(jams, externalMelody != null);
             AudioFormat format = new AudioFormat(sampleRate, 16, CHANNELS, true, false);
             this.line = AudioSystem.getSourceDataLine(format);
-            // Twice the buffer play() uses: a loop that brings a new tempo renders its synth notes
-            // on the audio thread, and the extra headroom keeps that from reaching the speakers.
+            // Twice the buffer play() uses: a loop that brings a new synth renders its notes on the
+            // audio thread, and the extra headroom keeps that from reaching the speakers.
             line.open(format, blockSize * CHANNELS * 2 * 8);
             line.start();
             this.renderThread = Thread.ofPlatform().name("live-render").daemon().start(this::render);
@@ -734,11 +816,13 @@ public final class AudioEngine {
         private void sendMelody() {
             Set<Integer> sounding = new HashSet<>();
             PlaybackClock clock = new PlaybackClock(line::getLongFramePosition, System::nanoTime, sampleRate);
+            PriorityBlockingQueue<ExternalNote> pendingMelody = renderer.externalMelody();
             try {
                 while (running && sendingMelody) {
                     ExternalNote next = pendingMelody.peek();
                     long leadFrames = Math.round(externalLatencyMillis * sampleRate / 1000.0);
-                    if (next == null || next.frame() - leadFrames > clock.frameNow()) {
+                    // placed in beats until now, so a note waiting here moves with a new tempo
+                    if (next == null || renderer.frameAt(next.beat()) - leadFrames > clock.frameNow()) {
                         Thread.sleep(1);
                         continue;
                     }
