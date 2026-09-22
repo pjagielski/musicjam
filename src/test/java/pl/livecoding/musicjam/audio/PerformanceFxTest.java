@@ -34,12 +34,12 @@ class PerformanceFxTest {
     @Test
     void crushHoldsEachSampleForAWhileAndRoundsIt() {
         var fx = new PerformanceFx(RATE);
-        fx.crush(0.0);
+        fx.crush(1.0);
         float[] mix = sine(440, RATE / 10);
 
         fx.process(mix, RATE / 10, BPM);
 
-        // at the bottom: about 700 samples a second, so each value is held for some 63 frames
+        // at the top: about 700 samples a second, so each value is held for some 63 frames
         int from = RATE / 20;
         int changes = 0;
         for (int frame = from + 1; frame < RATE / 10; frame++) {
@@ -53,7 +53,7 @@ class PerformanceFxTest {
     @Test
     void lettingGoFadesTheEffectOutAndThenLeavesTheMixAlone() {
         var fx = new PerformanceFx(RATE);
-        fx.crush(0.0);
+        fx.crush(1.0);
         fx.process(sine(440, 4_410), 4_410, BPM);
         fx.releaseAll();
 

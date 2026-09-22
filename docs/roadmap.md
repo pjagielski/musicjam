@@ -152,7 +152,7 @@ is the plumbing in 9.1.
 | 9.7 | **Ring**: ring modulation, slide up for a faster carrier. | S |
 | 9.8 | **Comb**: a short feedback delay, slide up for a longer one — the metallic, pitched ring. | S |
 | 9.9 | **Gate**: mutes whatever falls below a threshold, slide up to raise it; with a fast release it chops tails and reverb away. | S |
-| 9.10 | **Dub** ✓ **done**: a ping-pong delay of its own over the whole mix, a dotted eighth in time with the jam, damped and saturated in the feedback path, feeding harder as it slides; it adds to the mix rather than replacing it, so letting go leaves the repeats to ring out. **Tempo Delay**, the same line with the slide picking the time instead, is what is left. | S |
+| 9.10 | ✓ **Dub done**, and it stands for both: a ping-pong delay of its own over the whole mix, a dotted eighth in time with the jam, damped and saturated in the feedback path, feeding harder as it slides; it adds to the mix rather than replacing it, so letting go leaves the repeats to ring out. **Tempo Delay**, the same line with the slide picking the time instead, was built and taken out again: next to Dub it was another delay to no purpose, and a strip is worth more to an effect that does something else. | — |
 | 9.11 | **Reverb**: our Freeverb over the whole mix, slide up for a bigger room — a wash to throw a break into. | S |
 | 9.12 | **VibroFlange**: above the centre a flanger (a short swept delay), below it a pitch wobble (a modulated delay without feedback). | M |
 | 9.13 | **Compressor**: one knob, the higher the harder it pumps; an envelope follower, threshold and ratio together. | M |

@@ -34,7 +34,7 @@ public final class PerformanceFx {
 
     /**
      * Crush: the mix at a lower sample rate and fewer bits, a little clipped. The top of the strip
-     * crushes least (about 11 kHz and 10 bits), the bottom most (about 700 Hz and 4 bits).
+     * crushes most (about 700 Hz and 4 bits), the bottom least (about 11 kHz and 10 bits).
      */
     public void crush(double position) {
         crush.target = position;
@@ -185,12 +185,13 @@ public final class PerformanceFx {
 
         @Override
         void apply(float[] mix, int left) {
-            // about 700 Hz at the bottom of the strip and 11 kHz at the top, 4 bits to 10
-            double rate = 700 * Math.pow(16, position);
+            // about 11 kHz at the bottom of the strip and 700 Hz at the top, 10 bits down to 4
+            double gentle = 1 - position;
+            double rate = 700 * Math.pow(16, gentle);
             phase += rate / sampleRate;
             if (phase >= 1) {
                 phase -= Math.floor(phase);
-                double steps = Math.pow(2, 4 + 6 * position - 1);
+                double steps = Math.pow(2, 4 + 6 * gentle - 1);
                 heldLeft = crushed(mix[left], steps);
                 heldRight = crushed(mix[left + 1], steps);
             }

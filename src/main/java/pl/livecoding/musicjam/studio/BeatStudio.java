@@ -764,7 +764,7 @@ public final class BeatStudio extends Application {
                 session.stutter(zone < 0 ? 0 : slices[zone]);
             }
         }));
-        strips.add(FxStrip.continuous("Crush", List.of("less", "more"), false, value -> {
+        strips.add(FxStrip.continuous("Crush", List.of("more", "less"), false, value -> {
             if (session != null) {
                 session.performance().crush(value);
             }
