@@ -134,7 +134,8 @@ public final class BeatStudio extends Application {
     private MelodyTrack melody;
     private AudioEngine.LiveSession session;
     private AudioEngine.LiveSession ringing;
-    private FxStrip stutter;
+    // the Performance FX strips, all let go of when the jam stops
+    private final List<FxStrip> strips = new ArrayList<>();
     private ExternalMidiOutput midi;
     private boolean loading;
     private double barFraction = -1;
@@ -580,10 +581,8 @@ public final class BeatStudio extends Application {
 
     /** The jam stops, but its last notes, repeats and reverb are left to die away on their own. */
     private void stopPlayback() {
-        if (stutter != null) {
-            // Stop ends a locked stutter too, so the tail can die away and the next Play starts clean
-            stutter.release();
-        }
+        // Stop ends a locked effect too, so the tail can die away and the next Play starts clean
+        strips.forEach(FxStrip::release);
         if (session != null) {
             session.release();
             ringing = session;
@@ -760,15 +759,25 @@ public final class BeatStudio extends Application {
      */
     private VBox performancePanel() {
         double[] slices = {0.125, 0.25, 0.5, 1.0};
-        stutter = new FxStrip("Stutter", List.of("1/32", "1/16", "1/8", "1/4"), zone -> {
+        strips.add(FxStrip.zones("Stutter", List.of("1/32", "1/16", "1/8", "1/4"), zone -> {
             if (session != null) {
                 session.stutter(zone < 0 ? 0 : slices[zone]);
             }
-        });
+        }));
+        strips.add(FxStrip.continuous("Crush", "less", "more", false, value -> {
+            if (session != null) {
+                session.performance().crush(value);
+            }
+        }));
+        strips.add(FxStrip.continuous("Filter", "HP", "LP", true, value -> {
+            if (session != null) {
+                session.performance().filter(value);
+            }
+        }));
         Label hint = new Label("Hold a zone to play it and slide to change it; right-click to lock it on, right-click again to let go.");
         hint.setStyle("-fx-text-fill: #868e96; -fx-font-size: 11px;");
         hint.setWrapText(true);
-        return StudioPanels.frame("Performance FX", row(stutter), hint);
+        return StudioPanels.frame("Performance FX", row(strips.toArray(Node[]::new)), hint);
     }
 
     /** The synth's front panel, which folds away for anyone who only wants the grid. */

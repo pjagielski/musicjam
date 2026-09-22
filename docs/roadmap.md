@@ -143,10 +143,10 @@ is the plumbing in 9.1.
 
 | Step | What | Effort |
 | --- | --- | --- |
-| 9.1 | ★ **The plumbing**: a mix-wide effect slot after `mixInBus` (the stereo mix, drums and synth together), and a continuous mode for `FxStrip` — a value from bottom to top instead of zones, with a centre for the two-way effects (Filter, Pitch, VibroFlange). Lock works as it does for Stutter. | S |
+| 9.1 | ✓ **Done.** ★ **The plumbing**: a mix-wide effect slot after `mixInBus` (the stereo mix, drums and synth together), and a continuous mode for `FxStrip` — a value from bottom to top instead of zones, with a centre for the two-way effects (Filter, Pitch, VibroFlange). Lock works as it does for Stutter. | S |
 | 9.2 | ✓ **Stutter.** Done, with one difference from Koala's: it repeats the slice's *notes*, not its audio, so the knobs stay live under a held repeat. Koala goes from ½ bar to 1/64; ours from 1/4 to 1/32. | — |
-| 9.3 | ★ **Crush**: sample-rate reduction (slide up for less), with a little transistor-style clipping. A sample-and-hold and a rounding step. | S |
-| 9.4 | ★ **Filter**: one strip, low-pass below the centre and high-pass above, resonant. Our state-variable filter already gives both outputs. | S |
+| 9.3 | ✓ **Done.** ★ **Crush**: sample-rate reduction (slide up for less), with a little transistor-style clipping. A sample-and-hold and a rounding step. | S |
+| 9.4 | ✓ **Done.** ★ **Filter**: one strip, low-pass below the centre and high-pass above, resonant. A state-variable filter of its own in `PerformanceFx`, in the trapezoidal form, which stays stable while a finger sweeps it. | S |
 | 9.5 | **Cutter**: a tempo-synced gate chopping the mix from 1 bar to 1/64 — Stutter's grid, applied to the volume instead of the notes. | S |
 | 9.6 | **Dirty**: overdrive. `NovasawDsp.shapeDiode` on the mix, with the slide as drive. | S |
 | 9.7 | **Ring**: ring modulation, slide up for a faster carrier. | S |

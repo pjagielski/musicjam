@@ -385,6 +385,8 @@ public final class AudioEngine {
         private final ArrayDeque<LiveHit> repeats = new ArrayDeque<>();
         // the slice's hits, kept from its first repeat on: the song's memory moves on, the slice must not
         private final List<LiveHit> slice = new ArrayList<>();
+        // the effects played over the finished mix, drums and synth together
+        private final PerformanceFx performance = new PerformanceFx(sampleRate);
         private volatile double stutterRequested;
         private double stutterBeats;
         private double sliceStart;
@@ -413,6 +415,10 @@ public final class AudioEngine {
             return externalMelody;
         }
 
+        PerformanceFx performance() {
+            return performance;
+        }
+
         /** The frame {@code beat} of the jam falls on, at the tempo as it stands. Safe from any thread. */
         long frameAt(double beat) {
             return tempo.frameAt(beat);
@@ -429,11 +435,13 @@ public final class AudioEngine {
         /**
          * No more loops and no more notes: what is already sounding plays out, and the effects keep
          * ringing. This is what a Stop that lets the delay finish its repeats is made of. A stutter
-         * stops with it, or its repeats would never let the tail end.
+         * stops with it, or its repeats would never let the tail end, and so do the other
+         * performance effects.
          */
         void stopScheduling() {
             scheduling = false;
             stutterRequested = 0;
+            performance.releaseAll();
             hits.clear();
         }
 
@@ -461,6 +469,7 @@ public final class AudioEngine {
             }
             renderVoices(voices, mix, bus, position, segmentStart, blockEnd);
             mixInBus(mix);
+            performance.process(mix, blockSize);
             position = blockEnd;
         }
 
@@ -741,6 +750,11 @@ public final class AudioEngine {
          */
         public void stutter(double beats) {
             renderer.stutter(beats);
+        }
+
+        /** The effects held over everything that plays: Crush, Filter and the rest of the Perform screen. */
+        public PerformanceFx performance() {
+            return renderer.performance();
         }
 
         public Optional<Throwable> failure() {

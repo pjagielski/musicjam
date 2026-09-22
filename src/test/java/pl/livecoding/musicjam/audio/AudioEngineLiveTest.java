@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AudioEngineLiveTest {
     private static final int BLOCK = 128;
@@ -307,6 +308,23 @@ class AudioEngineLiveTest {
         assertEquals(0.5f, held[250], 1e-6f, "repeating while held");
         assertEquals(0.25f, after[1_000 - 4 * BLOCK], 1e-6f, "the song's snare, on time, after letting go");
         assertEquals(0.0f, after[750 - 4 * BLOCK], 1e-6f, "and no more repeats");
+    }
+
+    @Test
+    void aPerformanceEffectIsPlayedOverTheDrumsTooAndStopLetsGoOfIt() {
+        Song song = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "X...", 1.0f)));
+        var renderer = engine().liveRenderer(() -> jam(song), false);
+        renderer.performance().filter(0.0);
+
+        float[] left = render(renderer, BLOCKS);
+
+        // a low-pass smears the one-frame kick out over the frames after it
+        assertTrue(left[2_000] < 0.5f, "the kick itself, softened: " + left[2_000]);
+        assertTrue(left[2_001] > 0.05f, "and ringing on after it: " + left[2_001]);
+
+        renderer.stopScheduling();
+        float[] after = render(renderer, 2);
+        assertEquals(0.0f, after[after.length - 1], 1e-6f);
     }
 
     @Test
