@@ -5,7 +5,7 @@ package pl.livecoding.musicjam.synth;
  * Source/MainComponent.cpp), used by every {@code *Synth} patch class so the
  * per-sample math lives in exactly one place.
  */
-final class NovasawDsp {
+public final class NovasawDsp {
 
     private NovasawDsp() {
     }
@@ -35,7 +35,7 @@ final class NovasawDsp {
         return phase * 2.0f - 1.0f - polyBlep(phase, phaseIncrement);
     }
 
-    static float shapeDiode(float input, float drive) {
+    public static float shapeDiode(float input, float drive) {
         float driven = input * (1.0f + drive * 7.0f);
         float positive = 1.0f - (float) Math.exp(-Math.max(0.0f, driven));
         float negative = -0.72f * (1.0f - (float) Math.exp(-Math.max(0.0f, -driven * 1.25f)));

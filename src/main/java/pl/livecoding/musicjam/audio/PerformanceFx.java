@@ -1,5 +1,9 @@
 package pl.livecoding.musicjam.audio;
 
+import pl.livecoding.musicjam.synth.NovasawDsp;
+
+import java.util.Arrays;
+
 /**
  * The effects played over the whole mix, drums and synth together, as a sampler's Perform screen
  * plays them: each one off until a finger holds it, then set by where the finger is. The setters
@@ -17,11 +21,15 @@ public final class PerformanceFx {
     private final Crush crush;
     private final Filter filter;
     private final Talkbox talkbox;
+    private final Dirty dirty;
+    private final Dub dub;
 
     PerformanceFx(int sampleRate) {
         crush = new Crush(sampleRate);
         filter = new Filter(sampleRate);
         talkbox = new Talkbox(sampleRate);
+        dirty = new Dirty(sampleRate);
+        dub = new Dub(sampleRate);
     }
 
     /**
@@ -48,18 +56,40 @@ public final class PerformanceFx {
         talkbox.target = position;
     }
 
+    /**
+     * Dirty: the mix driven into the same diode shaper the synth patches overdrive through, harder
+     * towards the top of the strip.
+     */
+    public void dirty(double position) {
+        dirty.target = position;
+    }
+
+    /**
+     * Dub: a ping-pong delay a dotted eighth long, in time with the jam, fed harder and louder
+     * towards the top of the strip until it is not far off running away. Letting go stops feeding
+     * it, and what is in it repeats its way out rather than being cut off.
+     */
+    public void dub(double position) {
+        dub.target = position;
+    }
+
     /** Lets every effect go, as Stop does. */
     public void releaseAll() {
         crush(OFF);
         filter(OFF);
         talkbox(OFF);
+        dirty(OFF);
+        dub(OFF);
     }
 
-    /** The first {@code frames} stereo frames of {@code mix}, in place. */
-    void process(float[] mix, int frames) {
+    /** The first {@code frames} stereo frames of {@code mix}, in place, with the jam at {@code bpm}. */
+    void process(float[] mix, int frames, double bpm) {
         talkbox.process(mix, frames);
+        dirty.process(mix, frames);
         crush.process(mix, frames);
         filter.process(mix, frames);
+        dub.inTimeWith(bpm);
+        dub.process(mix, frames);
     }
 
     /** What every effect shares: a position that glides, and a level that fades the effect in and out. */
@@ -69,7 +99,8 @@ public final class PerformanceFx {
         private final double fade;
         volatile double target = OFF;
         double position = 0.5;
-        private double wet;
+        // 1 while the finger is down, 0 once it is off, and between the two while it fades
+        double wet;
 
         Effect(int sampleRate) {
             this.sampleRate = sampleRate;
@@ -80,7 +111,7 @@ public final class PerformanceFx {
         final void process(float[] mix, int frames) {
             double wanted = target;
             boolean on = wanted >= 0;
-            if (!on && wet == 0) {
+            if (!on && wet == 0 && !ringing()) {
                 return;
             }
             if (on && wet == 0) {
@@ -99,12 +130,26 @@ public final class PerformanceFx {
                 float dryLeft = mix[left];
                 float dryRight = mix[left + 1];
                 apply(mix, left);
-                if (wet == 1) {
+                if (wet == 1 || !blends()) {
                     continue;
                 }
                 mix[left] = (float) (dryLeft + (mix[left] - dryLeft) * wet);
                 mix[left + 1] = (float) (dryRight + (mix[left + 1] - dryRight) * wet);
             }
+        }
+
+        /** Whether the effect is still sounding although the finger is off it: a delay's repeats. */
+        boolean ringing() {
+            return false;
+        }
+
+        /**
+         * Whether the fading in and out is left to the mixing here. An effect that adds to the mix
+         * rather than replacing it - a delay, whose repeats have to ring on after the finger is
+         * off - says no and keeps its own balance.
+         */
+        boolean blends() {
+            return true;
         }
 
         /** Clears whatever the effect remembers, before it comes in again. */
@@ -303,6 +348,119 @@ public final class PerformanceFx {
                 gain[formant] = Math.pow(10, db * LEVEL_SCALE / 20) * (formant % 2 == 0 ? 1 : -1);
             }
             shapedFor = position;
+        }
+    }
+
+    /** The diode shaper the synth patches overdrive through, over the whole mix instead. */
+    private static final class Dirty extends Effect {
+
+        Dirty(int sampleRate) {
+            super(sampleRate);
+        }
+
+        @Override
+        void reset() {
+        }
+
+        @Override
+        void apply(float[] mix, int left) {
+            float drive = (float) (0.05 + 0.5 * position);
+            // the shaper's own gain climbs with the drive: taken back off, so only the grit is heard
+            float trim = (float) (1 / (1 + 1.3 * position));
+            mix[left] = NovasawDsp.shapeDiode(mix[left], drive) * trim;
+            mix[left + 1] = NovasawDsp.shapeDiode(mix[left + 1], drive) * trim;
+        }
+    }
+
+    /**
+     * A ping-pong delay over the whole mix, its time a dotted eighth of the jam's tempo: what goes
+     * in on the left comes back on the right, and again on the left, quieter and darker each time,
+     * as a dub delay's repeats lose their top. Sliding up feeds it harder.
+     *
+     * <p>It adds to the mix rather than replacing it, and keeps its own balance, so that letting go
+     * only stops what goes in: the repeats already in the line ring their way out.
+     */
+    private static final class Dub extends Effect {
+        private static final double DELAY_BEATS = 0.75;
+        private static final double MAX_SECONDS = 2;
+        private static final double GLIDE_SECONDS = 0.05;
+        private static final double DAMPING_HZ = 3_000;
+        private static final double QUIET = 1e-4;
+
+        private final float[] lineLeft;
+        private final float[] lineRight;
+        private final double glide;
+        private final double damping;
+        private int writeAt;
+        private double delayFrames;
+        private double wantedDelayFrames;
+        private double dampedLeft;
+        private double dampedRight;
+        private double loudest;
+
+        Dub(int sampleRate) {
+            super(sampleRate);
+            int frames = (int) (MAX_SECONDS * sampleRate) + 2;
+            lineLeft = new float[frames];
+            lineRight = new float[frames];
+            glide = 1 - Math.exp(-1 / (GLIDE_SECONDS * sampleRate));
+            damping = 1 - Math.exp(-2 * Math.PI * DAMPING_HZ / sampleRate);
+            delayFrames = wantedDelayFrames = Math.min(frames - 2, sampleRate / 2.0);
+        }
+
+        /** The delay's length: a dotted eighth at {@code bpm}, so its repeats land on the grid. */
+        void inTimeWith(double bpm) {
+            wantedDelayFrames = Math.min(lineLeft.length - 2, DELAY_BEATS * 60.0 / bpm * sampleRate);
+        }
+
+        @Override
+        boolean ringing() {
+            return loudest > QUIET;
+        }
+
+        @Override
+        boolean blends() {
+            return false;
+        }
+
+        @Override
+        void reset() {
+            Arrays.fill(lineLeft, 0.0f);
+            Arrays.fill(lineRight, 0.0f);
+            dampedLeft = dampedRight = loudest = 0;
+            delayFrames = wantedDelayFrames;
+        }
+
+        @Override
+        void apply(float[] mix, int left) {
+            // the time glides rather than jumps, so a new tempo bends the repeats instead of clicking
+            delayFrames += (wantedDelayFrames - delayFrames) * glide;
+            double feedback = 0.3 + 0.62 * position;
+            double level = 0.3 + 0.25 * position;
+            double readLeft = read(lineLeft);
+            double readRight = read(lineRight);
+            dampedLeft += (readLeft - dampedLeft) * damping;
+            dampedRight += (readRight - dampedRight) * damping;
+
+            // what goes in is what the finger lets in; the line itself runs either way
+            // into a soft clip, which is what keeps a delay fed this hard from running away, and
+            // what a tape echo pushed as far does of its own accord
+            lineLeft[writeAt] = (float) Math.tanh(mix[left] * wet + dampedRight * feedback);
+            lineRight[writeAt] = (float) dampedLeft;
+            writeAt = (writeAt + 1) % lineLeft.length;
+
+            double heard = Math.max(Math.abs(readLeft), Math.abs(readRight));
+            loudest = Math.max(heard, loudest * 0.9999);
+            mix[left] += (float) (readLeft * level);
+            mix[left + 1] += (float) (readRight * level);
+        }
+
+        /** The line {@code delayFrames} back, between two frames, so a gliding time does not step. */
+        private double read(float[] line) {
+            double at = writeAt - delayFrames + line.length;
+            int before = (int) at;
+            double part = at - before;
+            return line[before % line.length] * (1 - part) + line[(before + 1) % line.length] * part;
         }
     }
 }

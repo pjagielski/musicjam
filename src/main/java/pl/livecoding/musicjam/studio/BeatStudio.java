@@ -779,6 +779,16 @@ public final class BeatStudio extends Application {
                 session.performance().talkbox(value);
             }
         }));
+        strips.add(FxStrip.continuous("Dirty", List.of("more", "less"), false, value -> {
+            if (session != null) {
+                session.performance().dirty(value);
+            }
+        }));
+        strips.add(FxStrip.continuous("Dub", List.of("away", "in"), false, value -> {
+            if (session != null) {
+                session.performance().dub(value);
+            }
+        }));
         Label hint = new Label("Hold a zone to play it and slide to change it; right-click to lock it on, right-click again to let go.");
         hint.setStyle("-fx-text-fill: #868e96; -fx-font-size: 11px;");
         hint.setWrapText(true);

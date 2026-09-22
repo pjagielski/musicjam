@@ -469,7 +469,7 @@ public final class AudioEngine {
             }
             renderVoices(voices, mix, bus, position, segmentStart, blockEnd);
             mixInBus(mix);
-            performance.process(mix, blockSize);
+            performance.process(mix, blockSize, tempo.bpm());
             position = blockEnd;
         }
 

@@ -148,11 +148,11 @@ is the plumbing in 9.1.
 | 9.3 | ✓ **Done.** ★ **Crush**: sample-rate reduction (slide up for less), with a little transistor-style clipping. A sample-and-hold and a rounding step. | S |
 | 9.4 | ✓ **Done.** ★ **Filter**: one strip, low-pass below the centre and high-pass above, resonant. A state-variable filter of its own in `PerformanceFx`, in the trapezoidal form, which stays stable while a finger sweeps it. | S |
 | 9.5 | **Cutter**: a tempo-synced gate chopping the mix from 1 bar to 1/64 — Stutter's grid, applied to the volume instead of the notes. | S |
-| 9.6 | **Dirty**: overdrive. `NovasawDsp.shapeDiode` on the mix, with the slide as drive. | S |
+| 9.6 | ✓ **Done.** **Dirty**: overdrive. `NovasawDsp.shapeDiode` on the mix, with the slide as drive, and the shaper own gain taken back off so only the grit is heard. | — |
 | 9.7 | **Ring**: ring modulation, slide up for a faster carrier. | S |
 | 9.8 | **Comb**: a short feedback delay, slide up for a longer one — the metallic, pitched ring. | S |
 | 9.9 | **Gate**: mutes whatever falls below a threshold, slide up to raise it; with a fast release it chops tails and reverb away. | S |
-| 9.10 | **Tempo Delay** and **Dub**: `SynthEffects`' delay over the whole mix, synced; Dub adds feedback as it slides, until it runs away. | S |
+| 9.10 | **Dub** ✓ **done**: a ping-pong delay of its own over the whole mix, a dotted eighth in time with the jam, damped and saturated in the feedback path, feeding harder as it slides; it adds to the mix rather than replacing it, so letting go leaves the repeats to ring out. **Tempo Delay**, the same line with the slide picking the time instead, is what is left. | S |
 | 9.11 | **Reverb**: our Freeverb over the whole mix, slide up for a bigger room — a wash to throw a break into. | S |
 | 9.12 | **VibroFlange**: above the centre a flanger (a short swept delay), below it a pitch wobble (a modulated delay without feedback). | M |
 | 9.13 | **Compressor**: one knob, the higher the harder it pumps; an envelope follower, threshold and ratio together. | M |
