@@ -16,10 +16,12 @@ public final class PerformanceFx {
 
     private final Crush crush;
     private final Filter filter;
+    private final Talkbox talkbox;
 
     PerformanceFx(int sampleRate) {
         crush = new Crush(sampleRate);
         filter = new Filter(sampleRate);
+        talkbox = new Talkbox(sampleRate);
     }
 
     /**
@@ -38,14 +40,24 @@ public final class PerformanceFx {
         filter.target = position;
     }
 
+    /**
+     * Talkbox: the mix sung through a vowel, a — e — i — o — u from the bottom of the strip to the
+     * top, gliding from one to the next in between.
+     */
+    public void talkbox(double position) {
+        talkbox.target = position;
+    }
+
     /** Lets every effect go, as Stop does. */
     public void releaseAll() {
         crush(OFF);
         filter(OFF);
+        talkbox(OFF);
     }
 
     /** The first {@code frames} stereo frames of {@code mix}, in place. */
     void process(float[] mix, int frames) {
+        talkbox.process(mix, frames);
         crush.process(mix, frames);
         filter.process(mix, frames);
     }
@@ -102,7 +114,17 @@ public final class PerformanceFx {
         abstract void apply(float[] mix, int left);
     }
 
+    /**
+     * A bitcrusher, as a sampler's is: the mix through a transistor stage, then held and rounded as
+     * a cheap converter would. Nothing filters the held signal, which is the point — the frequencies
+     * that fold back over the Nyquist of the rate it pretends to run at are where the grit comes
+     * from, and a proper anti-aliasing filter would take exactly that away.
+     */
     private static final class Crush extends Effect {
+        // the stage in front, which a sampler's crusher has and which gives the rounding more to bite on
+        private static final double DRIVE = 1.8;
+        private static final double TRIM = 0.75;
+
         private double phase = 1;
         private float heldLeft;
         private float heldRight;
@@ -118,6 +140,7 @@ public final class PerformanceFx {
 
         @Override
         void apply(float[] mix, int left) {
+            // about 700 Hz at the bottom of the strip and 11 kHz at the top, 4 bits to 10
             double rate = 700 * Math.pow(16, position);
             phase += rate / sampleRate;
             if (phase >= 1) {
@@ -130,10 +153,14 @@ public final class PerformanceFx {
             mix[left + 1] = heldRight;
         }
 
-        /** Rounded to {@code steps} levels a side, then into a soft, transistor-like clip. */
+        /**
+         * Driven into a soft clip, then rounded to {@code steps} levels a side. Rounding to the
+         * nearest keeps a level at zero, so silence stays silent; rounding to the middle of each
+         * step, as some crushers do, would leave half a step of hum under a quiet passage.
+         */
         private static float crushed(float value, double steps) {
-            double rounded = Math.round(value * steps) / steps;
-            return (float) Math.tanh(rounded * 1.4);
+            double driven = Math.tanh(value * DRIVE);
+            return (float) (Math.round(driven * steps) / steps * TRIM);
         }
     }
 
@@ -173,6 +200,109 @@ public final class PerformanceFx {
                 double high = input - k * v1 - v2;
                 mix[left + channel] = (float) (highPass ? high : v2);
             }
+        }
+    }
+
+    /**
+     * A formant filter, the way a talkbox works without the tube: the peaks a mouth shape puts into
+     * a voice, put into the mix instead. Five resonant band-passes in parallel, one per formant,
+     * their frequencies, levels and widths a tenor's, from Csound's formant tables; between two
+     * vowels each band is taken part of the way from one to the other, frequencies on a log scale.
+     *
+     * <p>Three details are what make it speak rather than whistle. Adjacent bands are summed with
+     * opposite signs, as Klatt's parallel synthesizer does, or their skirts cancel and notch the
+     * response where the vowel should be. The mix is driven into a soft clip on the way in, as the
+     * Csound Journal's talk-box does and as a real one's compression driver cannot help doing: a
+     * band gives back nothing the sound did not bring it, and a richer sound gives the formants
+     * more to work with. And the bands are widened, since a mix is not the buzz of vocal cords that
+     * a voice's own narrow formants are cut for.
+     */
+    private static final class Talkbox extends Effect {
+        // a, e, i, o, u: F1-F5 in Hz, their levels in dB and their widths in Hz (Csound, tenor)
+        private static final double[][] FREQUENCIES = {
+                {650, 1080, 2650, 2900, 3250},
+                {400, 1700, 2600, 3200, 3580},
+                {290, 1870, 2800, 3250, 3540},
+                {400, 800, 2600, 2800, 3000},
+                {350, 600, 2700, 2900, 3300}};
+        private static final double[][] LEVELS = {
+                {0, -6, -7, -8, -22},
+                {0, -14, -12, -14, -20},
+                {0, -15, -18, -20, -30},
+                {0, -10, -12, -12, -26},
+                {0, -20, -17, -14, -26}};
+        private static final double[][] WIDTHS = {
+                {80, 90, 120, 130, 140},
+                {70, 80, 100, 120, 120},
+                {40, 90, 100, 120, 120},
+                {70, 80, 100, 130, 135},
+                {40, 60, 100, 120, 120}};
+        private static final int FORMANTS = 5;
+        // a voice's formants are as narrow as they are because what goes through them is a buzz rich
+        // in harmonics; a whole mix through bands that narrow whistles, and little is left of it
+        private static final double WIDTH_SCALE = 2.2;
+        // the upper formants sit 10-25 dB under the first, which over a mix loses them; half the
+        // difference keeps the vowels apart
+        private static final double LEVEL_SCALE = 0.5;
+        private static final double DRIVE = 2.5;
+        // what the bands keep of a driven mix, brought back to about the level it came in at
+        private static final double MAKEUP = 3.2;
+
+        private final double[][] low = new double[FORMANTS][2];
+        private final double[][] band = new double[FORMANTS][2];
+        private final double[] g = new double[FORMANTS];
+        private final double[] k = new double[FORMANTS];
+        private final double[] gain = new double[FORMANTS];
+        private double shapedFor = Double.NaN;
+
+        Talkbox(int sampleRate) {
+            super(sampleRate);
+        }
+
+        @Override
+        void reset() {
+            for (int formant = 0; formant < FORMANTS; formant++) {
+                low[formant][0] = low[formant][1] = band[formant][0] = band[formant][1] = 0;
+            }
+        }
+
+        @Override
+        void apply(float[] mix, int left) {
+            if (position != shapedFor) {
+                shape(position);
+            }
+            for (int channel = 0; channel < 2; channel++) {
+                double input = Math.tanh(mix[left + channel] * DRIVE);
+                double sum = 0;
+                for (int formant = 0; formant < FORMANTS; formant++) {
+                    double a1 = 1 / (1 + g[formant] * (g[formant] + k[formant]));
+                    double v1 = a1 * (band[formant][channel] + g[formant] * (input - low[formant][channel]));
+                    double v2 = low[formant][channel] + g[formant] * v1;
+                    band[formant][channel] = 2 * v1 - band[formant][channel];
+                    low[formant][channel] = 2 * v2 - low[formant][channel];
+                    // k times the band output peaks at 1, whatever the width; every other one is
+                    // subtracted rather than added, so neighbouring skirts do not cancel
+                    sum += gain[formant] * k[formant] * v1;
+                }
+                mix[left + channel] = (float) Math.tanh(sum * MAKEUP);
+            }
+        }
+
+        /** The five bands for {@code position}, part of the way from one vowel to the next. */
+        private void shape(double position) {
+            double along = Math.max(0, Math.min(1, position)) * (FREQUENCIES.length - 1);
+            int from = Math.min(FREQUENCIES.length - 2, (int) along);
+            double part = along - from;
+            for (int formant = 0; formant < FORMANTS; formant++) {
+                double hz = FREQUENCIES[from][formant]
+                        * Math.pow(FREQUENCIES[from + 1][formant] / FREQUENCIES[from][formant], part);
+                double db = LEVELS[from][formant] + (LEVELS[from + 1][formant] - LEVELS[from][formant]) * part;
+                double width = WIDTHS[from][formant] + (WIDTHS[from + 1][formant] - WIDTHS[from][formant]) * part;
+                g[formant] = Math.tan(Math.PI * Math.min(hz, sampleRate * 0.45) / sampleRate);
+                k[formant] = width * WIDTH_SCALE / hz;
+                gain[formant] = Math.pow(10, db * LEVEL_SCALE / 20) * (formant % 2 == 0 ? 1 : -1);
+            }
+            shapedFor = position;
         }
     }
 }

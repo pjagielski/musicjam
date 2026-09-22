@@ -39,8 +39,7 @@ public final class FxStrip extends VBox {
     private static final double OFF = -1;
 
     private final List<String> zones;
-    private final String top;
-    private final String bottom;
+    private final List<String> labels;
     private final boolean centred;
     private final Canvas pad = new Canvas(WIDTH, HEIGHT);
     private final ToggleButton lock = new ToggleButton("Lock");
@@ -56,25 +55,23 @@ public final class FxStrip extends VBox {
      * or -1 when the effect should stop.
      */
     public static FxStrip zones(String name, List<String> zones, IntConsumer onChange) {
-        return new FxStrip(name, List.copyOf(zones), "", "", false, value -> onChange.accept((int) value));
+        return new FxStrip(name, List.copyOf(zones), List.of(), false, value -> onChange.accept((int) value));
     }
 
     /**
-     * A strip played anywhere from the bottom to the top, labelled {@code top} and {@code bottom};
-     * {@code centred} marks the middle. The listener hears a value from 0 (bottom) to 1 (top), or
-     * -1 when the effect should stop.
+     * A strip played anywhere from the bottom to the top, with {@code labels} spread evenly from
+     * the top to the bottom; {@code centred} marks the middle. The listener hears a value from 0
+     * (bottom) to 1 (top), or -1 when the effect should stop.
      */
-    public static FxStrip continuous(String name, String top, String bottom, boolean centred,
-                                     DoubleConsumer onChange) {
-        return new FxStrip(name, List.of(), top, bottom, centred, onChange);
+    public static FxStrip continuous(String name, List<String> labels, boolean centred, DoubleConsumer onChange) {
+        return new FxStrip(name, List.of(), List.copyOf(labels), centred, onChange);
     }
 
-    private FxStrip(String name, List<String> zones, String top, String bottom, boolean centred,
+    private FxStrip(String name, List<String> zones, List<String> labels, boolean centred,
                     DoubleConsumer onChange) {
         super(8);
         this.zones = zones;
-        this.top = top;
-        this.bottom = bottom;
+        this.labels = labels;
         this.centred = centred;
         this.onChange = onChange;
         setAlignment(Pos.TOP_CENTER);
@@ -233,7 +230,9 @@ public final class FxStrip extends VBox {
         g.setTextBaseline(VPos.CENTER);
         g.setFont(Font.font("Consolas", FontWeight.BOLD, 12));
         g.setFill(theme.mutedText());
-        g.fillText(top, WIDTH / 2, 16);
-        g.fillText(bottom, WIDTH / 2, HEIGHT - 16);
+        double spacing = labels.size() > 1 ? (HEIGHT - 32) / (labels.size() - 1) : 0;
+        for (int label = 0; label < labels.size(); label++) {
+            g.fillText(labels.get(label), WIDTH / 2, 16 + label * spacing);
+        }
     }
 }

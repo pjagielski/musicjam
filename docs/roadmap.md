@@ -157,7 +157,7 @@ is the plumbing in 9.1.
 | 9.12 | **VibroFlange**: above the centre a flanger (a short swept delay), below it a pitch wobble (a modulated delay without feedback). | M |
 | 9.13 | **Compressor**: one knob, the higher the harder it pumps; an envelope follower, threshold and ratio together. | M |
 | 9.14 | **Reverse**: plays the last stretch of the mix backwards, slide up for a longer stretch — a buffer read in reverse, lined up with the beat so it lands on time. | M |
-| 9.15 | ★ **Talkbox**: a formant filter — two or three band-passes per vowel — sweeping a-e-i-o-u as the finger slides. The most voice-like of the set, and a good exercise in filters. | M |
+| 9.15 | ✓ **Done.** ★ **Talkbox**: three resonant band-passes, one per formant, sweeping a-e-i-o-u as the finger slides; between two vowels each band is taken part of the way from one to the other. A tenor's formants, with the bands widened and the upper ones brought up, since a whole mix through a voice's own bands whistles and comes out an "o". | M |
 | 9.16 | **Pitch**: all of it up or down from the centre. In the note domain, as Stutter is: transpose the synth's notes and resample the drums, rather than a pitch shifter on the audio. | M |
 
 Worth doing in the order of the stars: the plumbing, then Crush and Filter (quick, and heard at
@@ -185,6 +185,13 @@ at least, would save the mix from clipping once a few of these are stacked.
 - Ableton Link repository — header-only C++, dual GPLv2+/proprietary licence.
 - MIDI Association, *MIDI 2.0* — MIDI-CI, UMP, and why this stays out of scope.
 - Koala Sampler manual, *Effects* (manual.koalasampler.com) — the Perform FX and what each one
-  does as the finger slides.
+  does as the finger slides: Crush is a "bitcrusher with transistor distortion", Talkbox a "formant
+  filter based on human vocal tract".
+- Csound manual, *Appendix D. Formant Values* — five formants a vowel, with levels and bandwidths,
+  per voice type; the tenor's are what Talkbox sweeps between.
+- Klatt, *Software for a cascade/parallel formant synthesizer* (JASA 1980), and the Csound
+  Journal's *The Talk-Box and Formant Filtering* (Spring 1999) — why a parallel formant branch
+  alternates its signs, and why a talkbox distorts before the formants rather than after. Gathered
+  in [research/performance-fx.md](research/performance-fx.md), with what came of them.
 - Android platform APIs — `AudioTrack` (low-latency performance mode), Oboe/AAudio, and
   `android.media.midi` for USB MIDI; none of `javax.sound.*` exists there.

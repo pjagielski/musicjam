@@ -64,10 +64,35 @@ class PerformanceFxTest {
         assertArrayEquals(before, mix, "5 ms after letting go, nothing is left of it");
     }
 
-    /** The level of a {@code hz} tone through the filter held at {@code position}, against the tone's own. */
-    private static double filtered(double position, double hz) {
+    @Test
+    void theTalkboxPutsEachVowelsFormantsIntoTheMix() {
+        // 650 Hz is the "a"'s first formant, 1870 Hz the "i"'s second
+        assertTrue(talked(0.0, 650) > 2 * talked(0.5, 650),
+                "an \"a\" opens up around 650 Hz: " + talked(0.0, 650) + " against " + talked(0.5, 650));
+        assertTrue(talked(0.5, 1_870) > 2 * talked(0.0, 1_870),
+                "an \"i\" around 1870 Hz: " + talked(0.5, 1_870) + " against " + talked(0.0, 1_870));
+        // a whole mix loses a good deal through three bands, but should not drop out of the jam
         var fx = new PerformanceFx(RATE);
-        fx.filter(position);
+        fx.talkbox(0.0);
+        float[] noise = noise(RATE / 2);
+        double dry = rms(noise, RATE / 4, RATE / 2);
+        fx.process(noise, RATE / 2);
+        double kept = rms(noise, RATE / 4, RATE / 2) / dry;
+        assertTrue(kept > 0.4 && kept < 1.2, "and it stays within a few dB of the mix: " + kept);
+    }
+
+    private static double filtered(double position, double hz) {
+        return level(fx -> fx.filter(position), hz);
+    }
+
+    private static double talked(double position, double hz) {
+        return level(fx -> fx.talkbox(position), hz);
+    }
+
+    /** The level of a {@code hz} tone through the effect {@code hold} holds, against the tone's own. */
+    private static double level(java.util.function.Consumer<PerformanceFx> hold, double hz) {
+        var fx = new PerformanceFx(RATE);
+        hold.accept(fx);
         int frames = RATE / 2;
         float[] mix = sine(hz, frames);
         double dry = rms(mix, frames / 2, frames);
@@ -79,6 +104,18 @@ class PerformanceFxTest {
         float[] mix = new float[frames * 2];
         for (int frame = 0; frame < frames; frame++) {
             float value = (float) (0.5 * Math.sin(2 * Math.PI * hz * frame / RATE));
+            mix[frame * 2] = value;
+            mix[frame * 2 + 1] = value;
+        }
+        return mix;
+    }
+
+    /** A steady, repeatable hiss: the broad spectrum a mix has, without a jam to render. */
+    private static float[] noise(int frames) {
+        var random = new java.util.Random(42);
+        float[] mix = new float[frames * 2];
+        for (int frame = 0; frame < frames; frame++) {
+            float value = (float) (random.nextGaussian() * 0.2);
             mix[frame * 2] = value;
             mix[frame * 2 + 1] = value;
         }

@@ -764,14 +764,19 @@ public final class BeatStudio extends Application {
                 session.stutter(zone < 0 ? 0 : slices[zone]);
             }
         }));
-        strips.add(FxStrip.continuous("Crush", "less", "more", false, value -> {
+        strips.add(FxStrip.continuous("Crush", List.of("less", "more"), false, value -> {
             if (session != null) {
                 session.performance().crush(value);
             }
         }));
-        strips.add(FxStrip.continuous("Filter", "HP", "LP", true, value -> {
+        strips.add(FxStrip.continuous("Filter", List.of("HP", "LP"), true, value -> {
             if (session != null) {
                 session.performance().filter(value);
+            }
+        }));
+        strips.add(FxStrip.continuous("Talkbox", List.of("u", "o", "i", "e", "a"), false, value -> {
+            if (session != null) {
+                session.performance().talkbox(value);
             }
         }));
         Label hint = new Label("Hold a zone to play it and slide to change it; right-click to lock it on, right-click again to let go.");
