@@ -10,12 +10,12 @@ import javafx.scene.input.MouseEvent;
  * separate event the control never saw. So the scene is told this press and drag are no drag
  * gesture, and the announcement is never made — and should one come anyway, it stops here.
  */
-final class NoPanning {
+public final class NoPanning {
 
     private NoPanning() {
     }
 
-    static void on(Node control) {
+    public static void on(Node control) {
         control.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> event.setDragDetect(false));
         control.addEventFilter(MouseEvent.MOUSE_DRAGGED, event -> event.setDragDetect(false));
         control.addEventHandler(MouseEvent.DRAG_DETECTED, MouseEvent::consume);

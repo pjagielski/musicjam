@@ -24,12 +24,13 @@ import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-import javafx.scene.control.TitledPane;
 import javafx.scene.control.ToggleButton;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
@@ -46,6 +47,7 @@ import pl.livecoding.musicjam.midi.ExternalMidiOutput;
 import pl.livecoding.musicjam.midi.MidiFileReader;
 import pl.livecoding.musicjam.model.DrumTrack;
 import pl.livecoding.musicjam.model.MelodyTrack;
+import pl.livecoding.musicjam.model.Note;
 import pl.livecoding.musicjam.model.Song;
 import pl.livecoding.musicjam.model.Track;
 import pl.livecoding.musicjam.studio.knobs.FxStrip;
@@ -63,6 +65,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -71,12 +74,15 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 /**
- * A window onto a live jam: the drum grid, tempo, loop length and melody can all be changed while
- * it plays, and each change is heard from the next loop on. Live code (see {@link LiveCode}) run
- * with Ctrl+Enter is drawn into the grid, where clicks can tweak it until the code runs again. Every
- * {@code jam*.properties} next to the starting config is a preset: picking one loads its MIDI file,
- * tempo, drums and synth. The melody can be routed to an external MIDI synth, whose filter follows
- * the slider as a control change (CC 74 unless told otherwise).
+ * A window onto a live jam: its tracks, tempo and loop length can all be changed while it plays,
+ * and each change is heard from the next loop on. A jam has one drum track, which is the grid, and
+ * any number of melody tracks, each a window of a MIDI file as long as the loop; the track list
+ * mutes, levels and orders them, and the editor below it shows the selected one. Live code (see
+ * {@link LiveCode}) run with Ctrl+Enter is drawn into the grid, where clicks can tweak it until the
+ * code runs again. Every {@code jam*.properties} next to the starting config is a preset: picking
+ * one loads its MIDI file, tempo, drums and synth, with the one melody track it names. The melodies
+ * can be routed to an external MIDI synth, whose filter follows the knob as a control change (CC 74
+ * unless told otherwise).
  *
  * <p>Starts from {@code --config <file>}, or {@code src/main/resources/jam.properties}, but with a
  * eight-bar loop and the drums drawn from the starter code rather than the config's own.
@@ -90,6 +96,12 @@ public final class BeatStudio extends Application {
     private static final double CELL_HEIGHT = 28;
     private static final double CELL_GAP = 4;
     private static final double BAR_WIDTH = 16 * CELL_HEIGHT + 15 * CELL_GAP;
+    private static final double COLUMN_WIDTH = BAR_WIDTH + 86;
+    // the track editor spans the window, as the synth's four columns do below it
+    private static final double FULL_WIDTH = COLUMN_WIDTH + 18 + 790;
+    // the tracks and the effects split it down the middle, where the synth's oscillator and amp do
+    private static final double PANEL_GAP = 14;
+    private static final double HALF_WIDTH = (FULL_WIDTH - PANEL_GAP) / 2;
     private static final String STARTER_CODE = """
             $: stack(
                 s("bd(3,8,5)"),
@@ -113,8 +125,11 @@ public final class BeatStudio extends Application {
     private final TextArea code = new TextArea(STARTER_CODE);
     private final Button runCode = new Button("Run (Ctrl+Enter)");
     private final Label codeError = new Label();
-    private final CheckBox melodyOn = new CheckBox("Melody");
-    private final PanelKnob melodyVolume = StudioPanels.knob("Volume", 0, 1, "", 2, 1);
+    private final VBox codeColumn = new VBox(8, code, row(runCode, codeError));
+    private final HBox drumEditor = new HBox(18, grid, codeColumn);
+    private final TrackPanel trackPanel = new TrackPanel(this::newMelody);
+    // the selected track's editor: the grid and its code, or a melody's window
+    private final VBox editor = new VBox();
     private final TextField device = new TextField();
     private final ToggleButton connect = new ToggleButton("Connect MIDI");
     private final CheckBox melodyToMidi = new CheckBox("Melody over MIDI");
@@ -122,16 +137,29 @@ public final class BeatStudio extends Application {
     private final PanelKnob filter = StudioPanels.knob("Filter", 0, 127, "", 0, 64);
     private final PanelKnob midiLatency =
             StudioPanels.knob("Latency", 0, 400, "ms", 0, PhraseRequest.DEFAULT_MIDI_LATENCY_MILLIS);
-    private final SynthControls synthControls = SynthControls.light(2);
+    // the synth spans the window: its groups in four columns, two flat rows
+    private final SynthControls synthControls = SynthControls.light(4);
+    // the selected track's instrument, beside the performance effects
+    private final VBox instrument = new VBox(10);
+    private final ToggleGroup instrumentView = new ToggleGroup();
+    private final ToggleButton showSynth = new ToggleButton("Synth");
+    private final ToggleButton showMidi = new ToggleButton("External MIDI");
+    private VBox midiFrame;
     private final ProgressBar loopProgress = new ProgressBar(0);
     private final Label status = new Label("Stopped");
 
     private PhraseRequest request;
-    private Sequence sequence;
+    private TrackList tracks;
+    // the selected melody's roll, whose playhead follows the jam; none while the grid is shown
+    private PianoRoll roll;
+    private List<Path> midiFiles = List.of();
+    // every MIDI file read so far, and every window's notes over the loop as long as it is now
+    private final Map<Path, Sequence> sequences = new HashMap<>();
+    private final Map<MidiWindow, List<Note>> windows = new HashMap<>();
+    private double windowsLengthBeats;
     private PitchSynth synth;
     private LiveNovasawSynth liveSynth;
     private AudioEngine engine;
-    private MelodyTrack melody;
     private AudioEngine.LiveSession session;
     private AudioEngine.LiveSession ringing;
     // the Performance FX strips, all let go of when the jam stops
@@ -153,6 +181,7 @@ public final class BeatStudio extends Application {
         Path config = configPath();
         engine = new AudioEngine(SampleBank.load(Path.of("samples"), AudioEngine.DEFAULT_SAMPLE_RATE));
         findJams(config);
+        midiFiles = findMidiFiles(config);
         presets.getItems().setAll(jams.keySet());
         synthControls.setOnChange((params, effects) -> {
             if (liveSynth != null) {
@@ -160,14 +189,14 @@ public final class BeatStudio extends Application {
                 liveSynth.setEffectParams(effects);
             }
         });
-        melodyOn.setSelected(true);
         melodyToMidi.setDisable(true);
+        trackPanel.setOnEdit(this::publish);
+        trackPanel.setOnSelect(this::showSelected);
         applyMidiLatency();
 
         loadJam(config);
         presets.setValue(nameOf(config));
         bars.getValueFactory().setValue(STARTING_LOOP);
-        reloadMelody();
         runCode();
 
         play.setOnAction(event -> togglePlayback());
@@ -183,7 +212,13 @@ public final class BeatStudio extends Application {
             synthControls.setTempo(bpm.getValue());
             publish();
         });
-        bars.valueProperty().addListener((property, before, after) -> reloadMelody());
+        bars.valueProperty().addListener((property, before, after) -> {
+            publish();
+            if (tracks.selected() instanceof StudioTrack.Melody) {
+                // its count of notes is over the loop, which has just changed
+                showEditor();
+            }
+        });
         code.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
             if (!event.isShortcutDown()) {
                 return;
@@ -197,8 +232,6 @@ public final class BeatStudio extends Application {
             }
         });
         runCode.setOnAction(event -> runCode());
-        melodyOn.selectedProperty().addListener((property, before, after) -> publish());
-        melodyVolume.setOnChange(volume -> publish());
         connect.setOnAction(event -> {
             if (connect.isSelected()) {
                 openMidi();
@@ -292,6 +325,7 @@ public final class BeatStudio extends Application {
         fit.setOnAction(event -> fitToWindow(content, scroll, zoomLabel, MAX_ZOOM));
         // the first layout pass is what tells us how big the content is, so size and fit only after it
         fitOnStart = () -> {
+            reserveRoomForEveryTrack(content);
             if (sizeWindowToContent) {
                 setZoom(content, zoomLabel, sizeToContent(stage, content, scroll));
             } else {
@@ -349,6 +383,29 @@ public final class BeatStudio extends Application {
      *     less when the screen cut the window short. Worked out here rather than measured after
      *     the resize, which the viewport only reports a layout pass or two later.
      */
+    /**
+     * Keeps the content as tall as its tallest track makes it, measured by showing each track's
+     * editor and instrument in turn before the window is sized. The grid and its code are much
+     * lower than a melody's roll and synth, so a window sized to the drum track, which is the one
+     * selected at the start, would be too short for every other — and one resized at every click
+     * would jump about.
+     */
+    private void reserveRoomForEveryTrack(VBox content) {
+        int selected = tracks.selectedIndex();
+        double tallest = 0;
+        for (int index = 0; index < tracks.size(); index++) {
+            tracks.select(index);
+            showSelected();
+            content.applyCss();
+            content.layout();
+            tallest = Math.max(tallest, content.prefHeight(-1));
+        }
+        tracks.select(selected);
+        showSelected();
+        content.setMinHeight(tallest);
+        content.getParent().layout();
+    }
+
     private static double sizeToContent(Stage stage, VBox content, ScrollPane scroll) {
         Bounds natural = content.getLayoutBounds();
         Bounds viewport = scroll.getViewportBounds();
@@ -391,6 +448,16 @@ public final class BeatStudio extends Application {
         jams.putIfAbsent(nameOf(config), config);
     }
 
+    /** The MIDI files next to the config, which a melody track can be read from without browsing. */
+    private static List<Path> findMidiFiles(Path config) throws IOException {
+        try (Stream<Path> files = Files.list(config.toAbsolutePath().getParent())) {
+            return files.filter(file -> file.getFileName().toString().matches("(?i).+\\.midi?"))
+                    .map(file -> file.toAbsolutePath().normalize())
+                    .sorted()
+                    .toList();
+        }
+    }
+
     private static String nameOf(Path config) {
         String name = config.getFileName().toString().replaceFirst("\\.properties$", "");
         return name.startsWith("jam-") ? name.substring("jam-".length()) : name;
@@ -399,7 +466,8 @@ public final class BeatStudio extends Application {
     /** Everything a jam config says: MIDI file and window, the file's tempo, drums and synth. */
     private void loadJam(Path config) throws Exception {
         PhraseRequest next = PhraseRequest.fromPropertiesFile(config);
-        Sequence nextSequence = MidiSystem.getSequence(next.file().toFile());
+        Path file = next.file().toAbsolutePath().normalize();
+        Sequence nextSequence = sequenceOf(file);
         PitchSynth nextSynth = BeatApp.resolveSynth(next.synth());
         List<DrumTrack> pattern = BeatApp.drumPatterns().get(next.drums().toLowerCase(Locale.ROOT));
         if (pattern == null) {
@@ -411,7 +479,9 @@ public final class BeatStudio extends Application {
         try {
             request = next;
             midiLatency.setValue(next.midiLatencyMillis());
-            sequence = nextSequence;
+            tracks = TrackList.startingWith(trackName(nextSequence, next.trackIndex()),
+                    new MidiWindow(file, next.trackIndex(), next.startBar()));
+            trackPanel.show(tracks);
             setSynth(next.synth(), nextSynth);
             rows.clear();
             pattern.forEach(track -> rows.add(GridRow.fromTrack(track)));
@@ -427,7 +497,7 @@ public final class BeatStudio extends Application {
                 device.setText(next.midiDevice());
             }
             buildGrid();
-            reloadMelody();
+            showSelected();
         } finally {
             loading = false;
         }
@@ -451,9 +521,103 @@ public final class BeatStudio extends Application {
         }
     }
 
-    private void reloadMelody() {
-        melody = BeatApp.loadMelodyTrack(sequence, request.trackIndex(), request.startBar(), barsOf(bars.getValue()));
-        publish();
+    private Sequence sequenceOf(Path file) throws Exception {
+        Sequence known = sequences.get(file);
+        if (known == null) {
+            known = MidiSystem.getSequence(file.toFile());
+            sequences.put(file, known);
+        }
+        return known;
+    }
+
+    /** A MIDI track by the name its file gives it, or by its number when the file gives none. */
+    private static String trackName(Sequence sequence, int trackIndex) {
+        String name = trackIndex < sequence.getTracks().length
+                ? MidiFileReader.trackName(sequence, trackIndex).trim() : "";
+        return name.isEmpty() ? "Track " + trackIndex : name;
+    }
+
+    /**
+     * What "+ Melody" adds: a track of the first melody's file that no melody plays yet, or the
+     * first with notes when they all are taken.
+     */
+    private StudioTrack.Melody newMelody() {
+        StudioTrack.Melody first = tracks.firstMelody();
+        Path file = first != null ? first.source().file() : request.file().toAbsolutePath().normalize();
+        Sequence sequence = sequences.get(file);
+        List<Integer> withNotes = MidiWindowEditor.tracksWithNotes(sequence);
+        List<Integer> playing = tracks.tracks().stream()
+                .filter(track -> track instanceof StudioTrack.Melody melody && melody.source().file().equals(file))
+                .map(track -> ((StudioTrack.Melody) track).source().trackIndex())
+                .toList();
+        int index = withNotes.stream().filter(candidate -> !playing.contains(candidate)).findFirst()
+                .orElse(withNotes.isEmpty() ? 0 : withNotes.getFirst());
+        int startBar = first != null ? first.source().startBar() : 0;
+        return new StudioTrack.Melody(unusedName(trackName(sequence, index)), 1.0f, false,
+                new MidiWindow(file, index, startBar));
+    }
+
+    /** {@code name}, or "name 2", "name 3" and on when a track already goes by it. */
+    private String unusedName(String name) {
+        List<String> taken = tracks.tracks().stream().map(StudioTrack::name).toList();
+        String candidate = name;
+        for (int number = 2; taken.contains(candidate); number++) {
+            candidate = name + " " + number;
+        }
+        return candidate;
+    }
+
+    /** The selected track's editor and instrument in place of the last one's. */
+    private void showSelected() {
+        showEditor();
+        showInstrument();
+    }
+
+    /** The selected track's editor in place of the last one's. */
+    private void showEditor() {
+        roll = null;
+        switch (tracks.selected()) {
+            case StudioTrack.Drums drums -> editor.getChildren().setAll(drumEditor);
+            case StudioTrack.Melody melody -> {
+                try {
+                    double lengthBeats = loopBeats();
+                    // the roll takes the frame's width, less the frame's own padding and edge
+                    MidiWindowEditor window = new MidiWindowEditor(melody, midiFiles, this::sequenceOf,
+                            this::moveWindow, BeatStudio::showError, next -> windowNotes(next, lengthBeats),
+                            lengthBeats, BEATS_PER_BAR, FULL_WIDTH - 30);
+                    VBox frame = window.node();
+                    fitWidth(frame, FULL_WIDTH);
+                    editor.getChildren().setAll(frame);
+                    roll = window.roll();
+                } catch (Exception exception) {
+                    editor.getChildren().clear();
+                    showError(exception);
+                }
+            }
+        }
+    }
+
+    /** The editor always shows the selected track, so that is the one whose window has moved. */
+    private void moveWindow(MidiWindow next) {
+        int index = tracks.selectedIndex();
+        if (tracks.get(index) instanceof StudioTrack.Melody melody) {
+            tracks.replace(index, melody.withSource(next));
+            publish();
+        }
+    }
+
+    /** A window's notes over a loop of {@code lengthBeats}, read from its file once for each loop length. */
+    private List<Note> windowNotes(MidiWindow window, double lengthBeats) {
+        if (lengthBeats != windowsLengthBeats) {
+            windows.clear();
+            windowsLengthBeats = lengthBeats;
+        }
+        return windows.computeIfAbsent(window, key -> BeatApp.loadMelodyTrack(sequences.get(key.file()),
+                key.trackIndex(), key.startBar(), lengthBeats / BEATS_PER_BAR).notes());
+    }
+
+    private double loopBeats() {
+        return barsOf(bars.getValue()) * BEATS_PER_BAR;
     }
 
     /** Draws the code into the grid. Code that does not parse changes nothing: the error is shown instead. */
@@ -477,12 +641,20 @@ public final class BeatStudio extends Application {
     }
 
     /**
-     * Whether the jam holds edits the loop being heard does not play yet. Tempo and loop length are
-     * not among them: the engine takes those up at once.
+     * Whether the jam holds edits the loop being heard does not play yet. Tempo, loop length and
+     * the tracks' gains and mutes are not among them: the engine takes those up at once.
      */
     private boolean waiting(Song heard) {
         Song next = jam.get().song();
-        return heard != next && !heard.tracks().equals(next.tracks());
+        return heard != next && !atFullGain(heard.tracks()).equals(atFullGain(next.tracks()));
+    }
+
+    /** The tracks as they would be with every gain up, so that only their notes are compared. */
+    private static List<Track> atFullGain(List<Track> tracks) {
+        return tracks.stream().map(track -> (Track) switch (track) {
+            case DrumTrack drums -> new DrumTrack(drums.drum(), drums.steps(), 1.0f);
+            case MelodyTrack melody -> new MelodyTrack(melody.notes(), melody.patternLengthBeats(), 1.0f);
+        }).toList();
     }
 
     /**
@@ -490,15 +662,13 @@ public final class BeatStudio extends Application {
      * loop length at once.
      */
     private void publish() {
-        if (loading || melody == null) {
+        if (loading || tracks == null) {
             return;
         }
-        double lengthBeats = melody.patternLengthBeats();
-        float gain = melodyOn.isSelected() ? (float) melodyVolume.value() : 0.0f;
-        List<Track> tracks = List.of(
-                new MelodyTrack(GridRow.notes(rows, BEATS_PER_BAR, lengthBeats), lengthBeats, 1.0f),
-                new MelodyTrack(melody.notes(), lengthBeats, gain));
-        jam.set(new AudioEngine.Jam(new Song(bpm.getValue(), BEATS_PER_BAR, tracks), synth));
+        double lengthBeats = loopBeats();
+        Song song = tracks.song(bpm.getValue(), BEATS_PER_BAR, lengthBeats,
+                GridRow.notes(rows, BEATS_PER_BAR, lengthBeats), this::windowNotes);
+        jam.set(new AudioEngine.Jam(song, synth));
     }
 
     private void buildGrid() {
@@ -590,6 +760,9 @@ public final class BeatStudio extends Application {
         }
         play.setText("Play");
         barFraction = -1;
+        if (roll != null) {
+            roll.setPlayhead(-1);
+        }
         loopProgress.setProgress(0);
         status.setText("Stopped");
         paintGrid();
@@ -607,7 +780,10 @@ public final class BeatStudio extends Application {
 
     private void openMidi() {
         try {
-            int program = MidiFileReader.readProgram(sequence, request.trackIndex());
+            // the external synth takes the sound of the first melody's track in its file
+            StudioTrack.Melody first = tracks.firstMelody();
+            int program = first == null ? 0
+                    : MidiFileReader.readProgram(sequenceOf(first.source().file()), first.source().trackIndex());
             midi = ExternalMidiOutput.open(device.getText(), request.midiChannelIndex(), program);
             sentController = -1;
             sendFilter();
@@ -692,6 +868,9 @@ public final class BeatStudio extends Application {
                     return;
                 }
                 loopProgress.setProgress(position.beat() / position.lengthBeats());
+                if (roll != null) {
+                    roll.setPlayhead(position.beat());
+                }
                 double fraction = (position.beat() % BEATS_PER_BAR) / BEATS_PER_BAR;
                 boolean moved = (int) (fraction * 64) != (int) (barFraction * 64);
                 barFraction = fraction;
@@ -717,40 +896,92 @@ public final class BeatStudio extends Application {
         code.setStyle("-fx-font-family: 'Consolas', 'Menlo', monospace; -fx-font-size: 14px;");
         codeError.setStyle("-fx-text-fill: #c92a2a;");
 
-        // the grid sets the left column's width; the code area follows it rather than the window
-        code.setPrefWidth(BAR_WIDTH + 86);
-        VBox jamColumn = new VBox(14,
-                grid,
-                code,
-                row(runCode, codeError),
-                melodyAndMidiPanels());
+        // the grid keeps its own width, and the code takes the rest of the row beside it
+        HBox.setHgrow(codeColumn, Priority.ALWAYS);
+        VBox.setVgrow(code, Priority.ALWAYS);
+        fitWidth(drumEditor, FULL_WIDTH);
 
-        HBox columns = new HBox(18, jamColumn, synthPanel());
-        columns.setAlignment(Pos.TOP_LEFT);
-        columns.setFillHeight(false);
+        // the tracks and the performance effects side by side, both within reach while it plays
+        VBox effects = performancePanel();
+        fitWidth(effects, HALF_WIDTH);
+        fitWidth(trackPanel.node(), HALF_WIDTH);
+        HBox top = new HBox(PANEL_GAP, trackPanel.node(), effects);
+        midiFrame = midiPanel();
+        buildInstrument();
+        fitWidth(instrument, FULL_WIDTH);
 
-        VBox root = new VBox(14, columns);
+        VBox root = new VBox(14, top, editor, instrument);
         root.setPadding(new Insets(16));
         return root;
     }
 
     /**
-      * The melody and the external synth, framed like the knob panel so the window reads as one.
-      * Both frames take the column's full width, so their edges line up with the grid and the code
-      * above them rather than ending wherever their contents happen to.
-      */
-    private VBox melodyAndMidiPanels() {
-        device.setPromptText("MIDI device");
-        VBox frame = StudioPanels.frame("Melody and external MIDI",
-                StudioPanels.row(melodyOn, device, connect, melodyToMidi, new Label("CC"), cc),
-                StudioPanels.knobRow(melodyVolume.node(), filter.node(), midiLatency.node()));
-        VBox effects = performancePanel();
-        for (VBox box : List.of(frame, effects)) {
-            box.setPrefWidth(BAR_WIDTH + 86);
-            box.setMinWidth(BAR_WIDTH + 86);
-            box.setMaxWidth(BAR_WIDTH + 86);
+     * The instrument panel's frame: which of the selected melody's two ways of sounding is shown,
+     * the synth here or the external one it can be sent to. What it shows follows the selection.
+     */
+    private void buildInstrument() {
+        for (ToggleButton view : List.of(showSynth, showMidi)) {
+            view.setToggleGroup(instrumentView);
+            view.setFocusTraversable(false);
+            view.setPrefWidth(140);
+            view.setOnAction(event -> {
+                // a view stays chosen when clicked again: one of the two is always showing
+                instrumentView.selectToggle(view);
+                showInstrument();
+            });
         }
-        return new VBox(12, frame, effects);
+        instrumentView.selectToggle(showSynth);
+        showInstrument();
+    }
+
+    /**
+     * The selected track's instrument. For now there is one synth and one external synth for every
+     * melody track, so each melody shows the same two; the drum track plays samples, with nothing
+     * to set yet.
+     */
+    private void showInstrument() {
+        if (midiFrame == null) {
+            // the window is not laid out yet; it shows the instrument once it is
+            return;
+        }
+        Label title = new Label("INSTRUMENT");
+        title.setStyle("-fx-text-fill: #868e96; -fx-font-size: 10px; -fx-font-weight: bold;");
+        if (tracks.selected() instanceof StudioTrack.Drums) {
+            Label drums = new Label("The drum track plays the samples in samples/, one per row of the grid.");
+            drums.setStyle("-fx-text-fill: #868e96;");
+            instrument.getChildren().setAll(title, drums);
+            return;
+        }
+        Label shared = new Label("One synth plays every melody track for now; each will get its own.");
+        shared.setStyle("-fx-text-fill: #868e96; -fx-font-size: 11px;");
+        HBox header = new HBox(8, title, showSynth, showMidi);
+        if (showSynth.isSelected()) {
+            header.getChildren().add(synthControls.presetPicker());
+            HBox.setMargin(synthControls.presetPicker(), new Insets(0, 0, 0, 16));
+        }
+        header.getChildren().add(shared);
+        HBox.setMargin(shared, new Insets(0, 0, 0, 16));
+        header.setAlignment(Pos.CENTER_LEFT);
+        Node shown = showMidi.isSelected() ? midiFrame : synthControls.node();
+        instrument.getChildren().setAll(header, shown);
+    }
+
+    /** The external synth the melody can be sent to instead, and the control change it follows. */
+    private VBox midiPanel() {
+        device.setPromptText("MIDI device");
+        return StudioPanels.frame("External MIDI",
+                StudioPanels.row(device, connect, melodyToMidi, new Label("CC"), cc),
+                StudioPanels.knobRow(filter.node(), midiLatency.node()));
+    }
+
+    /**
+     * A frame exactly {@code width} wide, so its edges line up with the frames above and below it
+     * rather than ending wherever its contents happen to.
+     */
+    private static void fitWidth(javafx.scene.layout.Region box, double width) {
+        box.setPrefWidth(width);
+        box.setMinWidth(width);
+        box.setMaxWidth(width);
     }
 
     /**
@@ -793,13 +1024,6 @@ public final class BeatStudio extends Application {
         hint.setStyle("-fx-text-fill: #868e96; -fx-font-size: 11px;");
         hint.setWrapText(true);
         return StudioPanels.frame("Performance FX", row(strips.toArray(Node[]::new)), hint);
-    }
-
-    /** The synth's front panel, which folds away for anyone who only wants the grid. */
-    private TitledPane synthPanel() {
-        TitledPane pane = new TitledPane("Synth", synthControls.node());
-        pane.setExpanded(true);
-        return pane;
     }
 
     private void updateBpmLabel() {
