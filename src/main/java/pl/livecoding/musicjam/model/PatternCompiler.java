@@ -19,13 +19,29 @@ public final class PatternCompiler {
         double totalBeats = totalBeats(song);
         var notes = new ArrayList<Note>();
         for (Track track : song.tracks()) {
-            switch (track) {
-                case DrumTrack drumTrack -> notes.addAll(compileDrumTrack(drumTrack, song.beatsPerBar(), totalBeats));
-                case MelodyTrack melodyTrack -> notes.addAll(compileMelodyTrack(melodyTrack));
-            }
+            notes.addAll(compileTrack(track, song.beatsPerBar(), totalBeats, track.gain()));
         }
         notes.sort(Comparator.comparingDouble(Note::beat));
         return List.copyOf(notes);
+    }
+
+    /**
+     * One loop's worth of each track's notes, as {@link #compile} would give them but kept apart
+     * and without the track's gain: for a player that applies the gain itself, as it plays, so a
+     * fader or a mute is heard at once.
+     */
+    public static List<List<Note>> compileByTrack(Song song) {
+        double totalBeats = totalBeats(song);
+        return song.tracks().stream()
+                .map(track -> compileTrack(track, song.beatsPerBar(), totalBeats, 1.0f))
+                .toList();
+    }
+
+    private static List<Note> compileTrack(Track track, double beatsPerBar, double totalBeats, float gain) {
+        return switch (track) {
+            case DrumTrack drumTrack -> compileDrumTrack(drumTrack, beatsPerBar, totalBeats, gain);
+            case MelodyTrack melodyTrack -> compileMelodyTrack(melodyTrack, gain);
+        };
     }
 
     /**
@@ -41,7 +57,7 @@ public final class PatternCompiler {
                 .orElse(song.beatsPerBar());
     }
 
-    private static List<Note> compileDrumTrack(DrumTrack track, double beatsPerBar, double totalBeats) {
+    private static List<Note> compileDrumTrack(DrumTrack track, double beatsPerBar, double totalBeats, float gain) {
         String steps = track.steps();
         double durationBeats = beatsPerBar / steps.length();
         // ceil, not round: a loop that ends mid-bar still needs that bar's opening steps
@@ -53,16 +69,16 @@ public final class PatternCompiler {
                 float accent = accentOf(steps.charAt(step));
                 double beat = barOffset + (double) step * beatsPerBar / steps.length();
                 if (accent > 0.0f && beat < totalBeats) {
-                    notes.add(new Note(beat, track.drum(), durationBeats, track.gain() * accent));
+                    notes.add(new Note(beat, track.drum(), durationBeats, gain * accent));
                 }
             }
         }
         return notes;
     }
 
-    private static List<Note> compileMelodyTrack(MelodyTrack track) {
+    private static List<Note> compileMelodyTrack(MelodyTrack track, float gain) {
         return track.notes().stream()
-                .map(note -> new Note(note.beat(), note.voice(), note.durationBeats(), note.velocity() * track.gain(),
+                .map(note -> new Note(note.beat(), note.voice(), note.durationBeats(), note.velocity() * gain,
                         note.envelope()))
                 .toList();
     }

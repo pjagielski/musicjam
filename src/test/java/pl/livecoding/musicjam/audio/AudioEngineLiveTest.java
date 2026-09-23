@@ -129,8 +129,8 @@ class AudioEngineLiveTest {
         render(renderer, 1);
 
         assertEquals(List.of(
-                new AudioEngine.ExternalNote(1.0, true, 60, 100, 1.0),
-                new AudioEngine.ExternalNote(1.5, false, 60, 0, 1.0)
+                new AudioEngine.ExternalNote(1.0, true, 60, 100, 1.0, 0),
+                new AudioEngine.ExternalNote(1.5, false, 60, 0, 1.0, 0)
         ), drain(renderer));
     }
 
@@ -172,10 +172,10 @@ class AudioEngineLiveTest {
         float[] left = render(renderer, BLOCKS);
 
         assertEquals(List.of(
-                new AudioEngine.ExternalNote(1.0, true, 60, 100, 1.0),
-                new AudioEngine.ExternalNote(1.5, false, 60, 0, 1.0),
-                new AudioEngine.ExternalNote(5.0, true, 60, 100, 5.0),
-                new AudioEngine.ExternalNote(5.5, false, 60, 0, 5.0)
+                new AudioEngine.ExternalNote(1.0, true, 60, 100, 1.0, 0),
+                new AudioEngine.ExternalNote(1.5, false, 60, 0, 1.0, 0),
+                new AudioEngine.ExternalNote(5.0, true, 60, 100, 5.0, 0),
+                new AudioEngine.ExternalNote(5.5, false, 60, 0, 5.0, 0)
         ), drain(renderer));
         assertEquals(2_500, renderer.frameAt(5.0));
         for (float sample : left) {
@@ -184,14 +184,59 @@ class AudioEngineLiveTest {
     }
 
     @Test
-    void aMutedMelodySendsNothing() {
+    void aMutedMelodySendsNothingAndAQuieterOneSendsSofterNotes() {
         var melody = new MelodyTrack(List.of(new Note(1.0, new Voice.Pitch(60), 0.5, 1.0f)), 4.0, 0.0f);
-        Song song = new Song(120, 4, List.of(melody));
-        var renderer = engine().liveRenderer(() -> jam(song), true);
+        var jam = new AtomicReference<>(jam(new Song(120, 4, List.of(melody))));
+        var renderer = engine().liveRenderer(jam::get, true);
 
-        render(renderer, BLOCKS);
+        render(renderer, 1);
 
-        assertEquals(List.of(), drain(renderer));
+        // queued all the same, so that unmuting it later in the loop is heard at once
+        AudioEngine.ExternalNote noteOn = drain(renderer).getFirst();
+        assertEquals(127, noteOn.velocity());
+        assertEquals(0, AudioEngine.sentVelocity(noteOn, renderer.trackGain(noteOn.track())), "muted: not sent");
+        jam.set(jam(new Song(120, 4, List.of(new MelodyTrack(melody.notes(), 4.0, 0.5f)))));
+        render(renderer, 1);
+        assertEquals(64, AudioEngine.sentVelocity(noteOn, renderer.trackGain(noteOn.track())));
+    }
+
+    @Test
+    void aMuteIsHeardAtOnceRatherThanAtTheNextLoop() {
+        Song playing = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "XXXX", 1.0f),
+                new DrumTrack(Drum.SNARE, "X...", 0.5f)));
+        Song muted = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "XXXX", 0.0f),
+                new DrumTrack(Drum.SNARE, "X...", 0.5f)));
+        var jam = new AtomicReference<>(jam(playing));
+        var renderer = engine().liveRenderer(jam::get, false);
+
+        float[] before = render(renderer, 5);
+        jam.set(jam(muted));
+        float[] after = render(renderer, 26);
+
+        assertEquals(1.0f, before[500]);
+        assertEquals(0.0f, after[1_000 - 640], "the next kick, in the same loop");
+        assertEquals(0.0f, after[1_500 - 640]);
+        assertEquals(0.5f, after[2_000 - 640], "the other track plays on");
+    }
+
+    @Test
+    void aMutedNoteFallsSilentWhileItSoundsWithoutAClick() {
+        var level = new AtomicReference<>(0.25f);
+        var note = new MelodyTrack(List.of(new Note(0.0, new Voice.Pitch(60), 4.0, 1.0f)), 4.0, 1.0f);
+        var jam = new AtomicReference<>(new AudioEngine.Jam(new Song(120, 4, List.of(note)), constantLevelSynth(level)));
+        var renderer = engine().liveRenderer(jam::get, false);
+
+        float[] before = render(renderer, 2);
+        jam.set(new AudioEngine.Jam(new Song(120, 4, List.of(new MelodyTrack(note.notes(), 4.0, 0.0f))),
+                jam.get().synth()));
+        float[] fading = render(renderer, 1);
+        float[] after = render(renderer, 1);
+
+        assertEquals(0.25f, before[200], 1e-6f);
+        // one block's glide down, not a step: halfway through it, half the level
+        assertEquals(0.125f, fading[BLOCK / 2], 1e-3f);
+        assertTrue(fading[BLOCK - 1] < 0.01f);
+        assertEquals(0.0f, after[10], "the note still held, but silent");
     }
 
     @Test
@@ -272,7 +317,8 @@ class AudioEngineLiveTest {
     @Test
     void aHeldStutterKeepsItsSliceWhileTheSongMovesOnUnderneath() {
         Song kicks = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "X...", 0.5f)));
-        Song snares = new Song(120, 4, List.of(new DrumTrack(Drum.SNARE, ".X..", 0.25f)));
+        // at the same gain as the kicks: a repeat plays at the gain of its track as it is now
+        Song snares = new Song(120, 4, List.of(new DrumTrack(Drum.SNARE, ".X..", 0.5f)));
         var renderer = engine().liveRenderer(firstThen(jam(kicks), jam(snares)), false);
         renderer.stutter(0.5);
 

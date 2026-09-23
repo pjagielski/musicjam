@@ -244,7 +244,7 @@ public final class AudioEngine {
 
             while (hasNextEvent() && nextEventFrame() < blockEnd) {
                 long eventFrame = nextEventFrame();
-                renderVoices(voices, mix, mix, position, segmentStart, eventFrame);
+                renderVoices(voices, mix, mix, null, position, segmentStart, eventFrame);
                 do {
                     BarHit hit = barHits[nextHit];
                     allocateVoice(voices, eventFrame).trigger(hit.sample, eventFrame, hit.velocity);
@@ -252,7 +252,7 @@ public final class AudioEngine {
                 } while (hasNextEvent() && nextEventFrame() == eventFrame);
                 segmentStart = eventFrame;
             }
-            renderVoices(voices, mix, mix, position, segmentStart, blockEnd);
+            renderVoices(voices, mix, mix, null, position, segmentStart, blockEnd);
             position = blockEnd;
             return frames;
         }
@@ -276,12 +276,15 @@ public final class AudioEngine {
 
     }
 
-    /** Live voices go to the synth's own bus, so effects can be put across them alone. */
-    private static void renderVoices(VoiceSlot[] voices, float[] mix, float[] bus,
+    /**
+     * Live voices go to the synth's own bus, so effects can be put across them alone. With
+     * {@code gains}, each voice is played at its track's gain as it stands in this block.
+     */
+    private static void renderVoices(VoiceSlot[] voices, float[] mix, float[] bus, TrackGains gains,
                                      long blockStart, long fromFrame, long toFrame) {
         for (VoiceSlot voice : voices) {
             if (voice.active) {
-                voice.render(voice.isLive() ? bus : mix, blockStart, fromFrame, toFrame);
+                voice.render(voice.isLive() ? bus : mix, gains, blockStart, fromFrame, toFrame);
             }
         }
     }
@@ -320,9 +323,19 @@ public final class AudioEngine {
     /**
      * A melody note for an external synth, placed in beats from the start of the jam, so it moves
      * with the tempo until it is sent. {@code startBeat} is the beat of the note it belongs to: its
-     * own for a note-on, the note-on's for a note-off.
+     * own for a note-on, the note-on's for a note-off. {@code velocity} is the note's own, before
+     * its track's gain, which is applied as it is sent: a note of a muted track is not sent at all.
      */
-    record ExternalNote(double beat, boolean on, int midiNote, int velocity, double startBeat) {
+    record ExternalNote(double beat, boolean on, int midiNote, int velocity, double startBeat, int track) {
+    }
+
+    /**
+     * The velocity a note-on goes out with at its track's {@code gain} as it is when sent, or 0
+     * when it is not to be sent at all: its track is muted. Never 0 otherwise, which a synth would
+     * read as a note-off.
+     */
+    static int sentVelocity(ExternalNote note, float gain) {
+        return gain <= 0.0f ? 0 : Math.max(1, Math.round(note.velocity() * gain));
     }
 
     /**
@@ -332,20 +345,24 @@ public final class AudioEngine {
      * is what lets a new tempo move every hit not yet played.
      */
     private record LiveHit(double beat, Sample sample, LivePitchSynth synth, int midiNote, double heldBeats,
-                           float gain, boolean kick) {
+                           float gain, boolean kick, int track) {
 
-        static LiveHit sample(double beat, Sample sample, float gain, boolean kick) {
-            return new LiveHit(beat, sample, null, 0, 0, gain, kick);
+        static LiveHit sample(double beat, Sample sample, float gain, boolean kick, int track) {
+            return new LiveHit(beat, sample, null, 0, 0, gain, kick, track);
         }
 
-        static LiveHit note(double beat, LivePitchSynth synth, int midiNote, double heldBeats, float gain) {
-            return new LiveHit(beat, null, synth, midiNote, heldBeats, gain, false);
+        static LiveHit note(double beat, LivePitchSynth synth, int midiNote, double heldBeats, float gain, int track) {
+            return new LiveHit(beat, null, synth, midiNote, heldBeats, gain, false, track);
         }
 
         /** The same hit at {@code at}, held no longer than {@code room}: a stutter chops, it does not smear. */
         LiveHit repeatedAt(double at, double room) {
-            return new LiveHit(at, sample, synth, midiNote, Math.min(heldBeats, room), gain, kick);
+            return new LiveHit(at, sample, synth, midiNote, Math.min(heldBeats, room), gain, kick, track);
         }
+    }
+
+    /** A note of one loop and the track it comes from. */
+    private record TrackNote(Note note, int track) {
     }
 
     /** A loop, from the beat of the jam it starts on; {@code lengthBeats} is how long it will actually run. */
@@ -387,6 +404,8 @@ public final class AudioEngine {
         private final List<LiveHit> slice = new ArrayList<>();
         // the effects played over the finished mix, drums and synth together
         private final PerformanceFx performance = new PerformanceFx(sampleRate);
+        // each track's gain, read from the jam every block and applied to its voices as they play
+        private final TrackGains gains = new TrackGains(blockSize);
         private volatile double stutterRequested;
         private double stutterBeats;
         private double sliceStart;
@@ -417,6 +436,11 @@ public final class AudioEngine {
 
         PerformanceFx performance() {
             return performance;
+        }
+
+        /** A track's gain as the jam has it now. Safe from any thread. */
+        float trackGain(int track) {
+            return gains.now(track);
         }
 
         /** The frame {@code beat} of the jam falls on, at the tempo as it stands. Safe from any thread. */
@@ -452,22 +476,25 @@ public final class AudioEngine {
             long blockEnd = position + blockSize;
             if (scheduling) {
                 Jam jam = jams.get();
+                gains.next(jam.song());
                 tempo = tempo.at(position, jam.song().bpm());
                 followLoopLength(jam);
                 while (tempo.frameAt(nextLoopBeat) < blockEnd) {
                     compileNextLoop(jam);
                 }
+            } else {
+                gains.hold();
             }
             updateStutter(blockEnd);
             long segmentStart = position;
             LiveHit hit;
             while ((hit = pollNext(blockEnd)) != null) {
                 long frame = Math.max(segmentStart, tempo.frameAt(hit.beat()));
-                renderVoices(voices, mix, bus, position, segmentStart, frame);
+                renderVoices(voices, mix, bus, gains, position, segmentStart, frame);
                 segmentStart = frame;
                 play(hit, frame);
             }
-            renderVoices(voices, mix, bus, position, segmentStart, blockEnd);
+            renderVoices(voices, mix, bus, gains, position, segmentStart, blockEnd);
             mixInBus(mix);
             performance.process(mix, blockSize, tempo.bpm());
             position = blockEnd;
@@ -486,6 +513,7 @@ public final class AudioEngine {
             } else {
                 slot.trigger(hit.sample(), frame, hit.gain());
             }
+            slot.track = hit.track();
         }
 
         /**
@@ -660,7 +688,18 @@ public final class AudioEngine {
         private void queue(Jam jam, double loopStart, double fromBeat, double toBeat) {
             Song song = jam.song();
             Transport transport = new Transport(song.bpm(), sampleRate);
-            for (Note note : PatternCompiler.compile(song)) {
+            List<List<Note>> byTrack = PatternCompiler.compileByTrack(song);
+            List<TrackNote> loop = new ArrayList<>();
+            for (int track = 0; track < byTrack.size(); track++) {
+                for (Note note : byTrack.get(track)) {
+                    loop.add(new TrackNote(note, track));
+                }
+            }
+            // in order of their beats across the tracks, which is the order the hits are played in
+            loop.sort(Comparator.comparingDouble(trackNote -> trackNote.note().beat()));
+            for (TrackNote trackNote : loop) {
+                Note note = trackNote.note();
+                int track = trackNote.track();
                 // a hit past the loop end would land after the next loop's first hits and break their order
                 if (note.velocity() <= 0.0f || note.beat() < fromBeat || note.beat() >= toBeat) {
                     continue;
@@ -669,18 +708,20 @@ public final class AudioEngine {
                 if (externalMelody != null && note.voice() instanceof Voice.Pitch pitch) {
                     // velocity 0 on a note-on would be read as a note-off by the receiving synth
                     int velocity = Math.max(1, Math.round(note.velocity() * 127.0f));
-                    externalMelody.add(new ExternalNote(beat, true, pitch.midiNote(), velocity, beat));
-                    externalMelody.add(new ExternalNote(beat + note.durationBeats(), false, pitch.midiNote(), 0, beat));
+                    externalMelody.add(new ExternalNote(beat, true, pitch.midiNote(), velocity, beat, track));
+                    externalMelody.add(new ExternalNote(beat + note.durationBeats(), false, pitch.midiNote(), 0, beat,
+                            track));
                 } else if (jam.synth() instanceof LivePitchSynth live && note.voice() instanceof Voice.Pitch pitch) {
                     if (effects == null) {
                         effects = live.effects(sampleRate);
                     }
                     // a voice of its own, reading the synth's parameters as it plays, so a knob
                     // moved now is heard in this note rather than in the loop after it
-                    hits.addLast(LiveHit.note(beat, live, pitch.midiNote(), note.durationBeats(), note.velocity()));
+                    hits.addLast(LiveHit.note(beat, live, pitch.midiNote(), note.durationBeats(), note.velocity(),
+                            track));
                 } else {
                     hits.addLast(LiveHit.sample(beat, sampleFor(note, transport, jam.synth()), note.velocity(),
-                            note.voice() == Drum.KICK));
+                            note.voice() == Drum.KICK, track));
                 }
             }
         }
@@ -842,9 +883,12 @@ public final class AudioEngine {
                     }
                     ExternalNote note = pendingMelody.poll();
                     if (note.on()) {
-                        externalMelody.noteOn(note.midiNote(), note.velocity());
-                        sounding.add(note.midiNote());
-                    } else {
+                        int velocity = sentVelocity(note, renderer.trackGain(note.track()));
+                        if (velocity > 0) {
+                            externalMelody.noteOn(note.midiNote(), velocity);
+                            sounding.add(note.midiNote());
+                        }
+                    } else if (sounding.contains(note.midiNote())) {
                         externalMelody.noteOff(note.midiNote());
                         sounding.remove(note.midiNote());
                     }
@@ -907,9 +951,12 @@ public final class AudioEngine {
         private VoiceSource source;
         private long startFrame;
         private float gain;
+        // the track the voice plays for, whose gain it follows; -1 for none
+        private int track = -1;
         private boolean active;
 
         private void trigger(Sample sample, long startFrame, float gain) {
+            this.track = -1;
             this.sample = sample;
             this.source = null;
             this.startFrame = startFrame;
@@ -922,6 +969,7 @@ public final class AudioEngine {
         }
 
         private void trigger(VoiceSource source, long startFrame, float gain) {
+            this.track = -1;
             this.sample = null;
             this.source = source;
             this.startFrame = startFrame;
@@ -938,17 +986,17 @@ public final class AudioEngine {
             return sample.frameCount() - played;
         }
 
-        private void render(float[] mix, long blockStart, long fromFrame, long toFrame) {
+        private void render(float[] mix, TrackGains gains, long blockStart, long fromFrame, long toFrame) {
             long firstFrame = Math.max(fromFrame, startFrame);
             if (source != null) {
-                renderSource(mix, blockStart, firstFrame, toFrame);
+                renderSource(mix, gains, blockStart, firstFrame, toFrame);
                 return;
             }
             long sampleFrame = firstFrame - startFrame;
             for (long frame = firstFrame; frame < toFrame && sampleFrame < sample.frameCount();
                  frame++, sampleFrame++) {
-                float value = sample.valueAt((int) sampleFrame) * gain;
                 int outputFrame = (int) (frame - blockStart);
+                float value = sample.valueAt((int) sampleFrame) * gain * trackGain(gains, outputFrame);
                 mix[outputFrame * CHANNELS] += value;
                 mix[outputFrame * CHANNELS + 1] += value;
             }
@@ -958,18 +1006,22 @@ public final class AudioEngine {
         }
 
         /** The frames come one at a time and in order, which is all {@link VoiceSource} promises. */
-        private void renderSource(float[] mix, long blockStart, long firstFrame, long toFrame) {
+        private void renderSource(float[] mix, TrackGains gains, long blockStart, long firstFrame, long toFrame) {
             for (long frame = firstFrame; frame < toFrame; frame++) {
                 if (source.finished()) {
                     active = false;
                     source = null;
                     return;
                 }
-                float value = source.next() * gain;
                 int outputFrame = (int) (frame - blockStart);
+                float value = source.next() * gain * trackGain(gains, outputFrame);
                 mix[outputFrame * CHANNELS] += value;
                 mix[outputFrame * CHANNELS + 1] += value;
             }
+        }
+
+        private float trackGain(TrackGains gains, int offset) {
+            return gains == null ? 1.0f : gains.at(track, offset);
         }
     }
 }
