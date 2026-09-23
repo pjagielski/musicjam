@@ -8,6 +8,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
@@ -47,6 +48,10 @@ import java.util.function.Supplier;
 public final class SynthControls {
 
     private static final double COLUMN_WIDTH = 350;
+    // four columns across a window: narrower, with lower pictures, so the panel stays flat
+    // four of these, framed and 14 apart, make the studio's full width; the delay's sync chips need all of it
+    private static final double WIDE_COLUMN_WIDTH = 312;
+    private static final double GAP = 14;
     private static final double KNOB_WIDTH = 62;
 
     private static final Param CUTOFF = Param.exponential("Cutoff", 40, 12000, "Hz", 0, 7200);
@@ -153,12 +158,19 @@ public final class SynthControls {
     private double bpm = 120;
     private final Label presetLabel = new Label("Preset");
     private final VBox panel;
+    private final HBox syncRow;
+    private final HBox presetRow;
 
     private Theme theme;
+    private final double columnWidth;
     private BiConsumer<SynthParams, EffectParams> onChange = (params, effects) -> { };
     private boolean applying;
 
-    /** For a light background, as a column of {@code columns} groups: 1 beside a jam, 2 on its own. */
+    /**
+     * For a light background, as a column of {@code columns} groups: 1 beside a jam, 2 on its own,
+     * 4 across a whole window — where the oscillator and the amplifier, which have no picture, take
+     * a flat row of two columns each above the other four.
+     */
     public static SynthControls light(int columns) {
         return new SynthControls(Theme.LIGHT, columns);
     }
@@ -169,6 +181,8 @@ public final class SynthControls {
 
     private SynthControls(Theme theme, int columns) {
         this.theme = theme;
+        this.columnWidth = columns >= 4 ? WIDE_COLUMN_WIDTH : COLUMN_WIDTH;
+        double pictureHeight = columns >= 4 ? 120 : 150;
         detune = knob(Param.linear("Detune", 0, 60, "ct", 1, 17), Theme.Accent.OSC, 62);
         sub = knob(Param.linear("Sub", 0, 1, "", 2, 0), Theme.Accent.OSC, 62);
         vibrato = knob(Param.linear("Vibrato", 0, 12, "ct", 2, 1.4), Theme.Accent.OSC, 62);
@@ -181,19 +195,20 @@ public final class SynthControls {
         resonance = knob(RESONANCE, Theme.Accent.FILTER, 62);
         envAmount = knob(Param.bipolar("Env→Filt", -4000, 8000, "Hz", 0, 1200), Theme.Accent.FILTER, 62);
         keyTrack = knob(Param.linear("Key trk", 0, 80, "Hz/semi", 0, 45), Theme.Accent.FILTER, 62);
-        pad = new XyPad(CUTOFF, RESONANCE, Theme.Accent.FILTER, COLUMN_WIDTH, 150, theme);
+        pad = new XyPad(CUTOFF, RESONANCE, Theme.Accent.FILTER, columnWidth, pictureHeight, theme);
 
         attack = knob(ATTACK, Theme.Accent.AMP, 62);
         decay = knob(DECAY, Theme.Accent.AMP, 62);
         sustain = knob(SUSTAIN, Theme.Accent.AMP, 62);
         release = knob(RELEASE, Theme.Accent.AMP, 62);
-        envelope = new AdsrEditor(ATTACK, DECAY, SUSTAIN, RELEASE, Theme.Accent.AMP, COLUMN_WIDTH, 150, theme);
+        envelope = new AdsrEditor(ATTACK, DECAY, SUSTAIN, RELEASE, Theme.Accent.AMP, columnWidth, pictureHeight,
+                theme);
         filterAttack = knob(FILTER_ATTACK, Theme.Accent.FILTER, 62);
         filterDecay = knob(FILTER_DECAY, Theme.Accent.FILTER, 62);
         filterSustain = knob(FILTER_SUSTAIN, Theme.Accent.FILTER, 62);
         filterRelease = knob(FILTER_RELEASE, Theme.Accent.FILTER, 62);
         filterEnvelope = new AdsrEditor(FILTER_ATTACK, FILTER_DECAY, FILTER_SUSTAIN, FILTER_RELEASE,
-                Theme.Accent.FILTER, COLUMN_WIDTH, 150, theme);
+                Theme.Accent.FILTER, columnWidth, pictureHeight, theme);
 
         EffectParams start = EffectParams.DEFAULT;
         delayTime = knob(Param.exponential("Time", 20, 2000, "ms", 0, start.delayMillis()), Theme.Accent.FX, 62);
@@ -228,7 +243,7 @@ public final class SynthControls {
                 apply(chosen.get().params());
             }
         });
-        HBox presetRow = new HBox(10, presetLabel, preset);
+        presetRow = new HBox(10, presetLabel, preset);
         presetRow.setAlignment(Pos.CENTER_LEFT);
 
         delayMode = new Choice<>(Choice.Look.SEGMENTS, List.of(DelayMode.values()),
@@ -238,9 +253,10 @@ public final class SynthControls {
         sync.setOnChange(division -> applySync());
         HBox syncRow = new HBox(8, syncLabel, sync);
         syncRow.setAlignment(Pos.CENTER_LEFT);
-        delayDiagram = new DelayDiagram(COLUMN_WIDTH, Theme.Accent.FX, theme);
+        this.syncRow = syncRow;
+        delayDiagram = new DelayDiagram(columnWidth, Theme.Accent.FX, theme);
         VBox delayPicture = new VBox(8, delayMode, delayDiagram, syncRow);
-        reverbDiagram = new ReverbDiagram(COLUMN_WIDTH, 128, Theme.Accent.FX, theme);
+        reverbDiagram = new ReverbDiagram(columnWidth, pictureHeight - 22, Theme.Accent.FX, theme);
 
         // one group, two envelopes: the level's and the filter's share the frame, a switch between them
         envelopeView = new Choice<>(Choice.Look.SEGMENTS, List.of(EnvelopeView.values()), EnvelopeView.AMP,
@@ -252,29 +268,76 @@ public final class SynthControls {
             ampEnvelope.setVisible(view == EnvelopeView.AMP);
             ownFilterEnvelope.setVisible(view == EnvelopeView.FILTER);
         });
-        VBox envelopes = new VBox(8, envelopeView, new StackPane(ampEnvelope, ownFilterEnvelope));
+        StackPane bothEnvelopes = new StackPane(ampEnvelope, ownFilterEnvelope);
+        VBox envelopes = new VBox(8, envelopeView, bothEnvelopes);
+        // grown to the height of the row, so its knobs sit as low as the other groups' do
+        VBox.setVgrow(bothEnvelopes, Priority.ALWAYS);
 
+        // across a window the two groups without a picture take two columns each, in a row of their own
+        int span = columns >= 4 ? 2 : 1;
         List<VBox> groupBoxes = List.of(
-                section("Oscillator", Theme.Accent.OSC, null, detune, sub, vibrato, motionRate, drift),
-                section("Amp · Sidechain", Theme.Accent.AMP, null, drive, trim, crush, duckDepth, duckRecover),
+                section("Oscillator", Theme.Accent.OSC, null, span, detune, sub, vibrato, motionRate, drift),
+                section("Amp · Sidechain", Theme.Accent.AMP, null, span, drive, trim, crush, duckDepth, duckRecover),
                 section("Filter", Theme.Accent.FILTER, pad, cutoff, resonance, envAmount, keyTrack),
                 section("Envelope", Theme.Accent.AMP, envelopes),
                 section("Delay", Theme.Accent.FX, delayPicture, delayTime, delayFeedback, delayTone, delayMix),
                 section("Reverb", Theme.Accent.FX, reverbDiagram, reverbSize, reverbDamping, reverbMix));
         GridPane groups = new GridPane();
-        groups.setHgap(14);
+        groups.setHgap(GAP);
         groups.setVgap(12);
-        for (int index = 0; index < groupBoxes.size(); index++) {
-            groups.add(groupBoxes.get(index), index % columns, index / columns);
+        if (span > 1) {
+            groups.add(groupBoxes.get(0), 0, 0, span, 1);
+            groups.add(groupBoxes.get(1), span, 0, span, 1);
+            for (int index = 2; index < groupBoxes.size(); index++) {
+                groups.add(groupBoxes.get(index), index - 2, 1);
+            }
+        } else {
+            for (int index = 0; index < groupBoxes.size(); index++) {
+                groups.add(groupBoxes.get(index), index % columns, index / columns);
+            }
         }
 
-        panel = new VBox(12, presetRow, groups);
+        // across a window the preset goes wherever the window puts it, beside its heading, say
+        panel = span > 1 ? new VBox(groups) : new VBox(12, presetRow, groups);
+        if (span > 1) {
+            // the envelope's picture, under its Amp/Filter switch, is the tallest of the row's four; the
+            // others grow to end on the same line once the switches' heights are known
+            double envelopeHeight = pictureHeight;
+            for (var laidOut : List.of(envelopeView.heightProperty(), delayMode.heightProperty(),
+                    syncRow.heightProperty())) {
+                laidOut.addListener((property, before, after) -> alignPictures(envelopeHeight));
+            }
+        }
         setTheme(theme);
         redrawEffects();
     }
 
     public Region node() {
         return panel;
+    }
+
+    /**
+     * The lower row's four pictures, ending on one line: the filter's pad and the reverb's tail as
+     * tall as the envelope's switch and picture together, and the delay's lanes taking what its
+     * mode switch and sync chips leave of that height.
+     */
+    private void alignPictures(double envelopeHeight) {
+        double switchHeight = envelopeView.getHeight();
+        if (switchHeight <= 0 || delayMode.getHeight() <= 0 || syncRow.getHeight() <= 0) {
+            return;
+        }
+        double line = switchHeight + 8 + envelopeHeight;
+        pad.setHeight(line);
+        reverbDiagram.setHeight(line);
+        delayDiagram.setHeight(Math.max(48, line - delayMode.getHeight() - syncRow.getHeight() - 16));
+    }
+
+    /**
+     * The preset picker. Part of {@link #node()} in one or two columns; across a window, left for
+     * the window to place.
+     */
+    public Region presetPicker() {
+        return presetRow;
     }
 
     /** Called whenever a control moves, with everything the synth and its effects need. */
@@ -461,11 +524,18 @@ public final class SynthControls {
     }
 
     /** An envelope's picture with its four knobs under it, one column wide. */
-    private static VBox envelopeBox(AdsrEditor editor, Knob... controls) {
+    private VBox envelopeBox(AdsrEditor editor, Knob... controls) {
         HBox row = new HBox(10, controls);
-        row.setAlignment(Pos.CENTER);
-        row.setPrefWidth(COLUMN_WIDTH);
-        return new VBox(10, editor, row);
+        row.setAlignment(Pos.BOTTOM_CENTER);
+        row.setPrefWidth(columnWidth);
+        return new VBox(10, editor, filler(), row);
+    }
+
+    /** The room between a picture and its knobs, which takes whatever height the row has spare. */
+    private static Region filler() {
+        Region filler = new Region();
+        VBox.setVgrow(filler, Priority.ALWAYS);
+        return filler;
     }
 
     private Knob knob(Param param, Theme.Accent accent, double size) {
@@ -482,19 +552,35 @@ public final class SynthControls {
      * of what they do when the group has one. Every frame is the same width, so the four line up.
      */
     private VBox section(String name, Theme.Accent accent, Node picture, Knob... controls) {
-        HBox row = new HBox(10, controls);
-        row.setAlignment(Pos.CENTER);
-        row.setPrefWidth(COLUMN_WIDTH);
+        return section(name, accent, picture, 1, controls);
+    }
+
+    /**
+     * A group {@code span} columns wide. Wider than one, its knobs spread out evenly across it
+     * rather than bunching in the middle.
+     */
+    private VBox section(String name, Theme.Accent accent, Node picture, int span, Knob... controls) {
+        double width = span * columnWidth + (span - 1) * (28 + GAP);
+        double spacing = span == 1 ? 10 : (width - controls.length * KNOB_WIDTH) / (controls.length + 1);
+        HBox row = new HBox(spacing, controls);
+        // along the bottom, so the readouts of knobs of two sizes line up
+        row.setAlignment(Pos.BOTTOM_CENTER);
+        row.setPrefWidth(width);
 
         Label header = new Label(name.toUpperCase());
         headers.put(header, accent);
+        // the groups of a row are as tall as its tallest, and their knobs sit along the bottom of it,
+        // one line across the row however tall each picture is
         VBox box = picture == null ? new VBox(10, header, row)
                 : controls.length == 0 ? new VBox(10, header, picture)
-                : new VBox(10, header, picture, row);
+                : new VBox(10, header, picture, filler(), row);
+        if (controls.length == 0 && picture != null) {
+            VBox.setVgrow(picture, Priority.ALWAYS);
+        }
         box.setPadding(new Insets(12, 14, 14, 14));
-        box.setPrefWidth(COLUMN_WIDTH + 28);
-        box.setMinWidth(COLUMN_WIDTH + 28);
-        box.setMaxWidth(COLUMN_WIDTH + 28);
+        box.setPrefWidth(width + 28);
+        box.setMinWidth(width + 28);
+        box.setMaxWidth(width + 28);
         frames.add(box);
         return box;
     }

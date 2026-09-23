@@ -20,6 +20,7 @@ final class ReverbDiagram extends Canvas {
 
     ReverbDiagram(double width, double height, Theme.Accent accent, Theme theme) {
         super(width, height);
+        heightProperty().addListener((property, before, after) -> draw());
         this.accent = accent;
         this.theme = theme;
         draw();

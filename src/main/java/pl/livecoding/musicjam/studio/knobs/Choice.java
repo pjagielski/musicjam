@@ -6,6 +6,7 @@ import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
 import java.util.LinkedHashMap;
@@ -51,6 +52,9 @@ final class Choice<T> extends HBox {
             if (look == Look.SEGMENTS) {
                 button.setMaxWidth(Double.MAX_VALUE);
                 HBox.setHgrow(button, Priority.ALWAYS);
+            } else {
+                // a chip is never squeezed into "..."; a row too narrow for them shows that plainly
+                button.setMinWidth(Region.USE_PREF_SIZE);
             }
             buttons.put(option, button);
             getChildren().add(button);
@@ -106,7 +110,7 @@ final class Choice<T> extends HBox {
                         + " -fx-border-color: " + Theme.web(edge) + "; -fx-border-radius: 14;"
                         + " -fx-text-fill: " + Theme.web(chosen ? theme.text() : theme.mutedText())
                         + "; -fx-font-family: 'Consolas', 'Menlo', monospace; -fx-font-size: 11px;"
-                        + " -fx-padding: 4 9 4 9;");
+                        + " -fx-padding: 4 7 4 7;");
             }
         });
     }

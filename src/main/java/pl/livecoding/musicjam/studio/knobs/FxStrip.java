@@ -35,7 +35,7 @@ import java.util.function.IntConsumer;
 public final class FxStrip extends VBox {
 
     private static final double WIDTH = 78;
-    private static final double HEIGHT = 216;
+    private static final double HEIGHT = 132;
     private static final double OFF = -1;
 
     private final List<String> zones;

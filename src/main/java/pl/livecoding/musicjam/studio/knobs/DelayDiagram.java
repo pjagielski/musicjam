@@ -18,15 +18,18 @@ final class DelayDiagram extends Canvas {
     private static final double LEFT_LANE = 12;
     private static final double RIGHT_LANE = 36;
     private static final double START = 30;
+    private static final double LANES_HEIGHT = 48;
 
     private final Theme.Accent accent;
     private Theme theme;
     private EffectParams effects = EffectParams.DEFAULT;
 
     DelayDiagram(double width, Theme.Accent accent, Theme theme) {
-        super(width, 48);
+        super(width, LANES_HEIGHT);
         this.accent = accent;
         this.theme = theme;
+        // made taller to line up with a neighbour, it draws its two lanes in the middle of the room
+        heightProperty().addListener((property, before, after) -> draw());
         draw();
     }
 
@@ -44,6 +47,8 @@ final class DelayDiagram extends Canvas {
         GraphicsContext g = getGraphicsContext2D();
         double width = getWidth();
         g.clearRect(0, 0, width, getHeight());
+        g.save();
+        g.translate(0, Math.max(0, (getHeight() - LANES_HEIGHT) / 2));
 
         g.setStroke(theme.grid());
         g.setLineWidth(1);
@@ -89,6 +94,7 @@ final class DelayDiagram extends Canvas {
             }
             level *= effects.delayFeedback();
         }
+        g.restore();
     }
 
     private void dot(GraphicsContext g, double x, double y, double level, double faded, boolean dry) {

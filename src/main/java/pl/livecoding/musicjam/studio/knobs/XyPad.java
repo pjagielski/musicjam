@@ -23,6 +23,7 @@ final class XyPad extends Canvas {
 
     XyPad(Param horizontal, Param vertical, Theme.Accent accent, double width, double height, Theme theme) {
         super(width, height);
+        heightProperty().addListener((property, before, after) -> draw());
         this.horizontal = horizontal;
         this.vertical = vertical;
         this.accent = accent;
