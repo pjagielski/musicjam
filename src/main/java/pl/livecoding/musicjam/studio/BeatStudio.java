@@ -539,24 +539,15 @@ public final class BeatStudio extends Application {
      */
     private StudioTrack.Melody newMelody() {
         StudioTrack.Melody first = tracks.firstMelody();
-        Path file = first != null ? first.source().file() : request.file().toAbsolutePath().normalize();
-        Sequence sequence = sequences.get(file);
-        List<Integer> withNotes = MidiWindowEditor.tracksWithNotes(sequence);
-        List<Integer> playing = tracks.tracks().stream()
-                .filter(track -> track instanceof StudioTrack.Melody melody && melody.source().file().equals(file))
-                .map(track -> ((StudioTrack.Melody) track).source().trackIndex())
-                .toList();
-        int index = withNotes.stream().filter(candidate -> !playing.contains(candidate)).findFirst()
-                .orElse(withNotes.isEmpty() ? 0 : withNotes.getFirst());
-        int startBar = first != null ? first.source().startBar() : 0;
         // a synth of its own, from the patch the first melody started from, with its knobs as they come
         String patch = first != null && first.instrument() != null && first.instrument().setting() != null
                 && first.instrument().setting().preset() != null
                 ? first.instrument().setting().preset() : request.synth();
         Instrument instrument = Instrument.of(patch);
         instrument.setMidi(unusedChannel(), 74, 64);
-        return new StudioTrack.Melody(unusedName(trackName(sequence, index)), 1.0f, false,
-                new MidiWindow(file, index, startBar), instrument);
+        // an empty line to write in the roll; a MIDI file can be read into it from the editor
+        return new StudioTrack.Melody(unusedName("Melody"), 1.0f, false,
+                new MelodySource.OwnNotes(List.of(), null), instrument);
     }
 
     /**
@@ -601,13 +592,13 @@ public final class BeatStudio extends Application {
                 try {
                     double lengthBeats = loopBeats();
                     // the roll takes the frame's width, less the frame's own padding and edge
-                    MidiWindowEditor window = new MidiWindowEditor(melody, midiFiles, this::sequenceOf,
-                            this::moveWindow, BeatStudio::showError, next -> windowNotes(next, lengthBeats),
+                    MelodyEditor melodyEditor = new MelodyEditor(melody, midiFiles, this::sequenceOf,
+                            this::sourceChanged, BeatStudio::showError, next -> notesOf(next, lengthBeats),
                             lengthBeats, BEATS_PER_BAR, FULL_WIDTH - 30);
-                    VBox frame = window.node();
+                    VBox frame = melodyEditor.node();
                     fitWidth(frame, FULL_WIDTH);
                     editor.getChildren().setAll(frame);
-                    roll = window.roll();
+                    roll = melodyEditor.roll();
                 } catch (Exception exception) {
                     editor.getChildren().clear();
                     showError(exception);
@@ -616,8 +607,8 @@ public final class BeatStudio extends Application {
         }
     }
 
-    /** The editor always shows the selected track, so that is the one whose window has moved. */
-    private void moveWindow(MidiWindow next) {
+    /** The editor always shows the selected track, so that is the one whose notes have changed. */
+    private void sourceChanged(MelodySource next) {
         int index = tracks.selectedIndex();
         if (tracks.get(index) instanceof StudioTrack.Melody melody) {
             tracks.replace(index, melody.withSource(next));
@@ -625,14 +616,20 @@ public final class BeatStudio extends Application {
         }
     }
 
-    /** A window's notes over a loop of {@code lengthBeats}, read from its file once for each loop length. */
-    private List<Note> windowNotes(MidiWindow window, double lengthBeats) {
+    /**
+     * A melody's notes over a loop of {@code lengthBeats}: its own, or a window's read from its
+     * file once for each loop length. Notes past the end of a shorter loop are kept but not played.
+     */
+    private List<Note> notesOf(MelodySource source, double lengthBeats) {
+        if (source instanceof MelodySource.OwnNotes own) {
+            return NoteEdits.within(own.notes(), lengthBeats);
+        }
         if (lengthBeats != windowsLengthBeats) {
             windows.clear();
             windowsLengthBeats = lengthBeats;
         }
-        return windows.computeIfAbsent(window, key -> BeatApp.loadMelodyTrack(sequences.get(key.file()),
-                key.trackIndex(), key.startBar(), lengthBeats / BEATS_PER_BAR).notes());
+        return windows.computeIfAbsent((MidiWindow) source, key -> BeatApp.loadMelodyTrack(
+                sequences.get(key.file()), key.trackIndex(), key.startBar(), lengthBeats / BEATS_PER_BAR).notes());
     }
 
     private double loopBeats() {
@@ -686,7 +683,7 @@ public final class BeatStudio extends Application {
         }
         double lengthBeats = loopBeats();
         Song song = tracks.song(bpm.getValue(), BEATS_PER_BAR, lengthBeats,
-                GridRow.notes(rows, BEATS_PER_BAR, lengthBeats), this::windowNotes);
+                GridRow.notes(rows, BEATS_PER_BAR, lengthBeats), this::notesOf);
         // each melody by its own instrument; the drum track's notes are samples, whatever synth it is given
         List<PitchSynth> synths = tracks.tracks().stream()
                 .map(track -> track instanceof StudioTrack.Melody melody && melody.instrument() != null
@@ -859,8 +856,11 @@ public final class BeatStudio extends Application {
         if (output == null) {
             return;
         }
+        MidiWindow window = melody.window();
+        if (window == null) {
+            return;
+        }
         try {
-            MidiWindow window = melody.source();
             output.programChange(melody.instrument().channel(),
                     MidiFileReader.readProgram(sequenceOf(window.file()), window.trackIndex()));
         } catch (Exception exception) {

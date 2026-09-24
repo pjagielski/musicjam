@@ -15,10 +15,10 @@ import java.util.List;
  */
 final class TrackList {
 
-    /** The notes of a MIDI window over a loop of {@code lengthBeats}. */
+    /** The notes of a melody's source over a loop of {@code lengthBeats}. */
     @FunctionalInterface
     interface Windows {
-        List<Note> notes(MidiWindow window, double lengthBeats);
+        List<Note> notes(MelodySource source, double lengthBeats);
     }
 
     private final List<StudioTrack> tracks = new ArrayList<>();
@@ -28,14 +28,14 @@ final class TrackList {
     }
 
     /** What a jam config makes: the grid, then the one melody it names — with the grid selected. */
-    static TrackList startingWith(String melodyName, MidiWindow melody, Instrument instrument) {
+    static TrackList startingWith(String melodyName, MelodySource melody, Instrument instrument) {
         TrackList list = new TrackList();
         list.tracks.add(new StudioTrack.Drums("Drums", 1.0f, false));
         list.tracks.add(new StudioTrack.Melody(melodyName, 1.0f, false, melody, instrument));
         return list;
     }
 
-    static TrackList startingWith(String melodyName, MidiWindow melody) {
+    static TrackList startingWith(String melodyName, MelodySource melody) {
         return startingWith(melodyName, melody, null);
     }
 

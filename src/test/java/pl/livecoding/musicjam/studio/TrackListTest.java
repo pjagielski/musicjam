@@ -23,9 +23,9 @@ class TrackListTest {
     private static final MidiWindow BASS = new MidiWindow(Path.of("bass.mid"), 2, 0);
     private static final List<Note> DRUMS = List.of(new Note(0, Drum.KICK, 0.25, 1.0f));
 
-    /** Every window's notes: one note, pitched by the track it came from, so they can be told apart. */
-    private static final TrackList.Windows WINDOWS = (window, lengthBeats) ->
-            List.of(new Note(0, new Voice.Pitch(60 + window.trackIndex()), lengthBeats, 0.9f));
+    /** Every source's notes: one note, pitched by the MIDI track it came from, so they can be told apart. */
+    private static final TrackList.Windows WINDOWS = (source, lengthBeats) ->
+            List.of(new Note(0, new Voice.Pitch(60 + ((MidiWindow) source).trackIndex()), lengthBeats, 0.9f));
 
     @Test
     void aJamConfigMakesTheSameSongAsTheStudioAlwaysDid() {

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PianoRollTest {
 
@@ -16,30 +17,44 @@ class PianoRollTest {
     void theRollSpansTheNotesWithRoomAroundThem() {
         List<Note> wide = List.of(pitch(40), pitch(71), pitch(55));
 
-        assertEquals(new PianoRoll.Keys(38, 73), PianoRoll.Keys.of(wide));
+        assertEquals(new PianoRoll.Keys(38, 73), PianoRoll.Keys.of(wide, 0));
+        assertEquals(36, PianoRoll.Keys.rowsFor(wide), "what a roll must have room for");
     }
 
     @Test
-    void aNarrowLineStillGetsAnOctaveCentredOnIt() {
+    void aShortLineGetsEveryRowTheRollHasRoomFor() {
         List<Note> narrow = List.of(pitch(60), pitch(62));
 
-        PianoRoll.Keys keys = PianoRoll.Keys.of(narrow);
+        PianoRoll.Keys keys = PianoRoll.Keys.of(narrow, 30);
 
-        assertEquals(new PianoRoll.Keys(55, 67), keys);
-        assertEquals(13, keys.rows());
+        assertEquals(30, keys.rows(), "octaves to write in, not a band of five keys");
+        assertTrue(keys.low() < 58 && keys.high() > 64, "and the notes in the middle of them: " + keys);
     }
 
     @Test
-    void drumsTakeNoKeysAndNothingToShowGetsTheOctaveAroundMiddleC() {
-        PianoRoll.Keys keys = PianoRoll.Keys.of(List.of(new Note(0, Drum.KICK, 1, 1)));
+    void aLineNeedingMoreRowsThanAskedForGetsThem() {
+        PianoRoll.Keys keys = PianoRoll.Keys.of(List.of(pitch(40), pitch(90)), 12);
 
-        assertEquals(new PianoRoll.Keys(54, 66), keys);
+        assertEquals(new PianoRoll.Keys(38, 92), keys);
+    }
+
+    @Test
+    void drumsTakeNoKeysAndNothingToShowGetsTheRowsAroundMiddleC() {
+        PianoRoll.Keys keys = PianoRoll.Keys.of(List.of(new Note(0, Drum.KICK, 1, 1)), 12);
+
+        assertEquals(12, keys.rows());
+        assertTrue(keys.low() <= 60 && keys.high() >= 60, "middle C among them: " + keys);
     }
 
     @Test
     void theRollStopsAtTheEndsOfTheMidiRange() {
-        assertEquals(0, PianoRoll.Keys.of(List.of(pitch(1), pitch(20))).low());
-        assertEquals(127, PianoRoll.Keys.of(List.of(pitch(126), pitch(100))).high());
+        PianoRoll.Keys low = PianoRoll.Keys.of(List.of(pitch(1), pitch(20)), 40);
+        assertEquals(0, low.low());
+        assertEquals(40, low.rows(), "what one end gives up the other takes");
+
+        PianoRoll.Keys high = PianoRoll.Keys.of(List.of(pitch(126), pitch(100)), 40);
+        assertEquals(127, high.high());
+        assertEquals(40, high.rows());
     }
 
     @Test

@@ -50,8 +50,8 @@ sealed interface StudioTrack permits StudioTrack.Drums, StudioTrack.Melody {
         }
     }
 
-    /** A line of notes read from a window of a MIDI file, played by an instrument of its own. */
-    record Melody(String name, float gain, boolean muted, MidiWindow source, Instrument instrument)
+    /** A line of notes of its own or of a MIDI file's, played by an instrument of its own. */
+    record Melody(String name, float gain, boolean muted, MelodySource source, Instrument instrument)
             implements StudioTrack {
 
         public Melody {
@@ -61,8 +61,19 @@ sealed interface StudioTrack permits StudioTrack.Drums, StudioTrack.Melody {
         }
 
         /** A track with no instrument to play it: what the track list's own tests need, and no more. */
-        Melody(String name, float gain, boolean muted, MidiWindow source) {
+        Melody(String name, float gain, boolean muted, MelodySource source) {
             this(name, gain, muted, source, null);
+        }
+
+        /**
+         * The MIDI file window this track plays, or the one its own notes were taken from; null for
+         * notes with no file behind them.
+         */
+        MidiWindow window() {
+            return switch (source) {
+                case MidiWindow window -> window;
+                case MelodySource.OwnNotes own -> own.from();
+            };
         }
 
         @Override
@@ -80,7 +91,7 @@ sealed interface StudioTrack permits StudioTrack.Drums, StudioTrack.Melody {
             return new Melody(name, gain, next, source, instrument);
         }
 
-        public Melody withSource(MidiWindow next) {
+        public Melody withSource(MelodySource next) {
             return new Melody(name, gain, muted, next, instrument);
         }
     }

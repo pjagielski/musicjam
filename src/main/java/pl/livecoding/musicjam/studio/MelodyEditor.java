@@ -5,7 +5,9 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.Spinner;
+import javafx.scene.Node;
 import javafx.scene.control.SpinnerValueFactory;
+import javafx.scene.control.Tooltip;
 import javafx.geometry.Pos;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -22,15 +24,20 @@ import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
- * The editor of a melody track read from a MIDI file: which file, which of its tracks and the bar
- * the window opens on, and the window's notes in a {@link PianoRoll}. How many bars it takes is the
- * loop's length, set above for the whole jam.
+ * The editor of one melody track: its notes in a {@link PianoRoll}, and above them where they come
+ * from. A track reading a window of a MIDI file shows which file, which of its tracks and the bar
+ * the window opens on; how many bars it takes is the loop's length, set above for the whole jam. A
+ * track whose notes are its own says where they came from, with a button to read the file again.
+ *
+ * <p>Either way the roll can be edited, and the first edit of a window makes its notes the track's
+ * own, so a hand never changes what a file is read as.
  */
-final class MidiWindowEditor {
+final class MelodyEditor {
 
     /** A MIDI file read once and kept, so picking it again does not read it again. */
     @FunctionalInterface
@@ -39,10 +46,11 @@ final class MidiWindowEditor {
     }
 
     private final StudioTrack.Melody track;
+    private final List<Path> files;
     private final Sequences sequences;
-    private final Consumer<MidiWindow> onChange;
+    private final Consumer<MelodySource> onChange;
     private final Consumer<Exception> onError;
-    private final Function<MidiWindow, List<Note>> notes;
+    private final Function<MelodySource, List<Note>> notes;
     private final double lengthBeats;
     private final int beatsPerBar;
     private final PianoRoll roll;
@@ -50,18 +58,29 @@ final class MidiWindowEditor {
     private final ComboBox<Integer> trackIndex = new ComboBox<>();
     private final Spinner<Integer> startBar;
     private final Label summary = new Label();
+    // the notes the track plays, as a file's window or as its own
+    private MelodySource source;
+    // the window it reads, or the one its own notes came from; null when they came from nowhere
     private MidiWindow window;
     private Sequence sequence;
     private boolean filling;
+    // the row above the roll, whose controls change when the notes stop being a file's and become
+    // the track's own; the roll itself stays, with the page it is on and the hand that is on it
+    private final HBox controls = new HBox(8);
+    private final Region push = new Region();
+    private final HBox paging;
+    private final VBox frame;
+    private final Label heading;
 
     /**
-     * {@code onChange} hears of every new window, {@code notes} gives one's notes over a loop of
+     * {@code onChange} hears of every new source, {@code notes} gives one's notes over a loop of
      * {@code lengthBeats}, and the roll that shows them is {@code width} wide.
      */
-    MidiWindowEditor(StudioTrack.Melody track, List<Path> files, Sequences sequences, Consumer<MidiWindow> onChange,
-                     Consumer<Exception> onError, Function<MidiWindow, List<Note>> notes, double lengthBeats,
-                     int beatsPerBar, double width) throws Exception {
+    MelodyEditor(StudioTrack.Melody track, List<Path> files, Sequences sequences, Consumer<MelodySource> onChange,
+                 Consumer<Exception> onError, Function<MelodySource, List<Note>> notes, double lengthBeats,
+                 int beatsPerBar, double width) throws Exception {
         this.track = track;
+        this.files = List.copyOf(files);
         this.sequences = sequences;
         this.onChange = onChange;
         this.onError = onError;
@@ -69,10 +88,11 @@ final class MidiWindowEditor {
         this.lengthBeats = lengthBeats;
         this.beatsPerBar = beatsPerBar;
         this.roll = new PianoRoll(width, 260);
-        this.window = track.source();
-        this.sequence = sequences.of(window.file());
+        this.source = track.source();
+        this.window = track.window();
+        this.sequence = window == null ? null : sequences.of(window.file());
         List<Path> choices = new ArrayList<>(files);
-        if (!choices.contains(window.file())) {
+        if (window != null && !choices.contains(window.file())) {
             choices.add(window.file());
         }
         file.getItems().setAll(choices);
@@ -87,12 +107,32 @@ final class MidiWindowEditor {
                 return null;
             }
         });
-        file.setValue(window.file());
-        startBar = new Spinner<>(1, Math.max(1, barsIn(sequence)), window.startBar() + 1);
+        file.setValue(window == null ? null : window.file());
+        startBar = new Spinner<>(1, window == null ? 1 : Math.max(1, barsIn(sequence)),
+                window == null ? 1 : window.startBar() + 1);
         startBar.setPrefWidth(80);
         trackIndex.setCellFactory(list -> new TrackCell());
         trackIndex.setButtonCell(new TrackCell());
-        fillTracks();
+        if (window != null) {
+            fillTracks();
+        }
+        roll.setOnEdit(this::edited);
+        Tooltip.install(roll.node(), new Tooltip("""
+                Click an empty row to add a note, drag one to move it,
+                drag its right edge to change its length, right-click it to take it away.
+                Drag over empty rows to gather notes, shift-click to add one to them,
+                Delete to take them all away. The lane below carries their velocities:
+                drag a bar up or down. Everything lands on the nearest sixteenth."""));
+
+        summary.setStyle("-fx-text-fill: #868e96;");
+        paging = pageButtons();
+        HBox.setHgrow(push, Priority.ALWAYS);
+        controls.setAlignment(Pos.CENTER_LEFT);
+        updateSummary();
+        frame = StudioPanels.frame("", controls, roll.node());
+        // the frame's own heading, which says where the notes come from
+        heading = (Label) frame.getChildren().getFirst();
+        fillControls();
 
         file.setOnAction(event -> {
             if (!filling && file.getValue() != null && !file.getValue().equals(window.file())) {
@@ -112,19 +152,61 @@ final class MidiWindowEditor {
         return roll;
     }
 
-    /** The window's controls in one row above the roll, so the roll gets the height. */
+    /** Where the notes come from in one row above the roll, so the roll gets the height. */
     VBox node() {
+        return frame;
+    }
+
+    /** The row above the roll, as the notes come from a file's window or from the track itself. */
+    private void fillControls() {
+        controls.getChildren().setAll(source instanceof MidiWindow ? fileControls() : ownControls());
+        controls.getChildren().addAll(gap(), summary, push, paging);
+        heading.setText((source instanceof MidiWindow ? "Melody from a MIDI file"
+                : "Melody · this track's own notes").toUpperCase(Locale.ROOT));
+    }
+
+    /** A window of a file: which file, which of its tracks, and the bar it opens on. */
+    private List<Node> fileControls() {
         Button browse = new Button("Browse...");
         browse.setOnAction(event -> browse(browse));
-        summary.setStyle("-fx-text-fill: #868e96;");
-        HBox paging = pageButtons();
-        updateSummary();
-        Region push = new Region();
-        HBox.setHgrow(push, Priority.ALWAYS);
-        HBox controls = new HBox(8, new Label("File"), file, browse, gap(), new Label("Track"), trackIndex,
-                gap(), new Label("From bar"), startBar, gap(), summary, push, paging);
-        controls.setAlignment(Pos.CENTER_LEFT);
-        return StudioPanels.frame("Melody from a MIDI file", controls, roll.node());
+        return List.of(new Label("File"), file, browse, gap(), new Label("Track"), trackIndex,
+                gap(), new Label("From bar"), startBar);
+    }
+
+    /**
+     * Notes of the track's own: where they came from, if anywhere, a button to read that window
+     * again, and one to read any MIDI file into the track instead of what is written here.
+     */
+    private List<Node> ownControls() {
+        Label from = new Label(window == null ? "Written here"
+                : "Taken from " + window.file().getFileName() + ", track " + window.trackIndex()
+                        + ", bar " + (window.startBar() + 1));
+        from.setStyle("-fx-text-fill: #868e96;");
+        Button browse = new Button(window == null ? "From a MIDI file..." : "Browse...");
+        browse.setOnAction(event -> browse(browse));
+        if (window == null) {
+            return List.of(from, browse);
+        }
+        Button reload = new Button("Read the file again");
+        reload.setOnAction(event -> change(window));
+        return List.of(from, reload, browse);
+    }
+
+    /**
+     * A hand has changed the notes. The first edit of a window makes them the track's own: what a
+     * file is read as stays as it is, and from now on these notes are the track's.
+     */
+    private void edited(List<Note> edited) {
+        boolean wasWindow = source instanceof MidiWindow;
+        source = source instanceof MelodySource.OwnNotes own
+                ? own.with(edited)
+                : MelodySource.OwnNotes.takenFrom(window, edited);
+        summarise();
+        onChange.accept(source);
+        if (wasWindow) {
+            // the row above says where the notes come from, which has just changed
+            fillControls();
+        }
     }
 
     /**
@@ -168,8 +250,10 @@ final class MidiWindowEditor {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("A MIDI file for " + track.name());
         chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("MIDI files", "*.mid", "*.midi"));
-        File parent = window.file().toAbsolutePath().getParent().toFile();
-        if (parent.isDirectory()) {
+        // this track's own file, or the jam's, for a track that has never read one
+        Path near = window != null ? window.file() : files.isEmpty() ? null : files.getFirst();
+        File parent = near == null ? null : near.toAbsolutePath().getParent().toFile();
+        if (parent != null && parent.isDirectory()) {
             chooser.setInitialDirectory(parent);
         }
         File chosen = chooser.showOpenDialog(owner.getScene().getWindow());
@@ -207,13 +291,19 @@ final class MidiWindowEditor {
         change(window);
     }
 
+    /** Another window, by a picker or by reading the file again: the track reads it from now on. */
     private void change(MidiWindow next) {
         if (filling) {
             return;
         }
+        boolean wasOwn = !(source instanceof MidiWindow);
         window = next;
+        source = next;
         updateSummary();
         onChange.accept(next);
+        if (wasOwn) {
+            fillControls();
+        }
     }
 
     private void fillTracks() {
@@ -228,14 +318,22 @@ final class MidiWindowEditor {
         filling = wasFilling;
     }
 
-    /** The count of the window's notes, and the notes themselves in the roll. */
+    /** The count of the notes, and the notes themselves in the roll. */
     private void updateSummary() {
-        List<Note> shown = notes.apply(window);
-        int count = shown.size();
-        // the window is as long as the loop, so the count says over how many bars it is taken
+        List<Note> shown = notes.apply(source);
+        summarise(shown.size());
+        roll.show(shown, lengthBeats, beatsPerBar);
+    }
+
+    /** The count alone, for an edit the roll has already drawn for itself. */
+    private void summarise() {
+        summarise(notes.apply(source).size());
+    }
+
+    private void summarise(int count) {
+        // a track is as long as the loop, so the count says over how many bars the notes lie
         summary.setText((count == 0 ? "no notes" : count + (count == 1 ? " note" : " notes")) + " in "
                 + barsLabel(lengthBeats / beatsPerBar));
-        roll.show(shown, lengthBeats, beatsPerBar);
     }
 
     /** "8 bars", "1 bar", "1/4 bar". */

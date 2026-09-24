@@ -8,7 +8,7 @@ import java.util.Objects;
  * the window opens on, counting from 0. How many bars it takes is the jam's loop length, not the
  * window's own, so every track of a jam is as long as the loop.
  */
-record MidiWindow(Path file, int trackIndex, int startBar) {
+record MidiWindow(Path file, int trackIndex, int startBar) implements MelodySource {
 
     MidiWindow {
         Objects.requireNonNull(file, "file");
