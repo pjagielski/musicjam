@@ -106,12 +106,12 @@ class AudioEngineLiveTest {
     @Test
     void externalNotesNotYetSentFollowANewTempo() {
         var melody = new MelodyTrack(List.of(new Note(3.0, new Voice.Pitch(60), 0.5, 100 / 127f)), 4.0, 1.0f);
-        var jam = new AtomicReference<>(jam(new Song(120, 4, List.of(melody))));
+        var jam = new AtomicReference<>(outward(new Song(120, 4, List.of(melody))));
         var renderer = engine().liveRenderer(jam::get, true);
 
         render(renderer, 5);
         assertEquals(1_500, renderer.frameAt(3.0));
-        jam.set(jam(new Song(60, 4, List.of(melody))));
+        jam.set(outward(new Song(60, 4, List.of(melody))));
         render(renderer, 1);
 
         assertEquals(2_360, renderer.frameAt(3.0));
@@ -121,16 +121,16 @@ class AudioEngineLiveTest {
     void aShorterLoopTakesBackTheExternalNotesPastItsEnd() {
         var early = new Note(1.0, new Voice.Pitch(60), 0.5, 100 / 127f);
         var late = new Note(6.0, new Voice.Pitch(64), 0.5, 100 / 127f);
-        var jam = new AtomicReference<>(jam(new Song(120, 4, List.of(new MelodyTrack(List.of(early, late), 8.0, 1.0f)))));
+        var jam = new AtomicReference<>(outward(new Song(120, 4, List.of(new MelodyTrack(List.of(early, late), 8.0, 1.0f)))));
         var renderer = engine().liveRenderer(jam::get, true);
 
         render(renderer, 1);
-        jam.set(jam(new Song(120, 4, List.of(new MelodyTrack(List.of(early), 4.0, 1.0f)))));
+        jam.set(outward(new Song(120, 4, List.of(new MelodyTrack(List.of(early), 4.0, 1.0f)))));
         render(renderer, 1);
 
         assertEquals(List.of(
-                new AudioEngine.ExternalNote(1.0, true, 60, 100, 1.0, 0),
-                new AudioEngine.ExternalNote(1.5, false, 60, 0, 1.0, 0)
+                new AudioEngine.ExternalNote(1.0, true, 60, 100, 1.0, 0, 0),
+                new AudioEngine.ExternalNote(1.5, false, 60, 0, 1.0, 0, 0)
         ), drain(renderer));
     }
 
@@ -167,15 +167,15 @@ class AudioEngineLiveTest {
     void externalMelodyIsHandedOnInBeatsInsteadOfRendered() {
         var melody = new MelodyTrack(List.of(new Note(1.0, new Voice.Pitch(60), 0.5, 100 / 127f)), 4.0, 1.0f);
         Song song = new Song(120, 4, List.of(melody));
-        var renderer = engine().liveRenderer(() -> jam(song), true);
+        var renderer = engine().liveRenderer(() -> outward(song), true);
 
         float[] left = render(renderer, BLOCKS);
 
         assertEquals(List.of(
-                new AudioEngine.ExternalNote(1.0, true, 60, 100, 1.0, 0),
-                new AudioEngine.ExternalNote(1.5, false, 60, 0, 1.0, 0),
-                new AudioEngine.ExternalNote(5.0, true, 60, 100, 5.0, 0),
-                new AudioEngine.ExternalNote(5.5, false, 60, 0, 5.0, 0)
+                new AudioEngine.ExternalNote(1.0, true, 60, 100, 1.0, 0, 0),
+                new AudioEngine.ExternalNote(1.5, false, 60, 0, 1.0, 0, 0),
+                new AudioEngine.ExternalNote(5.0, true, 60, 100, 5.0, 0, 0),
+                new AudioEngine.ExternalNote(5.5, false, 60, 0, 5.0, 0, 0)
         ), drain(renderer));
         assertEquals(2_500, renderer.frameAt(5.0));
         for (float sample : left) {
@@ -184,9 +184,33 @@ class AudioEngineLiveTest {
     }
 
     @Test
+    void eachTrackGoesOutOnItsOwnChannelOrIsPlayedHere() {
+        var level = new AtomicReference<>(0.25f);
+        var here = new MelodyTrack(List.of(new Note(0.0, new Voice.Pitch(60), 0.5, 1.0f)), 4.0, 1.0f);
+        var out = new MelodyTrack(List.of(new Note(1.0, new Voice.Pitch(64), 0.5, 100 / 127f)), 4.0, 1.0f);
+        var bass = new MelodyTrack(List.of(new Note(2.0, new Voice.Pitch(36), 0.5, 100 / 127f)), 4.0, 1.0f);
+        Song song = new Song(120, 4, List.of(here, out, bass));
+        LivePitchSynth synth = constantLevelSynth(level);
+        var renderer = engine().liveRenderer(
+                () -> new AudioEngine.Jam(song, List.of(synth), List.of(AudioEngine.Jam.HERE, 2, 5)), true);
+
+        // eight blocks, 1024 frames: past the second track's note at frame 500, short of the next loop
+        float[] left = render(renderer, 8);
+
+        assertEquals(0.25f, left[100], 1e-6f, "the first track, played here");
+        assertEquals(List.of(
+                new AudioEngine.ExternalNote(1.0, true, 64, 100, 1.0, 1, 2),
+                new AudioEngine.ExternalNote(1.5, false, 64, 0, 1.0, 1, 2),
+                new AudioEngine.ExternalNote(2.0, true, 36, 100, 2.0, 2, 5),
+                new AudioEngine.ExternalNote(2.5, false, 36, 0, 2.0, 2, 5)
+        ), drain(renderer), "the other two, each on its own channel");
+        assertEquals(0.0f, left[500 + 100], "and not played here as well");
+    }
+
+    @Test
     void aMutedMelodySendsNothingAndAQuieterOneSendsSofterNotes() {
         var melody = new MelodyTrack(List.of(new Note(1.0, new Voice.Pitch(60), 0.5, 1.0f)), 4.0, 0.0f);
-        var jam = new AtomicReference<>(jam(new Song(120, 4, List.of(melody))));
+        var jam = new AtomicReference<>(outward(new Song(120, 4, List.of(melody))));
         var renderer = engine().liveRenderer(jam::get, true);
 
         render(renderer, 1);
@@ -195,7 +219,7 @@ class AudioEngineLiveTest {
         AudioEngine.ExternalNote noteOn = drain(renderer).getFirst();
         assertEquals(127, noteOn.velocity());
         assertEquals(0, AudioEngine.sentVelocity(noteOn, renderer.trackGain(noteOn.track())), "muted: not sent");
-        jam.set(jam(new Song(120, 4, List.of(new MelodyTrack(melody.notes(), 4.0, 0.5f)))));
+        jam.set(outward(new Song(120, 4, List.of(new MelodyTrack(melody.notes(), 4.0, 0.5f)))));
         render(renderer, 1);
         assertEquals(64, AudioEngine.sentVelocity(noteOn, renderer.trackGain(noteOn.track())));
     }
@@ -557,6 +581,11 @@ class AudioEngineLiveTest {
                 Drum.SNARE, Sample.mono(1.0f)
         ));
         return new AudioEngine(samples, 1_000, BLOCK, 8);
+    }
+
+    /** A jam whose tracks all go out to an external synth, on channel 1. */
+    private static AudioEngine.Jam outward(Song song) {
+        return new AudioEngine.Jam(song, List.of(NO_SYNTH), List.of(0));
     }
 
     private static AudioEngine.Jam jam(Song song) {

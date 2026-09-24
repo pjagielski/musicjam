@@ -14,7 +14,6 @@ import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressBar;
@@ -78,9 +77,9 @@ import java.util.stream.Stream;
  * mutes, levels and orders them, and the editor below it shows the selected one. Live code (see
  * {@link LiveCode}) run with Ctrl+Enter is drawn into the grid, where clicks can tweak it until the
  * code runs again. Every {@code jam*.properties} next to the starting config is a preset: picking
- * one loads its MIDI file, tempo, drums and synth, with the one melody track it names. The melodies
- * can be routed to an external MIDI synth, whose filter follows the knob as a control change (CC 74
- * unless told otherwise).
+ * one loads its MIDI file, tempo, drums and synth, with the one melody track it names. Each melody
+ * is played by a synth of its own, or sent to an external MIDI synth on a channel of its own, whose
+ * filter follows the track's knob as a control change (CC 74 unless told otherwise).
  *
  * <p>Starts from {@code --config <file>}, or {@code src/main/resources/jam.properties}, but with a
  * eight-bar loop and the drums drawn from the starter code rather than the config's own.
@@ -130,7 +129,7 @@ public final class BeatStudio extends Application {
     private final VBox editor = new VBox();
     private final TextField device = new TextField();
     private final ToggleButton connect = new ToggleButton("Connect MIDI");
-    private final CheckBox melodyToMidi = new CheckBox("Melody over MIDI");
+    private final Spinner<Integer> channel = new Spinner<>(1, 16, 1);
     private final Spinner<Integer> cc = new Spinner<>(0, 127, 74);
     private final PanelKnob filter = StudioPanels.knob("Filter", 0, 127, "", 0, 64);
     private final PanelKnob midiLatency =
@@ -162,11 +161,12 @@ public final class BeatStudio extends Application {
     private AudioEngine.LiveSession ringing;
     // the Performance FX strips, all let go of when the jam stops
     private final List<FxStrip> strips = new ArrayList<>();
-    private ExternalMidiOutput midi;
+    // read by the thread that sends notes out as well as set here, so always the output as it is now
+    private volatile ExternalMidiOutput midi;
     private boolean loading;
+    // the MIDI controls being set to a track's values, rather than turned for it
+    private boolean showingMidi;
     private double barFraction = -1;
-    private int sentController = -1;
-    private int sentFilter = -1;
     private static final double MIN_ZOOM = 0.5;
     private static final double MAX_ZOOM = 2.0;
 
@@ -188,7 +188,6 @@ public final class BeatStudio extends Application {
                 melody.instrument().set(synthControls.setting());
             }
         });
-        melodyToMidi.setDisable(true);
         trackPanel.setOnEdit(this::publish);
         trackPanel.setOnSelect(this::showSelected);
         applyMidiLatency();
@@ -235,16 +234,15 @@ public final class BeatStudio extends Application {
         connect.setOnAction(event -> {
             if (connect.isSelected()) {
                 openMidi();
-            } else if (melodyToMidi.isSelected()) {
-                reconfigure(this::closeMidi);
             } else {
                 closeMidi();
             }
         });
-        melodyToMidi.setOnAction(event -> reconfigure(() -> { }));
-        filter.setOnChange(value -> sendFilter());
-        cc.valueProperty().addListener((property, before, after) -> sendFilter());
+        filter.setOnChange(value -> midiControlsMoved());
+        cc.valueProperty().addListener((property, before, after) -> midiControlsMoved());
+        channel.valueProperty().addListener((property, before, after) -> midiControlsMoved());
         makeTypeable(cc);
+        makeTypeable(channel);
         midiLatency.setOnChange(millis -> applyMidiLatency());
 
         boolean presentation = getParameters().getRaw().contains("--presentation");
@@ -470,6 +468,7 @@ public final class BeatStudio extends Application {
         Sequence nextSequence = sequenceOf(file);
         PitchSynth nextSynth = BeatApp.resolveSynth(next.synth());
         Instrument nextInstrument = Instrument.of(next.synth());
+        nextInstrument.setMidi(next.midiChannelIndex(), 74, 64);
         List<DrumTrack> pattern = BeatApp.drumPatterns().get(next.drums().toLowerCase(Locale.ROOT));
         if (pattern == null) {
             throw new IllegalArgumentException("Unknown drums \"" + next.drums() + "\", expected one of "
@@ -554,8 +553,27 @@ public final class BeatStudio extends Application {
         String patch = first != null && first.instrument() != null && first.instrument().setting() != null
                 && first.instrument().setting().preset() != null
                 ? first.instrument().setting().preset() : request.synth();
+        Instrument instrument = Instrument.of(patch);
+        instrument.setMidi(unusedChannel(), 74, 64);
         return new StudioTrack.Melody(unusedName(trackName(sequence, index)), 1.0f, false,
-                new MidiWindow(file, index, startBar), Instrument.of(patch));
+                new MidiWindow(file, index, startBar), instrument);
+    }
+
+    /**
+     * The lowest MIDI channel no melody goes out on, so a new track can be sent out without two
+     * sharing one; channel 10, which General MIDI keeps for drums, is left alone.
+     */
+    private int unusedChannel() {
+        List<Integer> taken = tracks.tracks().stream()
+                .filter(track -> track instanceof StudioTrack.Melody melody && melody.instrument() != null)
+                .map(track -> ((StudioTrack.Melody) track).instrument().channel())
+                .toList();
+        for (int candidate = 0; candidate < 16; candidate++) {
+            if (candidate != 9 && !taken.contains(candidate)) {
+                return candidate;
+            }
+        }
+        return 0;
     }
 
     /** {@code name}, or "name 2", "name 3" and on when a track already goes by it. */
@@ -674,7 +692,13 @@ public final class BeatStudio extends Application {
                 .map(track -> track instanceof StudioTrack.Melody melody && melody.instrument() != null
                         ? melody.instrument().synth() : fallbackSynth)
                 .toList();
-        jam.set(new AudioEngine.Jam(song, synths));
+        // a track sent out while no device is connected is played here, rather than not at all
+        boolean connected = midi != null;
+        List<Integer> channels = tracks.tracks().stream()
+                .map(track -> connected && track instanceof StudioTrack.Melody melody && melody.instrument() != null
+                        && melody.instrument().external() ? melody.instrument().channel() : AudioEngine.Jam.HERE)
+                .toList();
+        jam.set(new AudioEngine.Jam(song, synths, channels));
     }
 
     private void buildGrid() {
@@ -746,8 +770,7 @@ public final class BeatStudio extends Application {
             ringing = null;
         }
         try {
-            NoteListener externalMelody = melodyToMidi.isSelected() && midi != null ? BeatApp.melodyListener(midi) : null;
-            session = engine.playLive(jam::get, externalMelody);
+            session = engine.playLive(jam::get, toMidi());
             applyMidiLatency();
             play.setText("Stop");
         } catch (Exception exception) {
@@ -774,40 +797,98 @@ public final class BeatStudio extends Application {
         paintGrid();
     }
 
-    /** Routing the melody is fixed for the life of a session, so changing it restarts playback. */
-    private void reconfigure(Runnable change) {
-        boolean wasPlaying = session != null;
-        stopPlayback();
-        change.run();
-        if (wasPlaying) {
-            togglePlayback();
-        }
+    /**
+     * Where the session sends the tracks that go out: whatever device is connected when a note is
+     * due, or nowhere. So connecting, disconnecting and sending a track out all happen while the jam
+     * plays, without starting it again.
+     */
+    private NoteListener toMidi() {
+        return new NoteListener() {
+            @Override
+            public void noteOn(int toChannel, int midiNote, int velocity) {
+                ExternalMidiOutput output = midi;
+                if (output != null) {
+                    output.noteOn(toChannel, midiNote, velocity);
+                }
+            }
+
+            @Override
+            public void noteOff(int toChannel, int midiNote) {
+                ExternalMidiOutput output = midi;
+                if (output != null) {
+                    output.noteOff(toChannel, midiNote);
+                }
+            }
+        };
     }
 
     private void openMidi() {
         try {
-            // the external synth takes the sound of the first melody's track in its file
-            StudioTrack.Melody first = tracks.firstMelody();
-            int program = first == null ? 0
-                    : MidiFileReader.readProgram(sequenceOf(first.source().file()), first.source().trackIndex());
-            midi = ExternalMidiOutput.open(device.getText(), request.midiChannelIndex(), program);
-            sentController = -1;
-            sendFilter();
+            midi = ExternalMidiOutput.open(device.getText(), request.midiChannelIndex(), 0);
         } catch (Exception exception) {
             connect.setSelected(false);
             showError(exception);
+            return;
         }
-        melodyToMidi.setDisable(midi == null);
+        // each track that goes out gets its sound and its filter on its own channel
+        for (StudioTrack track : tracks.tracks()) {
+            if (track instanceof StudioTrack.Melody melody && melody.instrument() != null
+                    && melody.instrument().external()) {
+                sendProgram(melody);
+                sendFilter(melody.instrument());
+            }
+        }
+        publish();
+        showInstrument();
     }
 
     private void closeMidi() {
-        if (midi != null) {
-            midi.close();
-            midi = null;
+        ExternalMidiOutput output = midi;
+        midi = null;
+        if (output != null) {
+            output.close();
         }
         connect.setSelected(false);
-        melodyToMidi.setSelected(false);
-        melodyToMidi.setDisable(true);
+        publish();
+        showInstrument();
+    }
+
+    /** The sound a track's own track in its MIDI file names, on the track's channel. */
+    private void sendProgram(StudioTrack.Melody melody) {
+        ExternalMidiOutput output = midi;
+        if (output == null) {
+            return;
+        }
+        try {
+            MidiWindow window = melody.source();
+            output.programChange(melody.instrument().channel(),
+                    MidiFileReader.readProgram(sequenceOf(window.file()), window.trackIndex()));
+        } catch (Exception exception) {
+            showError(exception);
+        }
+    }
+
+    private void sendFilter(Instrument played) {
+        ExternalMidiOutput output = midi;
+        if (output != null && played.external()) {
+            output.controlChange(played.channel(), played.controller(), played.filter());
+        }
+    }
+
+    /** The channel, CC or filter turned for the selected track: kept, and heard if it goes out. */
+    private void midiControlsMoved() {
+        if (showingMidi || tracks == null || !(tracks.selected() instanceof StudioTrack.Melody melody)
+                || melody.instrument() == null) {
+            return;
+        }
+        Instrument played = melody.instrument();
+        int before = played.channel();
+        played.setMidi(channel.getValue() - 1, cc.getValue(), (int) Math.round(filter.value()));
+        if (played.channel() != before && played.external()) {
+            sendProgram(melody);
+            publish();
+        }
+        sendFilter(played);
     }
 
     /**
@@ -837,17 +918,6 @@ public final class BeatStudio extends Application {
         } catch (NumberFormatException notANumber) {
             return fallback;
         }
-    }
-
-    private void sendFilter() {
-        int controller = cc.getValue();
-        int value = (int) Math.round(filter.value());
-        if (midi == null || (controller == sentController && value == sentFilter)) {
-            return;
-        }
-        midi.controlChange(controller, value);
-        sentController = controller;
-        sentFilter = value;
     }
 
     private void applyMidiLatency() {
@@ -931,8 +1001,19 @@ public final class BeatStudio extends Application {
             view.setFocusTraversable(false);
             view.setPrefWidth(140);
             view.setOnAction(event -> {
-                // a view stays chosen when clicked again: one of the two is always showing
+                // a choice stays made when clicked again: the track always plays somewhere
                 instrumentView.selectToggle(view);
+                if (tracks.selected() instanceof StudioTrack.Melody melody && melody.instrument() != null) {
+                    boolean out = view == showMidi;
+                    if (melody.instrument().external() != out) {
+                        melody.instrument().setExternal(out);
+                        if (out) {
+                            sendProgram(melody);
+                            sendFilter(melody.instrument());
+                        }
+                        publish();
+                    }
+                }
                 showInstrument();
             });
         }
@@ -941,9 +1022,9 @@ public final class BeatStudio extends Application {
     }
 
     /**
-     * The selected track's instrument. A melody shows its own synth, its knobs where they were left
-     * for it, or the external synth, which for now every melody track goes to together; the drum
-     * track plays samples, with nothing to set yet.
+     * The selected track's instrument. A melody is played either by its own synth, its knobs where
+     * they were left for it, or by an external one on a channel of its own, and the switch in the
+     * heading chooses which; the drum track plays samples, with nothing to set yet.
      */
     private void showInstrument() {
         if (midiFrame == null) {
@@ -967,9 +1048,23 @@ public final class BeatStudio extends Application {
         }
         synthControls.node().setDisable(!playable);
         synthControls.presetPicker().setDisable(!playable);
+        boolean out = played != null && played.external();
+        instrumentView.selectToggle(out ? showMidi : showSynth);
+        if (played != null) {
+            showingMidi = true;
+            try {
+                channel.getValueFactory().setValue(played.channel() + 1);
+                cc.getValueFactory().setValue(played.controller());
+                filter.setValue(played.filter());
+            } finally {
+                showingMidi = false;
+            }
+        }
         HBox header = new HBox(8, title, showSynth, showMidi);
-        Label hint = new Label(showMidi.isSelected()
-                ? "Every melody track goes out here while Melody over MIDI is on."
+        String outHint = !out ? ""
+                : midi == null ? "Not connected: the track plays here until a MIDI device is."
+                : "Sent on channel " + (played.channel() + 1) + "; the synth here stays quiet for it.";
+        Label hint = new Label(out ? outHint
                 : playable ? "" : "This synth has no knobs to turn: it plays as it is.");
         hint.setStyle("-fx-text-fill: #868e96; -fx-font-size: 11px;");
         if (showSynth.isSelected()) {
@@ -983,11 +1078,18 @@ public final class BeatStudio extends Application {
         instrument.getChildren().setAll(header, shown);
     }
 
-    /** The external synth the melody can be sent to instead, and the control change it follows. */
+    /**
+     * The external synth a melody can be sent to instead. The device and how far ahead of the beat
+     * notes go out are the jam's, one for every track; the channel, and the filter the synth
+     * follows as a control change, are the selected track's own.
+     */
     private VBox midiPanel() {
         device.setPromptText("MIDI device");
+        channel.setPrefWidth(70);
+        Label shared = new Label("Device and latency: every track's. Channel, CC and filter: this track's.");
+        shared.setStyle("-fx-text-fill: #868e96; -fx-font-size: 11px;");
         return StudioPanels.frame("External MIDI",
-                StudioPanels.row(device, connect, melodyToMidi, new Label("CC"), cc),
+                StudioPanels.row(device, connect, new Label("Channel"), channel, new Label("CC"), cc, shared),
                 StudioPanels.knobRow(filter.node(), midiLatency.node()));
     }
 

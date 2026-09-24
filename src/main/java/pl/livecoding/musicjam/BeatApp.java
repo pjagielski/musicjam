@@ -198,7 +198,9 @@ public final class BeatApp {
                 request.midiDevice());
 
         AudioEngine engine = new AudioEngine(SampleBank.load(SAMPLE_DIRECTORY, AudioEngine.DEFAULT_SAMPLE_RATE));
-        AudioEngine.Jam jam = new AudioEngine.Jam(song, resolveSynth(request.synth()));
+        // the melody out on the config's channel; the drums have no pitches to send
+        AudioEngine.Jam jam = new AudioEngine.Jam(song, List.of(resolveSynth(request.synth())),
+                List.of(request.midiChannelIndex()));
         long millis = Math.round(request.loops() * PatternCompiler.totalBeats(song) * 60_000 / song.bpm());
         try (ExternalMidiOutput midi = ExternalMidiOutput.open(request.midiDevice(), request.midiChannelIndex(), program);
              AudioEngine.LiveSession session = engine.playLive(() -> jam, melodyListener(midi))) {
@@ -210,13 +212,13 @@ public final class BeatApp {
     public static NoteListener melodyListener(ExternalMidiOutput output) {
         return new NoteListener() {
             @Override
-            public void noteOn(int midiNote, int velocity) {
-                output.noteOn(midiNote, velocity);
+            public void noteOn(int channel, int midiNote, int velocity) {
+                output.noteOn(channel, midiNote, velocity);
             }
 
             @Override
-            public void noteOff(int midiNote) {
-                output.noteOff(midiNote);
+            public void noteOff(int channel, int midiNote) {
+                output.noteOff(channel, midiNote);
             }
         };
     }

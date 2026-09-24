@@ -318,22 +318,41 @@ public final class AudioEngine {
     }
 
     /**
-     * One loop's worth of what to play live: the song, and the synth each of its tracks is played
-     * by, in the same order. A drum track's synth plays nothing, as its notes are samples. A live
-     * synth is known by its identity: the same one from jam to jam keeps its channel and its
-     * effects' tails, a new one gets a channel of its own.
+     * One loop's worth of what to play live: the song, the synth each of its tracks is played by,
+     * and the MIDI channel each is sent to instead, in the same order. A drum track's synth plays
+     * nothing, as its notes are samples. A live synth is known by its identity: the same one from
+     * jam to jam keeps its channel and its effects' tails, a new one gets a channel of its own.
+     *
+     * <p>A track's melody goes to an external synth when it has a channel, counting from 0 as MIDI
+     * messages do, and the session has somewhere to send it; {@link #HERE} plays it here. Its
+     * notes are routed as a loop is queued, so a track sent out or brought back is heard so from
+     * the next loop on.
      */
-    public record Jam(Song song, List<PitchSynth> synths) {
+    public record Jam(Song song, List<PitchSynth> synths, List<Integer> channels) {
+
+        /** The channel of a track played here rather than sent out. */
+        public static final int HERE = -1;
 
         public Jam {
             Objects.requireNonNull(song, "song");
             synths = List.copyOf(synths);
-            if (synths.isEmpty()) {
-                throw new IllegalArgumentException("A jam needs a synth");
+            channels = List.copyOf(channels);
+            if (synths.isEmpty() || channels.isEmpty()) {
+                throw new IllegalArgumentException("A jam needs a synth and a channel");
+            }
+            for (int channel : channels) {
+                if (channel < HERE || channel > 15) {
+                    throw new IllegalArgumentException("A MIDI channel counts from 0 to 15, not " + channel);
+                }
             }
         }
 
-        /** One synth for every track. */
+        /** Every track played here, each by its own synth. */
+        public Jam(Song song, List<PitchSynth> synths) {
+            this(song, synths, List.of(HERE));
+        }
+
+        /** One synth for every track, played here. */
         public Jam(Song song, PitchSynth synth) {
             this(song, Collections.nCopies(Math.max(1, song.tracks().size()), synth));
         }
@@ -341,6 +360,11 @@ public final class AudioEngine {
         /** The synth that plays {@code track}'s notes; the last one for a track the list is short of. */
         public PitchSynth synthFor(int track) {
             return synths.get(Math.min(track, synths.size() - 1));
+        }
+
+        /** The channel {@code track}'s notes go out on, or {@link #HERE}; the last one for a track the list is short of. */
+        public int channelFor(int track) {
+            return channels.get(Math.min(track, channels.size() - 1));
         }
     }
 
@@ -369,7 +393,8 @@ public final class AudioEngine {
      * own for a note-on, the note-on's for a note-off. {@code velocity} is the note's own, before
      * its track's gain, which is applied as it is sent: a note of a muted track is not sent at all.
      */
-    record ExternalNote(double beat, boolean on, int midiNote, int velocity, double startBeat, int track) {
+    record ExternalNote(double beat, boolean on, int midiNote, int velocity, double startBeat, int track,
+                        int channel) {
     }
 
     /**
@@ -786,12 +811,13 @@ public final class AudioEngine {
                     continue;
                 }
                 double beat = loopStart + note.beat();
-                if (externalMelody != null && note.voice() instanceof Voice.Pitch pitch) {
+                int channel = jam.channelFor(track);
+                if (externalMelody != null && channel != Jam.HERE && note.voice() instanceof Voice.Pitch pitch) {
                     // velocity 0 on a note-on would be read as a note-off by the receiving synth
                     int velocity = Math.max(1, Math.round(note.velocity() * 127.0f));
-                    externalMelody.add(new ExternalNote(beat, true, pitch.midiNote(), velocity, beat, track));
+                    externalMelody.add(new ExternalNote(beat, true, pitch.midiNote(), velocity, beat, track, channel));
                     externalMelody.add(new ExternalNote(beat + note.durationBeats(), false, pitch.midiNote(), 0, beat,
-                            track));
+                            track, channel));
                 } else if (jam.synthFor(track) instanceof LivePitchSynth live
                         && note.voice() instanceof Voice.Pitch pitch) {
                     // its bus from the first note on, so its effects are there before the note sounds
@@ -950,6 +976,7 @@ public final class AudioEngine {
         }
 
         private void sendMelody() {
+            // each key a channel and a pitch, as the note-ons sent make them
             Set<Integer> sounding = new HashSet<>();
             PlaybackClock clock = new PlaybackClock(line::getLongFramePosition, System::nanoTime, sampleRate);
             PriorityBlockingQueue<ExternalNote> pendingMelody = renderer.externalMelody();
@@ -963,15 +990,17 @@ public final class AudioEngine {
                         continue;
                     }
                     ExternalNote note = pendingMelody.poll();
+                    // a pitch on a channel: two tracks on two channels can hold the same note
+                    int key = note.channel() * 128 + note.midiNote();
                     if (note.on()) {
                         int velocity = sentVelocity(note, renderer.trackGain(note.track()));
                         if (velocity > 0) {
-                            externalMelody.noteOn(note.midiNote(), velocity);
-                            sounding.add(note.midiNote());
+                            externalMelody.noteOn(note.channel(), note.midiNote(), velocity);
+                            sounding.add(key);
                         }
-                    } else if (sounding.contains(note.midiNote())) {
-                        externalMelody.noteOff(note.midiNote());
-                        sounding.remove(note.midiNote());
+                    } else if (sounding.contains(key)) {
+                        externalMelody.noteOff(note.channel(), note.midiNote());
+                        sounding.remove(key);
                     }
                 }
             } catch (InterruptedException interrupted) {
@@ -985,9 +1014,9 @@ public final class AudioEngine {
         }
 
         private void releaseAll(Set<Integer> sounding) {
-            for (int pitch : sounding) {
+            for (int key : sounding) {
                 try {
-                    externalMelody.noteOff(pitch);
+                    externalMelody.noteOff(key / 128, key % 128);
                 } catch (RuntimeException ignored) {
                     // Best effort: the device may already be gone.
                 }

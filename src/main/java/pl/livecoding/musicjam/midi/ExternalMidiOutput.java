@@ -21,12 +21,15 @@ public final class ExternalMidiOutput implements NoteOutput {
     private final MidiDevice device;
     private final NoteGate receiver;
     private final int channel;
+    // every channel a note has gone out on, each of them silenced on the way out
+    private final boolean[] used = new boolean[16];
     private final Thread shutdownHook;
 
     private ExternalMidiOutput(MidiDevice device, NoteGate receiver, int channel) {
         this.device = device;
         this.receiver = receiver;
         this.channel = channel;
+        this.used[channel] = true;
         this.shutdownHook = new Thread(this::silence);
         Runtime.getRuntime().addShutdownHook(shutdownHook);
     }
@@ -84,22 +87,41 @@ public final class ExternalMidiOutput implements NoteOutput {
 
     @Override
     public synchronized void noteOn(int pitch, int velocity) {
-        send(ShortMessage.NOTE_ON, pitch, velocity);
+        noteOn(channel, pitch, velocity);
     }
 
     @Override
     public synchronized void noteOff(int pitch) {
-        send(ShortMessage.NOTE_OFF, pitch, 0);
+        noteOff(channel, pitch);
+    }
+
+    /** A note on another channel than the one this output was opened on: one track's, of several. */
+    public synchronized void noteOn(int toChannel, int pitch, int velocity) {
+        used[toChannel] = true;
+        send(ShortMessage.NOTE_ON, toChannel, pitch, velocity);
+    }
+
+    public synchronized void noteOff(int toChannel, int pitch) {
+        send(ShortMessage.NOTE_OFF, toChannel, pitch, 0);
     }
 
     /** A control change on this output's channel - e.g. CC 74, which most synths map to filter cutoff. */
     public synchronized void controlChange(int controller, int value) {
-        send(ShortMessage.CONTROL_CHANGE, controller, value);
+        controlChange(channel, controller, value);
     }
 
-    private void send(int command, int data1, int data2) {
+    public synchronized void controlChange(int toChannel, int controller, int value) {
+        send(ShortMessage.CONTROL_CHANGE, toChannel, controller, value);
+    }
+
+    /** The sound a channel plays with, as a MIDI file's track names it. */
+    public synchronized void programChange(int toChannel, int program) {
+        send(ShortMessage.PROGRAM_CHANGE, toChannel, program, 0);
+    }
+
+    private void send(int command, int toChannel, int data1, int data2) {
         try {
-            receiver.send(new ShortMessage(command, channel, data1, data2), -1);
+            receiver.send(new ShortMessage(command, toChannel, data1, data2), -1);
         } catch (InvalidMidiDataException exception) {
             throw new IllegalStateException(exception);
         }
@@ -111,9 +133,9 @@ public final class ExternalMidiOutput implements NoteOutput {
      * still leave a synth ringing. Run on a JVM shutdown hook (see the constructor) so a killed
      * process (Ctrl+C, a crash) doesn't leave the external synth playing a stuck note forever.
      */
-    private synchronized void allSoundOff() {
+    private synchronized void allSoundOff(int onChannel) {
         try {
-            send(ShortMessage.CONTROL_CHANGE, ALL_SOUND_OFF, 0);
+            send(ShortMessage.CONTROL_CHANGE, onChannel, ALL_SOUND_OFF, 0);
         } catch (RuntimeException exception) {
             // Best-effort: the device may already be gone (closed, unplugged) by the time this runs.
         }
@@ -127,8 +149,12 @@ public final class ExternalMidiOutput implements NoteOutput {
      */
     private synchronized void silence() {
         receiver.shutNoteOns();
-        allSoundOff();
-        panic(receiver, channel);
+        for (int onChannel = 0; onChannel < used.length; onChannel++) {
+            if (used[onChannel]) {
+                allSoundOff(onChannel);
+                panic(receiver, onChannel);
+            }
+        }
     }
 
     /** All Notes Off and a note-off for every pitch on one channel - best effort, like allSoundOff. */
