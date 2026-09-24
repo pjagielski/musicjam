@@ -55,8 +55,6 @@ import pl.livecoding.musicjam.studio.knobs.PanelKnob;
 import pl.livecoding.musicjam.studio.knobs.StudioIcon;
 import pl.livecoding.musicjam.studio.knobs.StudioPanels;
 import pl.livecoding.musicjam.studio.knobs.SynthControls;
-import pl.livecoding.musicjam.synth.LiveNovasawSynth;
-import pl.livecoding.musicjam.synth.NovasawSynth;
 import pl.livecoding.musicjam.synth.PitchSynth;
 
 import javax.sound.midi.MidiSystem;
@@ -157,8 +155,8 @@ public final class BeatStudio extends Application {
     private final Map<Path, Sequence> sequences = new HashMap<>();
     private final Map<MidiWindow, List<Note>> windows = new HashMap<>();
     private double windowsLengthBeats;
-    private PitchSynth synth;
-    private LiveNovasawSynth liveSynth;
+    // the jam config's synth, for a track no instrument plays: the drum track's notes are samples
+    private PitchSynth fallbackSynth;
     private AudioEngine engine;
     private AudioEngine.LiveSession session;
     private AudioEngine.LiveSession ringing;
@@ -183,10 +181,11 @@ public final class BeatStudio extends Application {
         findJams(config);
         midiFiles = findMidiFiles(config);
         presets.getItems().setAll(jams.keySet());
+        // the panel plays the selected melody's instrument, and only that one
         synthControls.setOnChange((params, effects) -> {
-            if (liveSynth != null) {
-                liveSynth.setParams(params);
-                liveSynth.setEffectParams(effects);
+            if (tracks != null && tracks.selected() instanceof StudioTrack.Melody melody
+                    && melody.instrument() != null) {
+                melody.instrument().set(synthControls.setting());
             }
         });
         melodyToMidi.setDisable(true);
@@ -210,6 +209,7 @@ public final class BeatStudio extends Application {
         bpm.valueProperty().addListener((property, before, after) -> {
             updateBpmLabel();
             synthControls.setTempo(bpm.getValue());
+            retimeDelays();
             publish();
         });
         bars.valueProperty().addListener((property, before, after) -> {
@@ -469,6 +469,7 @@ public final class BeatStudio extends Application {
         Path file = next.file().toAbsolutePath().normalize();
         Sequence nextSequence = sequenceOf(file);
         PitchSynth nextSynth = BeatApp.resolveSynth(next.synth());
+        Instrument nextInstrument = Instrument.of(next.synth());
         List<DrumTrack> pattern = BeatApp.drumPatterns().get(next.drums().toLowerCase(Locale.ROOT));
         if (pattern == null) {
             throw new IllegalArgumentException("Unknown drums \"" + next.drums() + "\", expected one of "
@@ -480,9 +481,9 @@ public final class BeatStudio extends Application {
             request = next;
             midiLatency.setValue(next.midiLatencyMillis());
             tracks = TrackList.startingWith(trackName(nextSequence, next.trackIndex()),
-                    new MidiWindow(file, next.trackIndex(), next.startBar()));
+                    new MidiWindow(file, next.trackIndex(), next.startBar()), nextInstrument);
             trackPanel.show(tracks);
-            setSynth(next.synth(), nextSynth);
+            fallbackSynth = nextSynth;
             rows.clear();
             pattern.forEach(track -> rows.add(GridRow.fromTrack(track)));
             bpm.setValue(MidiFileReader.readTempo(nextSequence));
@@ -505,19 +506,15 @@ public final class BeatStudio extends Application {
     }
 
     /**
-     * A ported patch becomes a {@link LiveNovasawSynth}, so the panel's knobs reach the notes that
-     * are sounding; anything else plays as it always did, with the panel switched off.
+     * Every melody's delay locked to the beat, at the tempo as it is now: the one on the panel
+     * follows it there, the others here, as their knobs are not on show.
      */
-    private void setSynth(String name, PitchSynth next) {
-        if (next instanceof NovasawSynth patch) {
-            liveSynth = new LiveNovasawSynth(patch);
-            synth = liveSynth;
-            synthControls.node().setDisable(false);
-            synthControls.selectPreset(name);
-        } else {
-            liveSynth = null;
-            synth = next;
-            synthControls.node().setDisable(true);
+    private void retimeDelays() {
+        for (StudioTrack track : tracks.tracks()) {
+            if (track instanceof StudioTrack.Melody melody && melody.instrument() != null
+                    && melody.instrument().setting() != null) {
+                melody.instrument().set(melody.instrument().setting().at(bpm.getValue()));
+            }
         }
     }
 
@@ -553,8 +550,12 @@ public final class BeatStudio extends Application {
         int index = withNotes.stream().filter(candidate -> !playing.contains(candidate)).findFirst()
                 .orElse(withNotes.isEmpty() ? 0 : withNotes.getFirst());
         int startBar = first != null ? first.source().startBar() : 0;
+        // a synth of its own, from the patch the first melody started from, with its knobs as they come
+        String patch = first != null && first.instrument() != null && first.instrument().setting() != null
+                && first.instrument().setting().preset() != null
+                ? first.instrument().setting().preset() : request.synth();
         return new StudioTrack.Melody(unusedName(trackName(sequence, index)), 1.0f, false,
-                new MidiWindow(file, index, startBar));
+                new MidiWindow(file, index, startBar), Instrument.of(patch));
     }
 
     /** {@code name}, or "name 2", "name 3" and on when a track already goes by it. */
@@ -668,7 +669,12 @@ public final class BeatStudio extends Application {
         double lengthBeats = loopBeats();
         Song song = tracks.song(bpm.getValue(), BEATS_PER_BAR, lengthBeats,
                 GridRow.notes(rows, BEATS_PER_BAR, lengthBeats), this::windowNotes);
-        jam.set(new AudioEngine.Jam(song, synth));
+        // each melody by its own instrument; the drum track's notes are samples, whatever synth it is given
+        List<PitchSynth> synths = tracks.tracks().stream()
+                .map(track -> track instanceof StudioTrack.Melody melody && melody.instrument() != null
+                        ? melody.instrument().synth() : fallbackSynth)
+                .toList();
+        jam.set(new AudioEngine.Jam(song, synths));
     }
 
     private void buildGrid() {
@@ -935,9 +941,9 @@ public final class BeatStudio extends Application {
     }
 
     /**
-     * The selected track's instrument. For now there is one synth and one external synth for every
-     * melody track, so each melody shows the same two; the drum track plays samples, with nothing
-     * to set yet.
+     * The selected track's instrument. A melody shows its own synth, its knobs where they were left
+     * for it, or the external synth, which for now every melody track goes to together; the drum
+     * track plays samples, with nothing to set yet.
      */
     private void showInstrument() {
         if (midiFrame == null) {
@@ -952,15 +958,26 @@ public final class BeatStudio extends Application {
             instrument.getChildren().setAll(title, drums);
             return;
         }
-        Label shared = new Label("One synth plays every melody track for now; each will get its own.");
-        shared.setStyle("-fx-text-fill: #868e96; -fx-font-size: 11px;");
+        StudioTrack.Melody melody = (StudioTrack.Melody) tracks.selected();
+        title.setText("INSTRUMENT · " + melody.name().toUpperCase(Locale.ROOT));
+        Instrument played = melody.instrument();
+        boolean playable = played != null && played.playable();
+        if (playable) {
+            synthControls.restore(played.setting());
+        }
+        synthControls.node().setDisable(!playable);
+        synthControls.presetPicker().setDisable(!playable);
         HBox header = new HBox(8, title, showSynth, showMidi);
+        Label hint = new Label(showMidi.isSelected()
+                ? "Every melody track goes out here while Melody over MIDI is on."
+                : playable ? "" : "This synth has no knobs to turn: it plays as it is.");
+        hint.setStyle("-fx-text-fill: #868e96; -fx-font-size: 11px;");
         if (showSynth.isSelected()) {
             header.getChildren().add(synthControls.presetPicker());
             HBox.setMargin(synthControls.presetPicker(), new Insets(0, 0, 0, 16));
         }
-        header.getChildren().add(shared);
-        HBox.setMargin(shared, new Insets(0, 0, 0, 16));
+        header.getChildren().add(hint);
+        HBox.setMargin(hint, new Insets(0, 0, 0, 16));
         header.setAlignment(Pos.CENTER_LEFT);
         Node shown = showMidi.isSelected() ? midiFrame : synthControls.node();
         instrument.getChildren().setAll(header, shown);

@@ -50,8 +50,9 @@ sealed interface StudioTrack permits StudioTrack.Drums, StudioTrack.Melody {
         }
     }
 
-    /** A line of notes played by the synth, read from a window of a MIDI file. */
-    record Melody(String name, float gain, boolean muted, MidiWindow source) implements StudioTrack {
+    /** A line of notes read from a window of a MIDI file, played by an instrument of its own. */
+    record Melody(String name, float gain, boolean muted, MidiWindow source, Instrument instrument)
+            implements StudioTrack {
 
         public Melody {
             Objects.requireNonNull(name, "name");
@@ -59,23 +60,28 @@ sealed interface StudioTrack permits StudioTrack.Drums, StudioTrack.Melody {
             checkGain(gain);
         }
 
+        /** A track with no instrument to play it: what the track list's own tests need, and no more. */
+        Melody(String name, float gain, boolean muted, MidiWindow source) {
+            this(name, gain, muted, source, null);
+        }
+
         @Override
         public Melody named(String next) {
-            return new Melody(next, gain, muted, source);
+            return new Melody(next, gain, muted, source, instrument);
         }
 
         @Override
         public Melody withGain(float next) {
-            return new Melody(name, next, muted, source);
+            return new Melody(name, next, muted, source, instrument);
         }
 
         @Override
         public Melody withMuted(boolean next) {
-            return new Melody(name, gain, next, source);
+            return new Melody(name, gain, next, source, instrument);
         }
 
         public Melody withSource(MidiWindow next) {
-            return new Melody(name, gain, muted, next);
+            return new Melody(name, gain, muted, next, instrument);
         }
     }
 

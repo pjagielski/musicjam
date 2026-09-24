@@ -19,11 +19,14 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.PriorityBlockingQueue;
@@ -244,7 +247,7 @@ public final class AudioEngine {
 
             while (hasNextEvent() && nextEventFrame() < blockEnd) {
                 long eventFrame = nextEventFrame();
-                renderVoices(voices, mix, mix, null, position, segmentStart, eventFrame);
+                renderVoices(voices, mix, null, position, segmentStart, eventFrame);
                 do {
                     BarHit hit = barHits[nextHit];
                     allocateVoice(voices, eventFrame).trigger(hit.sample, eventFrame, hit.velocity);
@@ -252,7 +255,7 @@ public final class AudioEngine {
                 } while (hasNextEvent() && nextEventFrame() == eventFrame);
                 segmentStart = eventFrame;
             }
-            renderVoices(voices, mix, mix, null, position, segmentStart, blockEnd);
+            renderVoices(voices, mix, null, position, segmentStart, blockEnd);
             position = blockEnd;
             return frames;
         }
@@ -277,14 +280,15 @@ public final class AudioEngine {
     }
 
     /**
-     * Live voices go to the synth's own bus, so effects can be put across them alone. With
-     * {@code gains}, each voice is played at its track's gain as it stands in this block.
+     * Each voice into the mix, or into its synth's own bus when it has one, so that synth's effects
+     * can be put across its voices alone. With {@code gains}, each voice is played at its track's
+     * gain as it stands in this block.
      */
-    private static void renderVoices(VoiceSlot[] voices, float[] mix, float[] bus, TrackGains gains,
+    private static void renderVoices(VoiceSlot[] voices, float[] mix, TrackGains gains,
                                      long blockStart, long fromFrame, long toFrame) {
         for (VoiceSlot voice : voices) {
             if (voice.active) {
-                voice.render(voice.isLive() ? bus : mix, gains, blockStart, fromFrame, toFrame);
+                voice.render(voice.out != null ? voice.out : mix, gains, blockStart, fromFrame, toFrame);
             }
         }
     }
@@ -313,8 +317,47 @@ public final class AudioEngine {
     public record Position(Song song, double beat, double lengthBeats, double bpm) {
     }
 
-    /** One loop's worth of what to play live: the song, and the synth its melody is rendered with. */
-    public record Jam(Song song, PitchSynth synth) {
+    /**
+     * One loop's worth of what to play live: the song, and the synth each of its tracks is played
+     * by, in the same order. A drum track's synth plays nothing, as its notes are samples. A live
+     * synth is known by its identity: the same one from jam to jam keeps its channel and its
+     * effects' tails, a new one gets a channel of its own.
+     */
+    public record Jam(Song song, List<PitchSynth> synths) {
+
+        public Jam {
+            Objects.requireNonNull(song, "song");
+            synths = List.copyOf(synths);
+            if (synths.isEmpty()) {
+                throw new IllegalArgumentException("A jam needs a synth");
+            }
+        }
+
+        /** One synth for every track. */
+        public Jam(Song song, PitchSynth synth) {
+            this(song, Collections.nCopies(Math.max(1, song.tracks().size()), synth));
+        }
+
+        /** The synth that plays {@code track}'s notes; the last one for a track the list is short of. */
+        public PitchSynth synthFor(int track) {
+            return synths.get(Math.min(track, synths.size() - 1));
+        }
+    }
+
+    /**
+     * A live synth's own channel: its voices are summed here and go through its own effects on the
+     * way to the mix, so two tracks' delays and reverbs are two, each with its own tail.
+     */
+    private final class SynthBus {
+        final float[] frames = new float[blockSize * CHANNELS];
+        final AudioEffect effects;
+        // how many blocks in a row it has put out nothing: a bus the jam has let go of goes once
+        // its tail has died away
+        int quietBlocks;
+
+        SynthBus(LivePitchSynth synth) {
+            this.effects = synth.effects(sampleRate);
+        }
     }
 
     private record LiveSynthKey(PitchSynth synth, int midiNote, int frameCount) {
@@ -390,8 +433,11 @@ public final class AudioEngine {
         private final Map<ShapeKey, Sample> shapeCache = new HashMap<>();
         private final VoiceSlot[] voices = new VoiceSlot[maxVoices];
         private final ArrayDeque<LiveHit> hits = new ArrayDeque<>();
-        // the synth channel, kept apart from the drums so its effects only colour the synth
-        private final float[] bus = new float[blockSize * CHANNELS];
+        // a channel for each live synth, kept apart from the drums and from each other so each
+        // synth's effects colour only what it plays; in the order the synths first played
+        private final Map<LivePitchSynth, SynthBus> buses = new LinkedHashMap<>();
+        // the synths of the jam as it was last read, whose buses stay however quiet they are
+        private List<PitchSynth> playing = List.of();
         private final float[] stereo = new float[CHANNELS];
         // where in this block a kick landed: the sidechain's key, played to the effects in time
         private final int[] kickOffsets = new int[blockSize];
@@ -410,7 +456,6 @@ public final class AudioEngine {
         private double stutterBeats;
         private double sliceStart;
         private double nextRepeat;
-        private AudioEffect effects;
         private volatile Loops loops = new Loops(null, null);
         private volatile TempoMap tempo = TempoMap.starting(120, sampleRate);
         private volatile boolean scheduling = true;
@@ -471,11 +516,14 @@ public final class AudioEngine {
 
         void renderNext(float[] mix) {
             Arrays.fill(mix, 0.0f);
-            Arrays.fill(bus, 0.0f);
+            for (SynthBus bus : buses.values()) {
+                Arrays.fill(bus.frames, 0.0f);
+            }
             kickCount = 0;
             long blockEnd = position + blockSize;
             if (scheduling) {
                 Jam jam = jams.get();
+                playing = jam.synths();
                 gains.next(jam.song());
                 tempo = tempo.at(position, jam.song().bpm());
                 followLoopLength(jam);
@@ -490,12 +538,12 @@ public final class AudioEngine {
             LiveHit hit;
             while ((hit = pollNext(blockEnd)) != null) {
                 long frame = Math.max(segmentStart, tempo.frameAt(hit.beat()));
-                renderVoices(voices, mix, bus, gains, position, segmentStart, frame);
+                renderVoices(voices, mix, gains, position, segmentStart, frame);
                 segmentStart = frame;
                 play(hit, frame);
             }
-            renderVoices(voices, mix, bus, gains, position, segmentStart, blockEnd);
-            mixInBus(mix);
+            renderVoices(voices, mix, gains, position, segmentStart, blockEnd);
+            mixInBuses(mix);
             performance.process(mix, blockSize, tempo.bpm());
             position = blockEnd;
         }
@@ -510,10 +558,15 @@ public final class AudioEngine {
                 // the note's length at the tempo it starts in
                 int heldFrames = (int) tempo.frames(hit.heldBeats());
                 slot.trigger(hit.synth().voice(hit.midiNote(), heldFrames, sampleRate), frame, hit.gain());
+                slot.out = busFor(hit.synth()).frames;
             } else {
                 slot.trigger(hit.sample(), frame, hit.gain());
             }
             slot.track = hit.track();
+        }
+
+        private SynthBus busFor(LivePitchSynth synth) {
+            return buses.computeIfAbsent(synth, SynthBus::new);
         }
 
         /**
@@ -595,26 +648,54 @@ public final class AudioEngine {
         }
 
         /**
-         * The synth bus into the mix, through its effects when it has them. It runs on every block,
-         * silence included, or a delay's repeats and a reverb's tail would stop with the last note.
+         * Every synth's bus into the mix, each through its own effects when it has them, each ducking
+         * under the kick. They run on every block, silence included, or a delay's repeats and a
+         * reverb's tail would stop with the last note.
          */
-        private void mixInBus(float[] mix) {
-            int nextKick = 0;
-            for (int frame = 0; frame < blockSize; frame++) {
-                float value = bus[frame * CHANNELS];
-                if (effects == null) {
-                    mix[frame * CHANNELS] += value;
-                    mix[frame * CHANNELS + 1] += value;
-                    continue;
+        private void mixInBuses(float[] mix) {
+            // a second of silence, time enough for a tail to be over
+            int longQuiet = Math.max(1, sampleRate / blockSize);
+            var each = buses.entrySet().iterator();
+            while (each.hasNext()) {
+                var entry = each.next();
+                SynthBus bus = entry.getValue();
+                float loudest = 0.0f;
+                int nextKick = 0;
+                for (int frame = 0; frame < blockSize; frame++) {
+                    float left = bus.frames[frame * CHANNELS];
+                    float right = left;
+                    if (bus.effects != null) {
+                        if (nextKick < kickCount && kickOffsets[nextKick] == frame) {
+                            bus.effects.duck();
+                            nextKick++;
+                        }
+                        bus.effects.process(left, stereo);
+                        left = stereo[0];
+                        right = stereo[1];
+                    }
+                    mix[frame * CHANNELS] += left;
+                    mix[frame * CHANNELS + 1] += right;
+                    loudest = Math.max(loudest, Math.max(Math.abs(left), Math.abs(right)));
                 }
-                if (nextKick < kickCount && kickOffsets[nextKick] == frame) {
-                    effects.duck();
-                    nextKick++;
+                bus.quietBlocks = loudest < 1e-5f ? bus.quietBlocks + 1 : 0;
+                if (bus.quietBlocks > longQuiet && !playing.contains(entry.getKey()) && !anyVoiceInto(bus)) {
+                    each.remove();
                 }
-                effects.process(value, stereo);
-                mix[frame * CHANNELS] += stereo[0];
-                mix[frame * CHANNELS + 1] += stereo[1];
             }
+        }
+
+        private boolean anyVoiceInto(SynthBus bus) {
+            for (VoiceSlot voice : voices) {
+                if (voice.active && voice.out == bus.frames) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** How many synth channels are open: one per live synth the jam has, and any still dying away. */
+        int busCount() {
+            return buses.size();
         }
 
         Position positionAt(long frame) {
@@ -711,16 +792,16 @@ public final class AudioEngine {
                     externalMelody.add(new ExternalNote(beat, true, pitch.midiNote(), velocity, beat, track));
                     externalMelody.add(new ExternalNote(beat + note.durationBeats(), false, pitch.midiNote(), 0, beat,
                             track));
-                } else if (jam.synth() instanceof LivePitchSynth live && note.voice() instanceof Voice.Pitch pitch) {
-                    if (effects == null) {
-                        effects = live.effects(sampleRate);
-                    }
+                } else if (jam.synthFor(track) instanceof LivePitchSynth live
+                        && note.voice() instanceof Voice.Pitch pitch) {
+                    // its bus from the first note on, so its effects are there before the note sounds
+                    busFor(live);
                     // a voice of its own, reading the synth's parameters as it plays, so a knob
                     // moved now is heard in this note rather than in the loop after it
                     hits.addLast(LiveHit.note(beat, live, pitch.midiNote(), note.durationBeats(), note.velocity(),
                             track));
                 } else {
-                    hits.addLast(LiveHit.sample(beat, sampleFor(note, transport, jam.synth()), note.velocity(),
+                    hits.addLast(LiveHit.sample(beat, sampleFor(note, transport, jam.synthFor(track)), note.velocity(),
                             note.voice() == Drum.KICK, track));
                 }
             }
@@ -953,10 +1034,13 @@ public final class AudioEngine {
         private float gain;
         // the track the voice plays for, whose gain it follows; -1 for none
         private int track = -1;
+        // the synth bus it plays into, or null for the mix itself
+        private float[] out;
         private boolean active;
 
         private void trigger(Sample sample, long startFrame, float gain) {
             this.track = -1;
+            this.out = null;
             this.sample = sample;
             this.source = null;
             this.startFrame = startFrame;
@@ -970,6 +1054,7 @@ public final class AudioEngine {
 
         private void trigger(VoiceSource source, long startFrame, float gain) {
             this.track = -1;
+            this.out = null;
             this.sample = null;
             this.source = source;
             this.startFrame = startFrame;

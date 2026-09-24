@@ -100,6 +100,35 @@ public final class SynthControls {
         }
     }
 
+    /**
+     * Everything the panel shows for one patch: the preset it started from, its knobs, its effects
+     * and the division its delay is locked to. Kept by whoever plays several patches through one
+     * panel, to put back with {@link #restore} when its patch is on the panel again.
+     */
+    public record Setting(String preset, SynthParams params, EffectParams effects, String delaySync) {
+
+        /** A patch as it comes: its own knobs, and the effects with nothing turned up. */
+        public static Setting initial(String preset, SynthParams params) {
+            return new Setting(preset, params, EffectParams.DEFAULT, Sync.FREE.name());
+        }
+
+        /**
+         * The same setting at another tempo: a delay locked to a division of the beat takes the
+         * time that division lasts at {@code bpm}; a free one keeps its own.
+         */
+        public Setting at(double bpm) {
+            Sync division = Sync.valueOf(delaySync);
+            if (division == Sync.FREE || bpm <= 0) {
+                return this;
+            }
+            EffectParams timed = new EffectParams(effects.delayMode(), (float) millisFor(division, bpm),
+                    effects.delayFeedback(), effects.delayTone(), effects.delayMix(), effects.reverbSize(),
+                    effects.reverbDamping(), effects.reverbMix(), effects.duckDepth(), effects.duckMillis(),
+                    effects.crush());
+            return new Setting(preset, params, timed, delaySync);
+        }
+    }
+
     /** The ported patches, as the panel's preset list offers them. */
     private static final Map<String, Supplier<NovasawSynth>> PATCHES = new LinkedHashMap<>();
 
@@ -392,33 +421,71 @@ public final class SynthControls {
                 (float) drive.value(), (float) trim.value());
     }
 
+    /** The whole panel as it stands, to be put back with {@link #restore}. */
+    public Setting setting() {
+        return new Setting(preset.getValue(), params(), effects(), sync.value().name());
+    }
+
+    /**
+     * Puts a whole setting back on the panel without telling the listener: it is the one the
+     * patch already plays. A delay locked to the tempo takes up the tempo as it is now.
+     */
+    public void restore(Setting setting) {
+        applying = true;
+        try {
+            preset.setValue(setting.preset() == null ? null : setting.preset().toLowerCase(Locale.ROOT));
+            setKnobs(setting.params());
+            EffectParams effects = setting.effects();
+            delayMode.select(effects.delayMode());
+            delayTime.setValue(effects.delayMillis());
+            delayFeedback.setValue(effects.delayFeedback());
+            delayTone.setValue(effects.delayTone());
+            delayMix.setValue(effects.delayMix());
+            reverbSize.setValue(effects.reverbSize());
+            reverbDamping.setValue(effects.reverbDamping());
+            reverbMix.setValue(effects.reverbMix());
+            crush.setValue(effects.crush());
+            duckDepth.setValue(effects.duckDepth());
+            duckRecover.setValue(effects.duckMillis());
+            sync.select(Sync.valueOf(setting.delaySync()));
+        } finally {
+            applying = false;
+        }
+        redrawEffects();
+        applySync();
+    }
+
     /** Puts a patch onto the panel, publishing it once rather than once per control. */
     public void apply(SynthParams params) {
         applying = true;
         try {
-            detune.setValue(params.detuneCents());
-            sub.setValue(params.subLevel());
-            vibrato.setValue(params.vibratoCents());
-            motionRate.setValue(params.motionRateHz());
-            drift.setValue(params.motion());
-            cutoff.setValue(params.cutoffHz());
-            resonance.setValue(params.resonance());
-            envAmount.setValue(params.filterEnvAmountHz());
-            keyTrack.setValue(params.keyTrackHzPerSemitone());
-            drive.setValue(params.drive());
-            trim.setValue(params.outputTrim());
-            attack.setValue(params.attackSeconds() * 1000);
-            decay.setValue(params.decaySeconds() * 1000);
-            sustain.setValue(params.sustainLevel());
-            release.setValue(params.releaseSeconds() * 1000);
-            filterAttack.setValue(params.filterAttackSeconds() * 1000);
-            filterDecay.setValue(params.filterDecaySeconds() * 1000);
-            filterSustain.setValue(params.filterSustainLevel());
-            filterRelease.setValue(params.filterReleaseSeconds() * 1000);
+            setKnobs(params);
         } finally {
             applying = false;
         }
         publish();
+    }
+
+    private void setKnobs(SynthParams params) {
+        detune.setValue(params.detuneCents());
+        sub.setValue(params.subLevel());
+        vibrato.setValue(params.vibratoCents());
+        motionRate.setValue(params.motionRateHz());
+        drift.setValue(params.motion());
+        cutoff.setValue(params.cutoffHz());
+        resonance.setValue(params.resonance());
+        envAmount.setValue(params.filterEnvAmountHz());
+        keyTrack.setValue(params.keyTrackHzPerSemitone());
+        drive.setValue(params.drive());
+        trim.setValue(params.outputTrim());
+        attack.setValue(params.attackSeconds() * 1000);
+        decay.setValue(params.decaySeconds() * 1000);
+        sustain.setValue(params.sustainLevel());
+        release.setValue(params.releaseSeconds() * 1000);
+        filterAttack.setValue(params.filterAttackSeconds() * 1000);
+        filterDecay.setValue(params.filterDecaySeconds() * 1000);
+        filterSustain.setValue(params.filterSustainLevel());
+        filterRelease.setValue(params.filterReleaseSeconds() * 1000);
     }
 
     /**

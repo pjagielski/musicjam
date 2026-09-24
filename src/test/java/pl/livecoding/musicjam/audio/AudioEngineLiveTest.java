@@ -228,7 +228,7 @@ class AudioEngineLiveTest {
 
         float[] before = render(renderer, 2);
         jam.set(new AudioEngine.Jam(new Song(120, 4, List.of(new MelodyTrack(note.notes(), 4.0, 0.0f))),
-                jam.get().synth()));
+                jam.get().synthFor(0)));
         float[] fading = render(renderer, 1);
         float[] after = render(renderer, 1);
 
@@ -418,7 +418,8 @@ class AudioEngineLiveTest {
         LivePitchSynth synth = constantLevelSynth(level);
         var ducks = new ArrayList<Integer>();
         var processed = new AtomicInteger();
-        var renderer = engine().liveRenderer(() -> new AudioEngine.Jam(song, new LivePitchSynth() {
+        // one synth for the whole session, as a player hands it: a new one would get a channel of its own
+        LivePitchSynth ducking = new LivePitchSynth() {
             @Override
             public Sample render(int midiNote, int frameCount, int sampleRate) {
                 return synth.render(midiNote, frameCount, sampleRate);
@@ -445,12 +446,81 @@ class AudioEngineLiveTest {
                     }
                 };
             }
-        }), false);
+        };
+        var renderer = engine().liveRenderer(() -> new AudioEngine.Jam(song, ducking), false);
 
         render(renderer, BLOCKS);
 
         // the kicks only, never the snares, each one just before the frame it lands on
         assertEquals(List.of(0, 1_000, 2_000, 3_000), ducks);
+    }
+
+    @Test
+    void everyTrackIsPlayedByItsOwnSynthThroughItsOwnEffects() {
+        LivePitchSynth lead = amplifiedSynth(0.25f, 2);
+        LivePitchSynth bass = amplifiedSynth(0.125f, 4);
+        Song song = new Song(120, 4, List.of(
+                new MelodyTrack(List.of(new Note(0.0, new Voice.Pitch(72), 1.0, 1.0f)), 4.0, 1.0f),
+                new MelodyTrack(List.of(new Note(2.0, new Voice.Pitch(36), 1.0, 1.0f)), 4.0, 1.0f)));
+        var renderer = engine().liveRenderer(() -> new AudioEngine.Jam(song, List.of(lead, bass)), false);
+
+        float[] left = render(renderer, BLOCKS);
+
+        assertEquals(0.5f, left[200], 1e-6f, "the lead, doubled by its own effects");
+        assertEquals(0.5f, left[1_200], 1e-6f, "the bass, four times over by its own, not the lead's");
+    }
+
+    @Test
+    void aSynthTheJamHasLetGoOfClosesItsChannelOnceItsTailIsOver() {
+        LivePitchSynth first = amplifiedSynth(0.25f, 1);
+        LivePitchSynth second = amplifiedSynth(0.25f, 1);
+        Song song = new Song(120, 4, List.of(
+                new MelodyTrack(List.of(new Note(0.0, new Voice.Pitch(60), 0.5, 1.0f)), 4.0, 1.0f)));
+        var jam = new AtomicReference<>(new AudioEngine.Jam(song, first));
+        var renderer = engine().liveRenderer(jam::get, false);
+
+        render(renderer, 5);
+        jam.set(new AudioEngine.Jam(song, second));
+        render(renderer, 20);
+
+        // the second loop, from frame 2000, is the new synth's; the first falls quiet at 250 and goes
+        assertEquals(1, renderer.busCount());
+    }
+
+    /** A synth whose voices play a constant {@code level}, through effects that multiply it by {@code factor}. */
+    private static LivePitchSynth amplifiedSynth(float level, float factor) {
+        return new LivePitchSynth() {
+            @Override
+            public Sample render(int midiNote, int frameCount, int sampleRate) {
+                throw new AssertionError("a live synth's melody should not be rendered in advance");
+            }
+
+            @Override
+            public VoiceSource voice(int midiNote, int heldFrames, int sampleRate) {
+                return new VoiceSource() {
+                    private int frame;
+
+                    @Override
+                    public float next() {
+                        frame++;
+                        return level;
+                    }
+
+                    @Override
+                    public boolean finished() {
+                        return frame >= heldFrames;
+                    }
+                };
+            }
+
+            @Override
+            public AudioEffect effects(int sampleRate) {
+                return (input, stereoOut) -> {
+                    stereoOut[0] = input * factor;
+                    stereoOut[1] = input * factor;
+                };
+            }
+        };
     }
 
     /** A synth whose voices simply play whatever {@code level} says at that frame. */

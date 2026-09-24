@@ -81,6 +81,14 @@ final class Choice<T> extends HBox {
         return value;
     }
 
+    /** Chooses {@code option} as a click on it would, telling whoever listens. */
+    void select(T option) {
+        ToggleButton button = buttons.get(option);
+        if (button != null) {
+            button.setSelected(true);
+        }
+    }
+
     void setOnChange(Consumer<T> listener) {
         this.onChange = listener;
     }

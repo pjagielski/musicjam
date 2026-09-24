@@ -28,11 +28,15 @@ final class TrackList {
     }
 
     /** What a jam config makes: the grid, then the one melody it names — with the grid selected. */
-    static TrackList startingWith(String melodyName, MidiWindow melody) {
+    static TrackList startingWith(String melodyName, MidiWindow melody, Instrument instrument) {
         TrackList list = new TrackList();
         list.tracks.add(new StudioTrack.Drums("Drums", 1.0f, false));
-        list.tracks.add(new StudioTrack.Melody(melodyName, 1.0f, false, melody));
+        list.tracks.add(new StudioTrack.Melody(melodyName, 1.0f, false, melody, instrument));
         return list;
+    }
+
+    static TrackList startingWith(String melodyName, MidiWindow melody) {
+        return startingWith(melodyName, melody, null);
     }
 
     List<StudioTrack> tracks() {
