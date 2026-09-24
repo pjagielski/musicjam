@@ -8,6 +8,7 @@ import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
 import javafx.geometry.Pos;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
@@ -116,11 +117,44 @@ final class MidiWindowEditor {
         Button browse = new Button("Browse...");
         browse.setOnAction(event -> browse(browse));
         summary.setStyle("-fx-text-fill: #868e96;");
+        HBox paging = pageButtons();
         updateSummary();
+        Region push = new Region();
+        HBox.setHgrow(push, Priority.ALWAYS);
         HBox controls = new HBox(8, new Label("File"), file, browse, gap(), new Label("Track"), trackIndex,
-                gap(), new Label("From bar"), startBar, gap(), summary);
+                gap(), new Label("From bar"), startBar, gap(), summary, push, paging);
         controls.setAlignment(Pos.CENTER_LEFT);
         return StudioPanels.frame("Melody from a MIDI file", controls, roll.node());
+    }
+
+    /**
+     * Which four bars of a longer loop the roll is showing, and a button either side to turn to
+     * the ones before or after. The playhead turns the page too; these are for looking ahead, or
+     * back, while it is somewhere else or stopped. Out of the way for a loop of four bars or less.
+     */
+    private HBox pageButtons() {
+        Button back = new Button("<");
+        Button forward = new Button(">");
+        Label shownBars = new Label();
+        shownBars.setMinWidth(92);
+        shownBars.setAlignment(Pos.CENTER);
+        back.setOnAction(event -> roll.showPage(roll.page() - 1));
+        forward.setOnAction(event -> roll.showPage(roll.page() + 1));
+        HBox paging = new HBox(6, back, shownBars, forward);
+        paging.setAlignment(Pos.CENTER_RIGHT);
+        roll.setOnPage(page -> {
+            PianoRoll.Pages pages = roll.pages();
+            boolean several = pages.count() > 1;
+            paging.setVisible(several);
+            back.setDisable(page == 0);
+            forward.setDisable(page == pages.count() - 1);
+            int firstBar = (int) Math.round(pages.start(page) / beatsPerBar) + 1;
+            int lastBar = (int) Math.ceil(Math.min(pages.lengthBeats(), pages.start(page) + pages.pageBeats())
+                    / beatsPerBar - 1e-9);
+            int bars = (int) Math.ceil(pages.lengthBeats() / beatsPerBar - 1e-9);
+            shownBars.setText("Bars " + firstBar + (lastBar > firstBar ? "-" + lastBar : "") + " of " + bars);
+        });
+        return paging;
     }
 
     /** A little more room between one control and its label and the next. */

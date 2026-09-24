@@ -43,6 +43,35 @@ class PianoRollTest {
     }
 
     @Test
+    void aLongLoopIsShownFourBarsAtATime() {
+        PianoRoll.Pages pages = PianoRoll.Pages.of(32, 4);
+
+        assertEquals(16, pages.pageBeats());
+        assertEquals(2, pages.count(), "eight bars, two pages, not a sliver of a third");
+        assertEquals(0, pages.of(15.99));
+        assertEquals(1, pages.of(16));
+        assertEquals(16, pages.start(1));
+    }
+
+    @Test
+    void aShortLoopIsOnePageAsLongAsItIs() {
+        PianoRoll.Pages pages = PianoRoll.Pages.of(8, 4);
+
+        assertEquals(8, pages.pageBeats());
+        assertEquals(1, pages.count());
+        assertEquals(0, pages.of(7.5));
+    }
+
+    @Test
+    void aLoopThatDoesNotFillItsLastPageStillHasOne() {
+        PianoRoll.Pages pages = PianoRoll.Pages.of(24, 4);
+
+        assertEquals(2, pages.count(), "six bars: four, then two");
+        assertEquals(1, pages.of(23.9));
+        assertEquals(1, pages.of(40), "never past the last page");
+    }
+
+    @Test
     void middleCIsC4() {
         assertEquals("C4", PianoRoll.name(60));
         assertEquals("C-1", PianoRoll.name(0));

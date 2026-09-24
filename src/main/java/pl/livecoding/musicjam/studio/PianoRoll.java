@@ -12,19 +12,24 @@ import pl.livecoding.musicjam.model.Note;
 import pl.livecoding.musicjam.model.Voice;
 
 import java.util.List;
+import java.util.function.IntConsumer;
 
 /**
  * A melody track's notes laid out as a piano roll: time across, pitch up, a key per row with the
  * black keys shaded and every C named, bar lines, and the playhead moving over it while the jam
- * plays. It only shows, for now: what it draws is the loop as the engine hears it, so a window of
- * a MIDI file starts at the left edge from whichever bar of the file it opens on.
+ * plays. It shows at most four bars at a time, so the notes of a long loop stay wide enough to
+ * read, and turns the page when the playhead runs off the one it is on. It only shows, for now:
+ * what it draws is the loop as the engine hears it, so a window of a MIDI file starts at the left
+ * edge from whichever bar of the file it opens on.
  */
 final class PianoRoll {
     static final double KEYS_WIDTH = 34;
+    static final int BARS_PER_PAGE = 4;
     private static final double MIN_ROW = 3;
     private static final double MAX_ROW = 12;
     private static final Color WHITE_ROW = Color.web("#ffffff");
     private static final Color BLACK_ROW = Color.web("#f1f3f5");
+    private static final Color PAST_THE_LOOP = Color.web("#e9ecef");
     private static final Color OCTAVE_LINE = Color.web("#ced4da");
     private static final Color BAR_LINE = Color.web("#adb5bd");
     private static final Color BEAT_LINE = Color.web("#e9ecef");
@@ -69,13 +74,46 @@ final class PianoRoll {
         }
     }
 
+    /**
+     * A loop of {@code lengthBeats} cut into pages of {@code pageBeats}: as long as the loop when it
+     * is short, four bars when it is longer. The last page can be cut short by the loop's end.
+     */
+    record Pages(double lengthBeats, double pageBeats) {
+
+        static Pages of(double lengthBeats, int beatsPerBar) {
+            return new Pages(lengthBeats, Math.min(lengthBeats, BARS_PER_PAGE * beatsPerBar));
+        }
+
+        int count() {
+            // a hair's allowance, so eight bars in pages of four is two pages and not a sliver of a third
+            return Math.max(1, (int) Math.ceil(lengthBeats / pageBeats - 1e-9));
+        }
+
+        /** The page {@code beat} of the loop falls on. */
+        int of(double beat) {
+            return Math.max(0, Math.min(count() - 1, (int) Math.floor(beat / pageBeats)));
+        }
+
+        double start(int page) {
+            return page * pageBeats;
+        }
+    }
+
     private final Canvas notes = new Canvas();
     private final Canvas playhead = new Canvas();
     private final Pane node = new Pane(notes, playhead);
     private final double width;
     private final double tallest;
-    private double lengthBeats = 1;
+    private List<Note> shown = List.of();
+    private Keys keys = new Keys(54, 66);
+    private double row = MAX_ROW;
+    private int beatsPerBar = 4;
+    private Pages pages = new Pages(1, 1);
+    private int page;
+    // the page the playhead was last on, so a page turned by hand stays until the playhead moves on
+    private int playheadPage = -1;
     private int shownX = -1;
+    private IntConsumer onPage = page -> { };
 
     /** A roll {@code width} wide, and at most {@code tallest} high however many keys it spans. */
     PianoRoll(double width, double tallest) {
@@ -89,11 +127,30 @@ final class PianoRoll {
         return node;
     }
 
-    /** Draws {@code shown} over a loop of {@code lengthBeats}, with a line at every bar. */
+    /** Hears of every page shown, by the playhead or by hand. */
+    void setOnPage(IntConsumer listener) {
+        onPage = listener;
+    }
+
+    int page() {
+        return page;
+    }
+
+    Pages pages() {
+        return pages;
+    }
+
+    /**
+     * Draws {@code shown} over a loop of {@code lengthBeats}, with a line at every bar: the page
+     * it was on when the loop still has it, the first when it does not. The keys are the whole
+     * loop's, so turning the page never moves the notes up or down.
+     */
     void show(List<Note> shown, double lengthBeats, int beatsPerBar) {
-        this.lengthBeats = lengthBeats;
-        Keys keys = Keys.of(shown);
-        double row = Math.max(MIN_ROW, Math.min(MAX_ROW, Math.floor(tallest / keys.rows())));
+        this.shown = List.copyOf(shown);
+        this.beatsPerBar = beatsPerBar;
+        pages = Pages.of(lengthBeats, beatsPerBar);
+        keys = Keys.of(shown);
+        row = Math.max(MIN_ROW, Math.min(MAX_ROW, Math.floor(tallest / keys.rows())));
         double height = row * keys.rows();
         for (Canvas canvas : List.of(notes, playhead)) {
             canvas.setWidth(width);
@@ -102,11 +159,57 @@ final class PianoRoll {
         node.setPrefSize(width, height);
         node.setMinSize(width, height);
         node.setMaxSize(width, height);
+        playheadPage = -1;
+        turnTo(page < pages.count() ? page : 0);
+    }
 
+    /** Shows another page, as the page buttons ask. */
+    void showPage(int next) {
+        turnTo(Math.max(0, Math.min(pages.count() - 1, next)));
+    }
+
+    /**
+     * The playhead at {@code beat} into the loop, or none for a negative beat. Running onto another
+     * page turns to it.
+     */
+    void setPlayhead(double beat) {
+        if (beat < 0) {
+            playheadPage = -1;
+            drawPlayhead(-1);
+            return;
+        }
+        double into = beat % pages.lengthBeats();
+        int on = pages.of(into);
+        if (on != playheadPage) {
+            playheadPage = on;
+            if (on != page) {
+                turnTo(on);
+            }
+        }
+        int x = on != page ? -1 : (int) Math.round(KEYS_WIDTH + (into - pages.start(page)) * perBeat());
+        drawPlayhead(x);
+    }
+
+    private void turnTo(int next) {
+        page = next;
+        drawNotes();
+        shownX = -2;
+        drawPlayhead(-1);
+        onPage.accept(page);
+    }
+
+    private double perBeat() {
+        return (width - KEYS_WIDTH) / pages.pageBeats();
+    }
+
+    private void drawNotes() {
+        double height = notes.getHeight();
         GraphicsContext g = notes.getGraphicsContext2D();
         g.clearRect(0, 0, width, height);
         double rollWidth = width - KEYS_WIDTH;
-        double perBeat = rollWidth / lengthBeats;
+        double perBeat = perBeat();
+        double from = pages.start(page);
+        double to = Math.min(pages.lengthBeats(), from + pages.pageBeats());
         g.setFont(Font.font(Math.min(10, row + 1)));
         g.setTextBaseline(VPos.CENTER);
         g.setTextAlign(TextAlignment.RIGHT);
@@ -133,26 +236,34 @@ final class PianoRoll {
                 g.fillText(name(pitch), KEYS_WIDTH - 2, y + row / 2);
             }
         }
+        // a last page the loop ends partway through: what lies past its end is not played
+        double loopEnd = KEYS_WIDTH + (to - from) * perBeat;
+        if (loopEnd < width) {
+            g.setFill(PAST_THE_LOOP);
+            g.fillRect(loopEnd, 0, width - loopEnd, height);
+        }
         g.setStroke(OCTAVE_LINE);
         g.strokeLine(KEYS_WIDTH - 0.5, 0, KEYS_WIDTH - 0.5, height);
         // a line at every beat, where there is room for one, and a darker one at every bar
-        for (int beat = 0; beat <= Math.ceil(lengthBeats); beat++) {
+        for (int beat = (int) Math.ceil(from); beat <= Math.ceil(to); beat++) {
             boolean bar = beat % beatsPerBar == 0;
             if (!bar && perBeat < 6) {
                 continue;
             }
-            double x = Math.min(width - 0.5, Math.round(KEYS_WIDTH + beat * perBeat) + 0.5);
+            double x = Math.min(width - 0.5, Math.round(KEYS_WIDTH + (beat - from) * perBeat) + 0.5);
             g.setStroke(bar ? BAR_LINE : BEAT_LINE);
             g.strokeLine(x, 0, x, height);
         }
         for (Note note : shown) {
-            if (!(note.voice() instanceof Voice.Pitch pitch) || note.beat() >= lengthBeats) {
+            double end = Math.min(to, note.beat() + note.durationBeats());
+            if (!(note.voice() instanceof Voice.Pitch pitch) || note.beat() >= to || end <= from) {
                 continue;
             }
-            double x = KEYS_WIDTH + note.beat() * perBeat;
-            double end = KEYS_WIDTH + Math.min(lengthBeats, note.beat() + note.durationBeats()) * perBeat;
+            // a note begun on the page before starts at the left edge
+            double x = KEYS_WIDTH + (Math.max(from, note.beat()) - from) * perBeat;
+            double right = KEYS_WIDTH + (end - from) * perBeat;
             double y = height - (pitch.midiNote() - keys.low() + 1) * row;
-            double w = Math.max(2, end - x - 1);
+            double w = Math.max(2, right - x - 1);
             g.setGlobalAlpha(0.45 + 0.55 * note.velocity());
             g.setFill(NOTE);
             g.fillRoundRect(x, y + 0.5, w, row - 1, 3, 3);
@@ -162,13 +273,9 @@ final class PianoRoll {
                 g.strokeRoundRect(x + 0.5, y + 1, w - 1, row - 2, 3, 3);
             }
         }
-        shownX = -1;
-        playhead.getGraphicsContext2D().clearRect(0, 0, width, height);
     }
 
-    /** The playhead at {@code beat} into the loop, or none for a negative beat. */
-    void setPlayhead(double beat) {
-        int x = beat < 0 ? -1 : (int) Math.round(KEYS_WIDTH + (beat % lengthBeats) / lengthBeats * (width - KEYS_WIDTH));
+    private void drawPlayhead(int x) {
         if (x == shownX) {
             return;
         }
