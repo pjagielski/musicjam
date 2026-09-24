@@ -189,6 +189,22 @@ rather than the melody's; 3.4's per-layer effects need a layer to hang on.
 | 10.5 | ✓ **Done.** **Each melody track can go out over MIDI** instead of being played here, rather than the one global "Melody over MIDI" switch. The instrument panel's Synth / External MIDI switch is the track's own, and so are its channel, its CC and its filter; the device and the latency stay the jam's. A new track starts empty, with a synth and the lowest channel no other has, leaving 10 to the drums. The engine sends each note on its track's channel, and the session always has somewhere to send them - whatever device is connected when a note is due - so connecting, disconnecting and sending a track out all happen while the jam plays; a track sent out with no device connected is played here. | S |
 | 10.6 | **Saving a jam with its tracks** (6.x's territory): a jam file naming each track, its source and its patch, so a set survives the window closing. | M |
 
+## Phase 11 — A hand that does not know the keyboard yet
+
+The roll can be written in now, which is the moment the workshop's hardest question arrives: what
+to write. Someone who does not read music can drag notes about and hear that some of them are
+wrong without knowing which, and nothing in the window tells them. This phase is about the window
+knowing a little theory and lending it — showing which notes belong, playing one under the finger,
+and turning one note into a chord — without ever taking the choice away.
+
+| Step | What | Effort |
+| --- | --- | --- |
+| 11.1 | ★ **A keyboard you can play.** The roll's keys are drawn but dead; make them sound. A click plays that pitch through the track's own instrument, so a line can be found by ear before it is written, and a key lights while a note of the loop is sounding on it. It is also what makes the roll teachable: point at a key, hear it, put it down. | S |
+| 11.2 | ★ **A key and a scale for the jam**, named once (C minor, F Dorian) and shown everywhere: the roll shades the rows that are not in it, so what belongs is the part that stays white. Nothing is forbidden — a note off the scale still plays, it just looks like the choice it is. The grid's rows and the piano's keys take the same shading. | M |
+| 11.3 | **Chord tones marked against the bar.** With a chord per bar (Cm, A♭, E♭), the roll marks the rows of the chord under the playhead more strongly than the rest of the scale, so the notes that will sound consonant are the obvious ones to reach for. Where the chords come from is the question: named by hand at first, later read from the MIDI file a track came from. | M |
+| 11.4 | **One note into a chord.** A melody track can be told to play chords: each note it holds becomes the chord of that bar, voiced from the note played — so a beginner draws a line and hears a progression. The mapping belongs to the track, beside its patch, and what it makes is ordinary notes, so the roll shows what will actually sound. | M |
+| 11.5 | **A bar of suggestions.** With a scale and a chord known, the studio can offer a handful of phrases that fit — an arpeggio, a held root, a walking line — as one click each, to take or to change. It is the last step, not the first: it is only worth anything once 11.2 and 11.3 have taught the window what fits. | L |
+
 ---
 
 ## If only three things happen
