@@ -112,13 +112,31 @@ The grid and the code understand each other; the melody does not.
 | 6.3 | **A stylesheet** instead of inline styles, and a light/dark switch for the whole studio. | M |
 | 6.4 | **`jpackage` bundle**, so participants double-click an app with its own icon instead of running Gradle. | M |
 
-## Phase 7 — The workshop itself
+## Phase 7 — The workshop itself, told apart from the instrument
+
+One repository holds two things that have grown apart. The course is ten branches — `step-1` to
+`step-5`, each with a `-final` — laid out for teaching: `step1/`, `step2/`, a `scheduler/` package
+of four scheduler kinds, a `Config`. The instrument is `final`, where none of that exists and the
+studio does. What `final` still carries from the course is the demo path: `SequencerDemo`,
+`InspectMidi`, `NaivePlayerDemo` and the `NaivePlayer` and `TimingReport` behind them — five files
+in `midi/` that nothing else calls, beside the `MidiFileReader` and `ExternalMidiOutput` the studio
+lives on. The line is not clean, which is the point: `MidiPlayer` looks like course code and is
+not (`BeatApp`'s loop MIDI sync uses it), `MidiNoteOutput` and `NoteOutput` are shared by both, and
+`ListMidiDevices` is a lesson that is also the tool for finding a loopMIDI device by name. The
+README's Run section is mostly workshop instructions, so someone opening the repo for the
+instrument reads a lesson plan.
+
+None of that is wrong, but it costs: every engine fix is ported to the step branches by hand (7.1
+is exactly that), and nothing in the tree says which half a file belongs to.
 
 | Step | What | Effort |
 | --- | --- | --- |
 | 7.1 | Port the state-variable filter fix to `step-5` / `step-5-final`. | S |
 | 7.2 | A step built on the live voice: "make the filter follow the envelope" is a good exercise now that the engine plays voices rather than samples. | M |
 | 7.3 | Update the cheat sheets in `docs/sciagi` once the steps change. | S |
+| 7.4 | ★ **The instrument and the course in their own source sets.** A `course` source set for the five demo files nothing else calls, depending on the main one rather than sitting inside it, and the Gradle tasks split the same way (`studio`, `beat` for the instrument; `naivePlayerDemo` for the course). The work is not the move but the sorting: deciding where `MidiPlayer`, `MidiNoteOutput`, `NoteOutput` and `ListMidiDevices` belong when both halves use them. Nothing is deleted and no branch moves — it is the tree saying which half is which. | S |
+| 7.5 | **A README apiece.** One that opens with what the instrument is and the one command that starts it, one for the workshop path with its steps, its source-launch lines and its cheat sheets. Today they are one page, and the instrument's half is the shorter. | S |
+| 7.6 | **The steps built on the core module, not on copies of it** (wants 8.1). A step branch keeps its own teaching layout, but takes the engine as a dependency, so a filter fix lands once instead of being carried to ten branches. The open question is whether the course stays ten branches at all: branches give a clean `git checkout step-3`, directories in one branch give one history and no drift. Worth deciding before 7.6, not after. | M |
 
 ## Phase 8 — On a phone
 
@@ -229,7 +247,9 @@ Most of the list is independent; these are the ties worth knowing before picking
   something has to know how a patch is written down.
 - **11.3** and **11.4** want **11.2**: a chord means little until the window knows the key. **11.5**
   wants both, which is why it is last.
-- **8.2** (the Android spike) wants **8.1** (the core module); nothing else waits on either.
+- **8.2** (the Android spike) wants **8.1** (the core module), and so does **7.6**: the same seam
+  that lets a phone play the engine lets a step branch depend on it instead of copying it. That is
+  two reasons for one piece of work.
 - **4.1** (clip grid) and **1.1** are unblocked now that 10.1 has given the studio tracks.
 - **11.1** (a keyboard that sounds) is unblocked by 10.4: a key can be played through the selected
   track's own instrument.
