@@ -26,7 +26,7 @@ blank page.
 - **The roll.** Four bars at a time, turning the page with the playhead. Its keys are played by
   clicking them and light while the loop sounds on them. A hand adds, moves,
   stretches and removes notes, gathers several with a band and sets their velocities in a lane
-  under it. Ctrl+Z walks back through what a hand has written.
+  under it, shaded by the key the jam is in. Ctrl+Z walks back through what a hand has written.
 - **Out.** Native audio, or any melody track to an external synth on a channel of its own, with a
   latency offset; the device and the latency are the jam's, the channel and the filter the
   track's.
@@ -229,7 +229,7 @@ and turning one note into a chord — without ever taking the choice away.
 | Step | What | Effort |
 | --- | --- | --- |
 | 11.1 | ✓ **Done.** ★ **A keyboard you can play.** The roll's keys sound when clicked, through the selected track's own instrument and its effects, or out over MIDI on that track's channel when it goes there; a key lights while a note of the loop is sounding on it. A key is heard whether the jam plays or not: with it stopped, the studio opens a session that compiles no loop at the first key pressed, so nothing holds the audio device until someone asks to hear something. A note lasts 0.7 s, since a voice is made with its length rather than let go of by hand. | S |
-| 11.2 | ★ **A key and a scale for the jam**, named once (C minor, F Dorian) and shown everywhere: the roll shades the rows that are not in it, so what belongs is the part that stays white. Nothing is forbidden — a note off the scale still plays, it just looks like the choice it is. The grid's rows and the piano's keys take the same shading. | M |
+| 11.2 | ✓ **Done.** ★ **A key and a scale for the jam**, named once in the transport bar (C minor, F dorian, and the pentatonics) and shown in the roll: the rows and the keys the key does not hold are shaded, the root's rows carry a tint and its name where the C would be. Nothing is forbidden — a note off the scale plays as it always did, it just looks like the choice it is. A jam opens on "Any", which holds every note and shades nothing, since the studio does not know the key of a MIDI file it has been handed. The drum grid takes no shading: drums have no key. | M |
 | 11.3 | **Chord tones marked against the bar.** With a chord per bar (Cm, A♭, E♭), the roll marks the rows of the chord under the playhead more strongly than the rest of the scale, so the notes that will sound consonant are the obvious ones to reach for. Where the chords come from is the question: named by hand at first, later read from the MIDI file a track came from. | M |
 | 11.4 | **One note into a chord.** A melody track can be told to play chords: each note it holds becomes the chord of that bar, voiced from the note played — so a beginner draws a line and hears a progression. The mapping belongs to the track, beside its patch, and what it makes is ordinary notes, so the roll shows what will actually sound. | M |
 | 11.5 | **A bar of suggestions.** With a scale and a chord known, the studio can offer a handful of phrases that fit — an arpeggio, a held root, a walking line — as one click each, to take or to change. It is the last step, not the first: it is only worth anything once 11.2 and 11.3 have taught the window what fits. | L |
@@ -261,8 +261,7 @@ For a studio meant to be **played live**, with the musical help of Phase 11 next
 
 1. ~~**11.1 — a keyboard you can play.**~~ Done.
 2. ~~**4.4 — undo.**~~ Done.
-3. **11.2 — a key and a scale.** Shading the rows that do not belong is what turns the roll from a
-   grid into a guide, and 11.3 and 11.4 both stand on it.
+3. ~~**11.2 — a key and a scale.**~~ Done.
 4. **The rest of Phase 9** — Cutter (9.5), Reverb (9.11) and Pitch (9.16) are the three missing
    strips a set actually reaches for, and **1.5**, a limiter, before stacking them.
 5. **11.3 / 11.4 — chords**, once the key is known.

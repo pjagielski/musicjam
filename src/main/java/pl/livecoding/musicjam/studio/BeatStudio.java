@@ -34,7 +34,6 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
-import javafx.scene.transform.Scale;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 import javafx.stage.Screen;
@@ -50,6 +49,7 @@ import pl.livecoding.musicjam.midi.MidiFileReader;
 import pl.livecoding.musicjam.model.DrumTrack;
 import pl.livecoding.musicjam.model.MelodyTrack;
 import pl.livecoding.musicjam.model.Note;
+import pl.livecoding.musicjam.model.Scale;
 import pl.livecoding.musicjam.model.Song;
 import pl.livecoding.musicjam.model.Track;
 import pl.livecoding.musicjam.studio.knobs.FxStrip;
@@ -124,6 +124,9 @@ public final class BeatStudio extends Application {
     private final Label bpmLabel = new Label();
     private final ObservableList<String> loopLengths = FXCollections.observableArrayList(LOOP_LENGTHS);
     private final Spinner<String> bars = new Spinner<>(new SpinnerValueFactory.ListSpinnerValueFactory<>(loopLengths));
+    // the key the jam is in: what the roll shades its rows and keys by
+    private final ComboBox<String> keyRoot = new ComboBox<>();
+    private final ComboBox<Scale.Mode> keyMode = new ComboBox<>();
     private final TextArea code = new TextArea(STARTER_CODE);
     private final Button runCode = new Button("Run (Ctrl+Enter)");
     private final Label codeError = new Label();
@@ -221,6 +224,12 @@ public final class BeatStudio extends Application {
             retimeDelays();
             publish();
         });
+        keyRoot.getItems().setAll(Scale.ROOTS);
+        keyRoot.setValue(Scale.ROOTS.getFirst());
+        keyMode.getItems().setAll(Scale.Mode.values());
+        keyMode.setValue(Scale.Mode.ANY);
+        keyRoot.setOnAction(event -> showScale());
+        keyMode.setOnAction(event -> showScale());
         bars.valueProperty().addListener((property, before, after) -> {
             publish();
             if (tracks.selected() instanceof StudioTrack.Melody) {
@@ -366,8 +375,11 @@ public final class BeatStudio extends Application {
 
         HBox tools = row(new Label("Zoom"), smaller, zoomLabel, larger, normal, fit,
                 nextScreen, fullScreen);
+        keyRoot.setPrefWidth(76);
+        keyMode.setPrefWidth(150);
+        showScale();
         HBox transport = row(play, new Label("Jam"), presets, new Label("Tempo"), bpm, bpmLabel,
-                new Label("Loop (bars)"), bars, loopProgress, status);
+                new Label("Loop (bars)"), bars, new Label("Key"), keyRoot, keyMode, loopProgress, status);
         HBox.setHgrow(loopProgress, Priority.ALWAYS);
 
         // pinned above the scroll pane: what you reach for while it plays should not scroll away
@@ -396,7 +408,8 @@ public final class BeatStudio extends Application {
 
     private void setZoom(VBox content, Label label, double requested) {
         zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, requested));
-        content.getTransforms().setAll(new Scale(zoom, zoom, 0, 0));
+        // JavaFX has a Scale of its own, which is a transform rather than a key
+        content.getTransforms().setAll(new javafx.scene.transform.Scale(zoom, zoom, 0, 0));
         label.setText(Math.round(zoom * 100) + "%");
     }
 
@@ -676,6 +689,7 @@ public final class BeatStudio extends Application {
                     editor.getChildren().setAll(frame);
                     roll = melodyEditor.roll();
                     roll.setOnKey(this::audition);
+                    roll.setScale(scale());
                 } catch (Exception exception) {
                     editor.getChildren().clear();
                     showError(exception);
@@ -727,6 +741,19 @@ public final class BeatStudio extends Application {
             idle = engine.openIdle(jam::get);
         }
         return idle;
+    }
+
+    /** The key the two pickers name. */
+    private Scale scale() {
+        return new Scale(Scale.ROOTS.indexOf(keyRoot.getValue()), keyMode.getValue());
+    }
+
+    /** A key chosen: the roll shades its rows by it, and the root picker only matters once it has one. */
+    private void showScale() {
+        keyRoot.setDisable(keyMode.getValue() == Scale.Mode.ANY);
+        if (roll != null) {
+            roll.setScale(scale());
+        }
     }
 
     /** The editor always shows the selected track, so that is the one whose notes have changed. */

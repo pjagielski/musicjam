@@ -13,6 +13,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.TextAlignment;
 import pl.livecoding.musicjam.model.Note;
+import pl.livecoding.musicjam.model.Scale;
 import pl.livecoding.musicjam.studio.knobs.NoPanning;
 import pl.livecoding.musicjam.model.Voice;
 
@@ -32,7 +33,9 @@ import java.util.function.IntConsumer;
  * the file it opens on.
  *
  * <p>The keys down the left are played by clicking them, whether the jam is running or stopped,
- * and light while a note of the loop is sounding on them.
+ * and light while a note of the loop is sounding on them. With a key chosen for the jam, the rows
+ * and keys that do not belong to it are shaded, so what fits is what stays pale; nothing is
+ * forbidden, a note outside the key simply looks like the choice it is.
  *
  * <p>Made editable, it takes a hand as a DAW's roll does: click an empty row to put a note there,
  * drag one to move it, drag its right edge to change its length, right-click it to take it away.
@@ -49,7 +52,13 @@ final class PianoRoll {
     // the row height a roll opens at when the notes leave it the choice
     private static final double PREFERRED_ROW = 8;
     private static final Color WHITE_ROW = Color.web("#ffffff");
-    private static final Color BLACK_ROW = Color.web("#f1f3f5");
+    private static final Color BLACK_ROW = Color.web("#f5f7f9");
+    // rows and keys the jam's key does not hold, and the row its root sits on
+    private static final Color OUT_ROW = Color.web("#e3e6ea");
+    private static final Color OUT_KEY = Color.web("#c9ced4");
+    private static final Color OUT_BLACK_KEY = Color.web("#868e96");
+    private static final Color ROOT_ROW = Color.web("#eef6fc");
+    private static final Color ROOT_TEXT = Color.web("#1c7ed6");
     private static final Color PAST_THE_LOOP = Color.web("#e9ecef");
     private static final Color OCTAVE_LINE = Color.web("#ced4da");
     private static final Color BAR_LINE = Color.web("#adb5bd");
@@ -180,6 +189,7 @@ final class PianoRoll {
     private IntConsumer onKey = pitch -> { };
     // the keys lit now: those a note of the loop is sounding on, and one pressed by hand
     private Set<Integer> lit = Set.of();
+    private Scale scale = Scale.ANY;
     private int pressedKey = -1;
     // a drag in progress: the notes as they were when it started, and the one under the hand
     private List<Note> dragFrom;
@@ -223,6 +233,16 @@ final class PianoRoll {
         velocities.setOnMousePressed(this::velocityPressed);
         velocities.setOnMouseDragged(this::velocityDragged);
         velocities.setOnMouseReleased(event -> finish());
+    }
+
+    /** The key the jam is in, which the rows and the keyboard are shaded by. */
+    void setScale(Scale next) {
+        if (!next.equals(scale)) {
+            scale = next;
+            if (drawn) {
+                drawNotes();
+            }
+        }
     }
 
     /** Hears the pitch of every key pressed on the keyboard down the left. */
@@ -368,12 +388,17 @@ final class PianoRoll {
         g.fillRect(0, 0, KEYS_WIDTH, height);
         for (int pitch = keys.low(); pitch <= keys.high(); pitch++) {
             double y = height - (pitch - keys.low() + 1) * row;
-            g.setFill(isBlack(pitch) ? BLACK_ROW : WHITE_ROW);
+            boolean held = scale.holds(pitch);
+            g.setFill(!held ? OUT_ROW : scale.isRoot(pitch) ? ROOT_ROW : isBlack(pitch) ? BLACK_ROW : WHITE_ROW);
             g.fillRect(KEYS_WIDTH, y, rollWidth, row);
             if (isBlack(pitch)) {
-                g.setFill(BLACK_KEY);
+                g.setFill(held ? BLACK_KEY : OUT_BLACK_KEY);
                 g.fillRect(0, y, KEYS_WIDTH - 14, row);
-            } else if (pitch % 12 == 0 || pitch % 12 == 5) {
+            } else if (!held) {
+                g.setFill(OUT_KEY);
+                g.fillRect(0, y, KEYS_WIDTH - 1, row);
+            }
+            if (!isBlack(pitch) && (pitch % 12 == 0 || pitch % 12 == 5)) {
                 // two white keys side by side, B and C or E and F: the seam between them
                 g.setStroke(KEY_SEAM);
                 g.setLineWidth(1);
@@ -383,6 +408,11 @@ final class PianoRoll {
                 g.setStroke(OCTAVE_LINE);
                 g.setLineWidth(1);
                 g.strokeLine(KEYS_WIDTH, y + row - 0.5, width, y + row - 0.5);
+            }
+            if (scale.isRoot(pitch)) {
+                g.setFill(ROOT_TEXT);
+                g.fillText(scale.rootName(), KEYS_WIDTH - 2, y + row / 2);
+            } else if (pitch % 12 == 0) {
                 g.setFill(KEY_TEXT);
                 g.fillText(name(pitch), KEYS_WIDTH - 2, y + row / 2);
             }
