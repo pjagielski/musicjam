@@ -8,6 +8,8 @@ import java.util.List;
  * white and a note outside the key looks like the choice it is.
  *
  * <p>{@link Mode#ANY} holds every note, which is what a jam is in until someone says otherwise.
+ * {@link #guess} reads a key off a line of notes, which is how a jam that comes from a MIDI file
+ * gets one without anybody naming it.
  */
 public record Scale(int root, Mode mode) {
 
@@ -51,6 +53,13 @@ public record Scale(int root, Mode mode) {
     /** No key chosen: every note belongs, and the roll shades nothing. */
     public static final Scale ANY = new Scale(0, Mode.ANY);
 
+    /**
+     * The modes {@link #guess} chooses between, in the order a tie is broken by: the two anybody
+     * would name first, then the rest of the modes.
+     */
+    private static final List<Mode> GUESSED = List.of(Mode.MINOR, Mode.MAJOR, Mode.DORIAN, Mode.MIXOLYDIAN,
+            Mode.PHRYGIAN, Mode.LYDIAN, Mode.HARMONIC_MINOR);
+
     public Scale {
         if (root < 0 || root > 11) {
             throw new IllegalArgumentException("A root is one of the twelve notes, not " + root);
@@ -70,6 +79,53 @@ public record Scale(int root, Mode mode) {
     /** Whether anything is shaded at all: a jam with no key chosen holds every note. */
     public boolean chosen() {
         return mode != Mode.ANY;
+    }
+
+    /**
+     * The key a line of notes is most likely in: the one that holds the most of what is played,
+     * weighed by how long each note is held and how hard it is struck, so a root held for a bar
+     * counts for more than a sixteenth passing through.
+     *
+     * <p>Two keys can hold exactly the same notes — C major and A minor do — and then the one
+     * whose root is played the most wins, which is what tells them apart by ear as well. Only the
+     * seven-note modes are guessed at: a pentatonic is a subset of one, so it would fit any line
+     * its parent scale fits and shade away notes the hand may well want. Nothing to go on gives
+     * {@link #ANY}.
+     */
+    public static Scale guess(List<Note> notes) {
+        double[] weight = new double[12];
+        double total = 0;
+        for (Note note : notes) {
+            if (note.voice() instanceof Voice.Pitch pitch) {
+                double heard = Math.max(0.05, note.durationBeats()) * Math.max(0.05f, note.velocity());
+                weight[Math.floorMod(pitch.midiNote(), 12)] += heard;
+                total += heard;
+            }
+        }
+        if (total == 0) {
+            return ANY;
+        }
+        Scale best = ANY;
+        double bestHeld = -1;
+        double bestRoot = -1;
+        for (Mode mode : GUESSED) {
+            for (int root = 0; root < 12; root++) {
+                Scale candidate = new Scale(root, mode);
+                double held = 0;
+                for (int step = 0; step < 12; step++) {
+                    if (candidate.holds(step)) {
+                        held += weight[step];
+                    }
+                }
+                // a hair's allowance: two keys holding the same notes are told apart by their roots
+                if (held > bestHeld + 1e-9 || (held > bestHeld - 1e-9 && weight[root] > bestRoot + 1e-9)) {
+                    best = candidate;
+                    bestHeld = held;
+                    bestRoot = weight[root];
+                }
+            }
+        }
+        return best;
     }
 
     public String rootName() {

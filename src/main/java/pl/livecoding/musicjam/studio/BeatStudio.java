@@ -127,6 +127,7 @@ public final class BeatStudio extends Application {
     // the key the jam is in: what the roll shades its rows and keys by
     private final ComboBox<String> keyRoot = new ComboBox<>();
     private final ComboBox<Scale.Mode> keyMode = new ComboBox<>();
+    private final Button guessKey = new Button("Guess");
     private final TextArea code = new TextArea(STARTER_CODE);
     private final Button runCode = new Button("Run (Ctrl+Enter)");
     private final Label codeError = new Label();
@@ -193,6 +194,14 @@ public final class BeatStudio extends Application {
         findJams(config);
         midiFiles = findMidiFiles(config);
         presets.getItems().setAll(jams.keySet());
+        // the key pickers before the first jam is loaded, since loading one guesses its key onto them
+        keyRoot.getItems().setAll(Scale.ROOTS);
+        keyRoot.setValue(Scale.ROOTS.getFirst());
+        keyMode.getItems().setAll(Scale.Mode.values());
+        keyMode.setValue(Scale.Mode.ANY);
+        keyRoot.setOnAction(event -> showScale());
+        keyMode.setOnAction(event -> showScale());
+        guessKey.setOnAction(event -> guessKey());
         // the panel plays the selected melody's instrument, and only that one
         synthControls.setOnChange((params, effects) -> {
             if (tracks != null && tracks.selected() instanceof StudioTrack.Melody melody
@@ -224,12 +233,6 @@ public final class BeatStudio extends Application {
             retimeDelays();
             publish();
         });
-        keyRoot.getItems().setAll(Scale.ROOTS);
-        keyRoot.setValue(Scale.ROOTS.getFirst());
-        keyMode.getItems().setAll(Scale.Mode.values());
-        keyMode.setValue(Scale.Mode.ANY);
-        keyRoot.setOnAction(event -> showScale());
-        keyMode.setOnAction(event -> showScale());
         bars.valueProperty().addListener((property, before, after) -> {
             publish();
             if (tracks.selected() instanceof StudioTrack.Melody) {
@@ -379,7 +382,8 @@ public final class BeatStudio extends Application {
         keyMode.setPrefWidth(150);
         showScale();
         HBox transport = row(play, new Label("Jam"), presets, new Label("Tempo"), bpm, bpmLabel,
-                new Label("Loop (bars)"), bars, new Label("Key"), keyRoot, keyMode, loopProgress, status);
+                new Label("Loop (bars)"), bars, new Label("Key"), keyRoot, keyMode, guessKey,
+                loopProgress, status);
         HBox.setHgrow(loopProgress, Priority.ALWAYS);
 
         // pinned above the scroll pane: what you reach for while it plays should not scroll away
@@ -586,6 +590,7 @@ public final class BeatStudio extends Application {
                 device.setText(next.midiDevice());
             }
             buildGrid();
+            guessKey();
             showSelected();
         } finally {
             loading = false;
@@ -741,6 +746,28 @@ public final class BeatStudio extends Application {
             idle = engine.openIdle(jam::get);
         }
         return idle;
+    }
+
+    /**
+     * The key the jam's melodies are in, as far as their notes tell, put on the pickers. A jam
+     * gets one this way when it is loaded; the button asks again, for a line that has been
+     * written or loaded since.
+     */
+    private void guessKey() {
+        List<Note> melodies = new ArrayList<>();
+        for (StudioTrack track : tracks.tracks()) {
+            if (track instanceof StudioTrack.Melody melody) {
+                melodies.addAll(notesOf(melody.source(), loopBeats()));
+            }
+        }
+        showScale(Scale.guess(melodies));
+    }
+
+    /** Puts a key on the pickers, which shades the roll by it. */
+    private void showScale(Scale next) {
+        keyMode.setValue(next.mode());
+        keyRoot.setValue(next.rootName());
+        showScale();
     }
 
     /** The key the two pickers name. */
