@@ -17,7 +17,9 @@ import pl.livecoding.musicjam.studio.knobs.NoPanning;
 import pl.livecoding.musicjam.model.Voice;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
@@ -28,6 +30,9 @@ import java.util.function.IntConsumer;
  * read, and turns the page when the playhead runs off the one it is on. What it draws is the loop
  * as the engine hears it, so a window of a MIDI file starts at the left edge from whichever bar of
  * the file it opens on.
+ *
+ * <p>The keys down the left are played by clicking them, whether the jam is running or stopped,
+ * and light while a note of the loop is sounding on them.
  *
  * <p>Made editable, it takes a hand as a DAW's roll does: click an empty row to put a note there,
  * drag one to move it, drag its right edge to change its length, right-click it to take it away.
@@ -56,6 +61,8 @@ final class PianoRoll {
     private static final Color BLACK_KEY = Color.web("#495057");
     private static final Color KEY_SEAM = Color.web("#dee2e6");
     private static final Color PLAYHEAD = Color.web("#e03131");
+    private static final Color LIT_WHITE = Color.web("#a5d8ff");
+    private static final Color LIT_BLACK = Color.web("#1c7ed6");
     private static final Color HELD = Color.web("#f76707");
     private static final Color HELD_EDGE = Color.web("#d9480f");
     private static final Color BAND = Color.web("#f76707");
@@ -170,6 +177,10 @@ final class PianoRoll {
     private boolean drawn;
     private IntConsumer onPage = page -> { };
     private Consumer<List<Note>> onEdit;
+    private IntConsumer onKey = pitch -> { };
+    // the keys lit now: those a note of the loop is sounding on, and one pressed by hand
+    private Set<Integer> lit = Set.of();
+    private int pressedKey = -1;
     // a drag in progress: the notes as they were when it started, and the one under the hand
     private List<Note> dragFrom;
     private Note dragged;
@@ -200,18 +211,6 @@ final class PianoRoll {
         this.tallest = tallest;
         node.setStyle("-fx-border-color: #dee2e6;");
         playhead.setMouseTransparent(true);
-    }
-
-    Node node() {
-        return node;
-    }
-
-    /**
-     * Lets a hand change the notes: {@code onEdit} hears the whole line back after every edit.
-     * Called once, before the first {@link #show}.
-     */
-    void setOnEdit(Consumer<List<Note>> listener) {
-        onEdit = listener;
         NoPanning.on(notes);
         NoPanning.on(velocities);
         notes.setFocusTraversable(true);
@@ -224,6 +223,23 @@ final class PianoRoll {
         velocities.setOnMousePressed(this::velocityPressed);
         velocities.setOnMouseDragged(this::velocityDragged);
         velocities.setOnMouseReleased(event -> finish());
+    }
+
+    /** Hears the pitch of every key pressed on the keyboard down the left. */
+    void setOnKey(IntConsumer listener) {
+        onKey = listener;
+    }
+
+    Node node() {
+        return node;
+    }
+
+    /**
+     * Lets a hand change the notes: {@code onEdit} hears the whole line back after every edit.
+     * Called once, before the first {@link #show}.
+     */
+    void setOnEdit(Consumer<List<Note>> listener) {
+        onEdit = listener;
     }
 
     /** Hears of every page shown, by the playhead or by hand. */
@@ -293,9 +309,11 @@ final class PianoRoll {
     void setPlayhead(double beat) {
         if (beat < 0) {
             playheadPage = -1;
-            drawPlayhead(-1);
+            lit = Set.of();
+            drawPlayhead(-1, true);
             return;
         }
+        light(beat % pages.lengthBeats());
         double into = beat % pages.lengthBeats();
         int on = pages.of(into);
         if (on != playheadPage) {
@@ -305,14 +323,29 @@ final class PianoRoll {
             }
         }
         int x = on != page ? -1 : (int) Math.round(KEYS_WIDTH + (into - pages.start(page)) * perBeat());
-        drawPlayhead(x);
+        drawPlayhead(x, false);
+    }
+
+    /** The keys of every note sounding at {@code beat}, whichever page they are on. */
+    private void light(double beat) {
+        Set<Integer> sounding = new HashSet<>();
+        for (Note note : shown) {
+            if (note.voice() instanceof Voice.Pitch pitch
+                    && beat >= note.beat() && beat < note.beat() + note.durationBeats()) {
+                sounding.add(pitch.midiNote());
+            }
+        }
+        if (!sounding.equals(lit)) {
+            lit = sounding;
+            drawPlayhead(shownX, true);
+        }
     }
 
     private void turnTo(int next) {
         page = next;
         drawNotes();
         shownX = -2;
-        drawPlayhead(-1);
+        drawPlayhead(-1, true);
         onPage.accept(page);
     }
 
@@ -432,6 +465,13 @@ final class PianoRoll {
     private void pressed(MouseEvent event) {
         notes.requestFocus();
         if (event.getX() < KEYS_WIDTH) {
+            // the keyboard: pressed to hear that pitch, lit while the finger is on it
+            pressedKey = pitchAt(event.getY());
+            drawPlayhead(shownX, true);
+            onKey.accept(pressedKey);
+            return;
+        }
+        if (onEdit == null) {
             return;
         }
         Note under = noteAt(event.getX(), event.getY());
@@ -477,6 +517,9 @@ final class PianoRoll {
     }
 
     private void dragged(MouseEvent event) {
+        if (onEdit == null || pressedKey >= 0) {
+            return;
+        }
         if (pressedOnEmpty) {
             banding = true;
             bandToX = event.getX();
@@ -503,6 +546,14 @@ final class PianoRoll {
 
     /** A band ends with what it gathered; a press on empty rows that never moved adds a note. */
     private void released(MouseEvent event) {
+        if (pressedKey >= 0) {
+            pressedKey = -1;
+            drawPlayhead(shownX, true);
+            return;
+        }
+        if (onEdit == null) {
+            return;
+        }
         if (pressedOnEmpty && !banding) {
             change(NoteEdits.add(shown, beatAt(bandFromX), pitchAt(bandFromY), lastLength, 0.8f,
                     pages.lengthBeats()));
@@ -521,6 +572,9 @@ final class PianoRoll {
 
     /** Delete takes away everything the hand is holding. */
     private void keyed(KeyEvent event) {
+        if (onEdit == null) {
+            return;
+        }
         if ((event.getCode() == KeyCode.DELETE || event.getCode() == KeyCode.BACK_SPACE) && !held.isEmpty()) {
             change(NoteEdits.remove(shown, held));
             hold(List.of());
@@ -532,6 +586,9 @@ final class PianoRoll {
     /** A press on a velocity bar takes hold of its note, or of everything held when it is one of them. */
     private void velocityPressed(MouseEvent event) {
         notes.requestFocus();
+        if (onEdit == null) {
+            return;
+        }
         Note under = barAt(event.getX());
         if (under == null) {
             return;
@@ -591,6 +648,14 @@ final class PianoRoll {
     }
 
     private void hovered(MouseEvent event) {
+        if (event.getX() < KEYS_WIDTH) {
+            notes.setCursor(Cursor.HAND);
+            return;
+        }
+        if (onEdit == null) {
+            notes.setCursor(Cursor.DEFAULT);
+            return;
+        }
         Note under = noteAt(event.getX(), event.getY());
         notes.setCursor(under == null ? Cursor.DEFAULT
                 : event.getX() > rightEdgeOf(under) - EDGE ? Cursor.H_RESIZE : Cursor.OPEN_HAND);
@@ -628,18 +693,34 @@ final class PianoRoll {
         return KEYS_WIDTH + (note.beat() + note.durationBeats() - pages.start(page)) * perBeat();
     }
 
-    private void drawPlayhead(int x) {
-        if (x == shownX) {
+    private void drawPlayhead(int x, boolean anyway) {
+        if (x == shownX && !anyway) {
             return;
         }
         shownX = x;
+        double height = playhead.getHeight();
         GraphicsContext g = playhead.getGraphicsContext2D();
-        g.clearRect(0, 0, playhead.getWidth(), playhead.getHeight());
+        g.clearRect(0, 0, playhead.getWidth(), height);
+        for (int pitch : lit) {
+            paintKey(g, pitch, height);
+        }
+        if (pressedKey >= 0) {
+            paintKey(g, pressedKey, height);
+        }
         if (x >= 0) {
             g.setStroke(PLAYHEAD);
             g.setLineWidth(2);
-            g.strokeLine(x, 0, x, playhead.getHeight());
+            g.strokeLine(x, 0, x, height);
         }
+    }
+
+    private void paintKey(GraphicsContext g, int pitch, double height) {
+        if (pitch < keys.low() || pitch > keys.high()) {
+            return;
+        }
+        double y = height - (pitch - keys.low() + 1) * row;
+        g.setFill(isBlack(pitch) ? LIT_BLACK : LIT_WHITE);
+        g.fillRect(0, y + 0.5, isBlack(pitch) ? KEYS_WIDTH - 14 : KEYS_WIDTH - 1, Math.max(1, row - 1));
     }
 
     private static boolean isBlack(int pitch) {

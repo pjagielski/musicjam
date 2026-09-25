@@ -147,7 +147,7 @@ final class MelodyEditor {
         startBar.valueProperty().addListener((property, before, after) -> change(window.withStartBar(after - 1)));
     }
 
-    /** The roll, whose playhead follows the jam. */
+    /** The roll, whose playhead follows the jam and whose keys can be played. */
     PianoRoll roll() {
         return roll;
     }

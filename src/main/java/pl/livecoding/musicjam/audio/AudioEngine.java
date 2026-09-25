@@ -28,7 +28,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -307,7 +309,20 @@ public final class AudioEngine {
     }
 
     LiveRenderer liveRenderer(Supplier<Jam> jams, boolean externalMelody) {
-        return new LiveRenderer(jams, externalMelody);
+        return new LiveRenderer(jams, externalMelody, true);
+    }
+
+    LiveRenderer idleRenderer(Supplier<Jam> jams) {
+        return new LiveRenderer(jams, false, false);
+    }
+
+    /**
+     * A session that plays no loop: it renders silence, and sounds only what is
+     * {@link LiveSession#audition auditioned} through it. It is what a key pressed on the piano
+     * roll plays through while the jam is stopped, so a note can be heard before it is written.
+     */
+    public LiveSession openIdle(Supplier<Jam> jam) throws LineUnavailableException {
+        return new LiveSession(jam, null, false);
     }
 
     /**
@@ -433,6 +448,10 @@ public final class AudioEngine {
     private record TrackNote(Note note, int track) {
     }
 
+    /** A note asked for by hand, to be sounded at the next block rather than at a beat. */
+    private record Audition(PitchSynth synth, int midiNote, int frames, float velocity) {
+    }
+
     /** A loop, from the beat of the jam it starts on; {@code lengthBeats} is how long it will actually run. */
     private record LoopMark(double startBeat, Song song, double lengthBeats) {
     }
@@ -483,12 +502,19 @@ public final class AudioEngine {
         private double nextRepeat;
         private volatile Loops loops = new Loops(null, null);
         private volatile TempoMap tempo = TempoMap.starting(120, sampleRate);
-        private volatile boolean scheduling = true;
+        private volatile boolean scheduling;
+        // notes to sound at the next block, from a key pressed on the roll rather than from a loop
+        private final Queue<Audition> auditions = new ConcurrentLinkedQueue<>();
         private long position;
         private double nextLoopBeat;
 
-        /** With {@code externalMelody}, the melody is queued for an external synth rather than played. */
-        private LiveRenderer(Supplier<Jam> jams, boolean externalMelody) {
+        /**
+         * With {@code externalMelody}, the melody is queued for an external synth rather than
+         * played. Without {@code scheduling} no loop is ever compiled: the renderer runs, so
+         * voices and effects do, but the jam itself stays silent.
+         */
+        private LiveRenderer(Supplier<Jam> jams, boolean externalMelody, boolean scheduling) {
+            this.scheduling = scheduling;
             this.jams = jams;
             this.externalMelody = externalMelody
                     ? new PriorityBlockingQueue<>(64, Comparator.comparingDouble(ExternalNote::beat)
@@ -546,6 +572,9 @@ public final class AudioEngine {
             }
             kickCount = 0;
             long blockEnd = position + blockSize;
+            for (Audition asked = auditions.poll(); asked != null; asked = auditions.poll()) {
+                sound(asked);
+            }
             if (scheduling) {
                 Jam jam = jams.get();
                 playing = jam.synths();
@@ -571,6 +600,27 @@ public final class AudioEngine {
             mixInBuses(mix);
             performance.process(mix, blockSize, tempo.bpm());
             position = blockEnd;
+        }
+
+        /**
+         * Sounds a note now, outside the loop: through its synth's own channel, so it is heard
+         * with that track's effects, and at full gain whatever the track's fader says — it is
+         * being listened to, not played.
+         */
+        private void sound(Audition asked) {
+            VoiceSlot slot = allocateVoice(voices, position);
+            if (asked.synth() instanceof LivePitchSynth live) {
+                slot.trigger(live.voice(asked.midiNote(), asked.frames(), sampleRate), position, asked.velocity());
+                slot.out = busFor(live).frames;
+            } else {
+                slot.trigger(asked.synth().render(asked.midiNote(), asked.frames(), sampleRate), position,
+                        asked.velocity());
+            }
+        }
+
+        /** Sounds {@code midiNote} through {@code synth} at the next block. Safe from any thread. */
+        void audition(PitchSynth synth, int midiNote, double seconds, float velocity) {
+            auditions.add(new Audition(synth, midiNote, (int) Math.round(seconds * sampleRate), velocity));
         }
 
         private void play(LiveHit hit, long frame) {
@@ -865,8 +915,13 @@ public final class AudioEngine {
 
         private LiveSession(Supplier<Jam> jams, NoteListener externalMelody)
                 throws LineUnavailableException {
+            this(jams, externalMelody, true);
+        }
+
+        private LiveSession(Supplier<Jam> jams, NoteListener externalMelody, boolean scheduling)
+                throws LineUnavailableException {
             this.externalMelody = externalMelody;
-            this.renderer = new LiveRenderer(jams, externalMelody != null);
+            this.renderer = new LiveRenderer(jams, externalMelody != null, scheduling);
             AudioFormat format = new AudioFormat(sampleRate, 16, CHANNELS, true, false);
             this.line = AudioSystem.getSourceDataLine(format);
             // Twice the buffer play() uses: a loop that brings a new synth renders its notes on the
@@ -896,6 +951,15 @@ public final class AudioEngine {
          * the grid into {@code beats}-long pieces (0.25 is a sixteenth); 0 lets go, and the jam
          * carries on from wherever it got to underneath.
          */
+        /**
+         * Sounds one note now, through {@code synth}'s own channel: a key pressed on the roll,
+         * heard whether the jam is playing or the session is an idle one. It lasts
+         * {@code seconds}, since a voice is made with its length rather than let go of by hand.
+         */
+        public void audition(PitchSynth synth, int midiNote, double seconds, float velocity) {
+            renderer.audition(synth, midiNote, seconds, velocity);
+        }
+
         public void stutter(double beats) {
             renderer.stutter(beats);
         }

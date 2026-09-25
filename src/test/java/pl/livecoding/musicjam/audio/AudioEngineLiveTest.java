@@ -495,6 +495,36 @@ class AudioEngineLiveTest {
     }
 
     @Test
+    void aKeyPressedWhileTheJamIsStoppedIsHeardThroughItsSynthsOwnEffects() {
+        LivePitchSynth synth = amplifiedSynth(0.25f, 2);
+        Song song = new Song(120, 4, List.of(
+                new MelodyTrack(List.of(new Note(0.0, new Voice.Pitch(60), 1.0, 1.0f)), 4.0, 1.0f)));
+        var renderer = engine().idleRenderer(() -> new AudioEngine.Jam(song, synth));
+
+        float[] quiet = render(renderer, 3);
+        renderer.audition(synth, 72, 0.2, 1.0f);
+        float[] heard = render(renderer, 3);
+
+        assertEquals(0.0f, quiet[100], "an idle renderer plays no loop of its own");
+        assertEquals(0.5f, heard[10], 1e-6f, "the key, doubled by that synth's own effects");
+    }
+
+    @Test
+    void anAuditionedNoteIsHeardOverAJamThatIsPlaying() {
+        LivePitchSynth synth = amplifiedSynth(0.25f, 1);
+        Song song = new Song(120, 4, List.of(
+                new MelodyTrack(List.of(new Note(0.0, new Voice.Pitch(60), 0.25, 1.0f)), 4.0, 0.0f)));
+        var renderer = engine().liveRenderer(() -> new AudioEngine.Jam(song, synth), false);
+
+        float[] muted = render(renderer, 2);
+        renderer.audition(synth, 72, 0.2, 1.0f);
+        float[] heard = render(renderer, 2);
+
+        assertEquals(0.0f, muted[100], "the track is muted, so the loop itself is silent");
+        assertEquals(0.25f, heard[10], 1e-6f, "a key is listened to, whatever the fader says");
+    }
+
+    @Test
     void aSynthTheJamHasLetGoOfClosesItsChannelOnceItsTailIsOver() {
         LivePitchSynth first = amplifiedSynth(0.25f, 1);
         LivePitchSynth second = amplifiedSynth(0.25f, 1);

@@ -1,6 +1,7 @@
 package pl.livecoding.musicjam.studio;
 
 import javafx.animation.AnimationTimer;
+import javafx.animation.PauseTransition;
 import javafx.application.Application;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -34,6 +35,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 import javafx.stage.Screen;
 import pl.livecoding.musicjam.BeatApp;
 import pl.livecoding.musicjam.PhraseRequest;
@@ -90,6 +92,8 @@ public final class BeatStudio extends Application {
     private static final List<String> LOOP_LENGTHS =
             List.of("1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32");
     private static final String STARTING_LOOP = "8";
+    // how long a key pressed on the roll sounds: a voice is made with its length, not let go of
+    private static final double AUDITION_SECONDS = 0.7;
     private static final double CELL_HEIGHT = 28;
     private static final double CELL_GAP = 4;
     private static final double BAR_WIDTH = 16 * CELL_HEIGHT + 15 * CELL_GAP;
@@ -159,6 +163,8 @@ public final class BeatStudio extends Application {
     private AudioEngine engine;
     private AudioEngine.LiveSession session;
     private AudioEngine.LiveSession ringing;
+    // a session that plays no loop, opened at the first key pressed while the jam is stopped
+    private AudioEngine.LiveSession idle;
     // the Performance FX strips, all let go of when the jam stops
     private final List<FxStrip> strips = new ArrayList<>();
     // read by the thread that sends notes out as well as set here, so always the output as it is now
@@ -278,6 +284,10 @@ public final class BeatStudio extends Application {
         if (ringing != null) {
             ringing.close();
             ringing = null;
+        }
+        if (idle != null) {
+            idle.close();
+            idle = null;
         }
         closeMidi();
     }
@@ -599,12 +609,58 @@ public final class BeatStudio extends Application {
                     fitWidth(frame, FULL_WIDTH);
                     editor.getChildren().setAll(frame);
                     roll = melodyEditor.roll();
+                    roll.setOnKey(this::audition);
                 } catch (Exception exception) {
                     editor.getChildren().clear();
                     showError(exception);
                 }
             }
         }
+    }
+
+    /**
+     * A key pressed on the roll: the selected track's own instrument sounds it, with that track's
+     * effects, for as long as {@link #AUDITION_SECONDS}. A track that goes out over MIDI has its
+     * note sent instead, and ended after the same time, since nothing here holds it.
+     */
+    private void audition(int midiNote) {
+        if (!(tracks.selected() instanceof StudioTrack.Melody melody) || melody.instrument() == null) {
+            return;
+        }
+        Instrument played = melody.instrument();
+        ExternalMidiOutput output = midi;
+        if (played.external() && output != null) {
+            output.noteOn(played.channel(), midiNote, 100);
+            PauseTransition holding = new PauseTransition(Duration.seconds(AUDITION_SECONDS));
+            holding.setOnFinished(done -> {
+                ExternalMidiOutput still = midi;
+                if (still != null) {
+                    still.noteOff(played.channel(), midiNote);
+                }
+            });
+            holding.play();
+            return;
+        }
+        try {
+            listening().audition(played.synth(), midiNote, AUDITION_SECONDS, 0.9f);
+        } catch (Exception exception) {
+            showError(exception);
+        }
+    }
+
+    /**
+     * What a key is heard through: the jam's own session while it plays, or one that plays no loop,
+     * opened at the first key pressed and kept until the jam starts. Nothing holds the audio device
+     * until someone asks to hear something.
+     */
+    private AudioEngine.LiveSession listening() throws Exception {
+        if (session != null) {
+            return session;
+        }
+        if (idle == null) {
+            idle = engine.openIdle(jam::get);
+        }
+        return idle;
     }
 
     /** The editor always shows the selected track, so that is the one whose notes have changed. */
@@ -765,6 +821,11 @@ public final class BeatStudio extends Application {
             // a tail from the last stop is still sounding; it makes way for the new jam
             ringing.close();
             ringing = null;
+        }
+        if (idle != null) {
+            // the jam is about to take the audio device; keys go through its own session from now on
+            idle.close();
+            idle = null;
         }
         try {
             session = engine.playLive(jam::get, toMidi());

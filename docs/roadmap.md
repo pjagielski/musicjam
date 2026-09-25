@@ -23,7 +23,8 @@ blank page.
   and `EffectParams`. Presets load a patch's own numbers; the delay can lock to the jam's tempo.
 - **Live code.** `s("bd(3,8,5)")`-style mini-notation drives the drum grid; a melody is drawn in
   the roll or read from a MIDI file, not written in code (3.1).
-- **The roll.** Four bars at a time, turning the page with the playhead. A hand adds, moves,
+- **The roll.** Four bars at a time, turning the page with the playhead. Its keys are played by
+  clicking them and light while the loop sounds on them. A hand adds, moves,
   stretches and removes notes, gathers several with a band and sets their velocities in a lane
   under it. There is no undo (4.4).
 - **Out.** Native audio, or any melody track to an external synth on a channel of its own, with a
@@ -227,7 +228,7 @@ and turning one note into a chord — without ever taking the choice away.
 
 | Step | What | Effort |
 | --- | --- | --- |
-| 11.1 | ★ **A keyboard you can play.** The roll's keys are drawn but dead; make them sound. A click plays that pitch through the track's own instrument, so a line can be found by ear before it is written, and a key lights while a note of the loop is sounding on it. It is also what makes the roll teachable: point at a key, hear it, put it down. | S |
+| 11.1 | ✓ **Done.** ★ **A keyboard you can play.** The roll's keys sound when clicked, through the selected track's own instrument and its effects, or out over MIDI on that track's channel when it goes there; a key lights while a note of the loop is sounding on it. A key is heard whether the jam plays or not: with it stopped, the studio opens a session that compiles no loop at the first key pressed, so nothing holds the audio device until someone asks to hear something. A note lasts 0.7 s, since a voice is made with its length rather than let go of by hand. | S |
 | 11.2 | ★ **A key and a scale for the jam**, named once (C minor, F Dorian) and shown everywhere: the roll shades the rows that are not in it, so what belongs is the part that stays white. Nothing is forbidden — a note off the scale still plays, it just looks like the choice it is. The grid's rows and the piano's keys take the same shading. | M |
 | 11.3 | **Chord tones marked against the bar.** With a chord per bar (Cm, A♭, E♭), the roll marks the rows of the chord under the playhead more strongly than the rest of the scale, so the notes that will sound consonant are the obvious ones to reach for. Where the chords come from is the question: named by hand at first, later read from the MIDI file a track came from. | M |
 | 11.4 | **One note into a chord.** A melody track can be told to play chords: each note it holds becomes the chord of that bar, voiced from the note played — so a beginner draws a line and hears a progression. The mapping belongs to the track, beside its patch, and what it makes is ordinary notes, so the roll shows what will actually sound. | M |
@@ -258,8 +259,7 @@ Most of the list is independent; these are the ties worth knowing before picking
 
 For a studio meant to be **played live**, with the musical help of Phase 11 next and undo woven in:
 
-1. **11.1 — a keyboard you can play.** Small, and the one thing that makes the roll usable without
-   reading music: point at a key, hear it, put the note down.
+1. ~~**11.1 — a keyboard you can play.**~~ Done.
 2. **4.4 — undo.** The roll can now lose a lot of work in one gesture. Worth doing before the
    window gets any better at making work worth losing.
 3. **11.2 — a key and a scale.** Shading the rows that do not belong is what turns the roll from a
