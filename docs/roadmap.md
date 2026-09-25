@@ -9,17 +9,26 @@ blank page.
 - **Engine.** `AudioEngine` renders block by block and compiles each loop at its first frame, so the
   song can change while it plays. Drums are samples; the synth is a live `VoiceSource` making frames
   as it goes, which is why a knob is heard inside a sounding note.
-- **Routing.** Two paths only: drums mixed dry, synth voices through one bus carrying a ping-pong
-  delay and a Freeverb-style reverb, ducked under the kick when the panel asks for it. Stop
-  releases rather than cuts, so tails ring out.
+- **Tracks.** A jam is a list of tracks: one drum track, which is the grid, and any number of
+  melody tracks. Each has a name, a gain and a mute heard at once, a synth of its own, and its own
+  notes — a window of a MIDI file or a line written in the piano roll.
+- **Routing.** Drums mixed dry; each live synth through a channel of its own carrying a crusher, a
+  ping-pong delay and a Freeverb-style reverb, ducked under the kick when the panel asks for it.
+  A channel closes once the jam has let its synth go and the tail has died away. Stop releases
+  rather than cuts, so tails ring out. The master is hard-clipped, with no limiter (1.5).
 - **Synth.** One engine (`NovasawSynth`), seven unison saws, a sub sine, a diode shaper, a
   state-variable lowpass on an envelope of its own. Six patches, levelled against one another: anthem, pluck, pad,
   chords, sub bass, acid bass.
 - **Control.** A panel of knobs, an XY pad and a draggable envelope, all publishing `SynthParams`
   and `EffectParams`. Presets load a patch's own numbers; the delay can lock to the jam's tempo.
-- **Live code.** `s("bd(3,8,5)")`-style mini-notation drives the drum grid; the melody comes from a
-  MIDI file, not from code.
-- **Out.** Native audio, or the melody to an external synth over MIDI with a latency offset.
+- **Live code.** `s("bd(3,8,5)")`-style mini-notation drives the drum grid; a melody is drawn in
+  the roll or read from a MIDI file, not written in code (3.1).
+- **The roll.** Four bars at a time, turning the page with the playhead. A hand adds, moves,
+  stretches and removes notes, gathers several with a band and sets their velocities in a lane
+  under it. There is no undo (4.4).
+- **Out.** Native audio, or any melody track to an external synth on a channel of its own, with a
+  latency offset; the device and the latency are the jam's, the channel and the filter the
+  track's.
 
 ## Principles worth keeping
 
@@ -40,10 +49,11 @@ The single synth bus is already the seam for this; widening it is the biggest so
 
 | Step | What | Effort |
 | --- | --- | --- |
-| 1.1 | **A bus per track**: each drum track and the synth get gain, pan, mute and solo. Waits on 10.1 for there to be tracks to put a bus on. | M |
+| 1.1 | ◐ **Half done.** **A bus per track**: gain and mute are there, per track and heard at once (10.1); **pan and solo are not**, and neither is a drum track per drum — the grid is still one track of several rows. | M |
 | 1.2 | **Sends**: one delay and one reverb shared by the tracks that want them, each with a send level — Strudel calls this an *orbit*, one delay and one reverb per orbit. | M |
 | 1.3 | ✓ **Done.** ★ **Sidechain ducking**: the kick ducks the synth bus. Strudel's `duck` works on the whole orbit; ours can start with one source and one target. | S |
 | 1.4 | **Meters**: a level readout per track, drawn like the knobs. | S |
+| 1.5 | **A limiter on the master.** The mix is clipped hard at ±1 today, which a few Performance FX at once will find. One limiter after the FX slot, with the release long enough not to pump. | S |
 
 Why first: pumping bass under a kick is the sound of the genre the workshop plays in, and the
 mixer is the thing that makes the studio feel like a studio rather than a demo.
@@ -67,7 +77,7 @@ The grid and the code understand each other; the melody does not.
 
 | Step | What | Effort |
 | --- | --- | --- |
-| 3.1 | ★ **`note("c3 e3 g3")` driving the synth**, so a jam can be written rather than loaded from a MIDI file. | M |
+| 3.1 | ★ **`note("c3 e3 g3")` driving the synth**, so a line can be written rather than drawn or loaded. It is the third of a melody track's sources (10.2): the roll and the MIDI window are done, this one is not. | M |
 | 3.2 | **More mini-notation**: `<a b>` (one per cycle), `?` (maybe), `*`/`/` on any subsequence, `.fast`/`.slow`. The Strudel reference is the map; the subset we have is a corner of it. | M |
 | 3.3 | **Grid → code**: clicking a step rewrites the pattern text, so the two views stop fighting. | M |
 | 3.4 | **Per-layer effects** in code (`.room`, `.delay`), which needs Phase 1's sends. | M |
@@ -77,9 +87,9 @@ The grid and the code understand each other; the melody does not.
 | Step | What | Effort |
 | --- | --- | --- |
 | 4.1 | ★ **Clip grid (session view)**: columns are tracks, rows are scenes, one clip per track at a time, launched on the next bar. Ableton's rules are worth copying exactly — a track plays one clip, a scene launches a row, and launches are quantized. Our loop-boundary compile is already that mechanism. | L |
-| 4.2 | **Piano roll** for the melody, with the playhead and dragging — one melody track's editor (10.2), and the view a MIDI window is read into (10.3). | L |
+| 4.2 | ✓ **Done** as 10.3: the selected melody track's editor, four bars at a time, with the playhead, dragging, a band to gather notes and a velocity lane. | L |
 | 4.3 | **Recording**: capture clip launches and knob moves, then render the result to WAV (`writeWav` exists) and to a MIDI file. | M |
-| 4.4 | **Undo** for code runs and grid edits. | S |
+| 4.4 | ★ **Undo** for roll edits, grid edits and code runs. The roll made this urgent: a band and a Delete can take fifteen notes away, and the only way back is to read the file again, which throws away everything else with them. One stack of past states, Ctrl+Z and Ctrl+Y. | S |
 | 4.5 | ✓ **Done.** ★ **Tempo that changes now, not from the next loop.** Queued hits are kept in beats and placed through a `TempoMap` (the frame, beat and BPM of each recent change), so a change at frame F re-times every hit not yet played, the loop's end with them. The renderer reads the jam's tempo every block. `positionAt`, note lengths and a held stutter's slice all go through the map, and the melody for an external synth waits in beats too, turned into a frame only when it is due to be sent. Left for later: a tempo glide over a beat rather than a jump. | M |
 | 4.6 | ✓ **Done.** **Loop length that changes now.** Shortening a loop waits for the old one to end: from 8 bars to 4 while bar 3 plays, it runs on to bar 8. Instead, cut the loop that is playing at the first multiple of the new length still ahead — bar 3 of 8 set to 4 wraps after bar 4, bar 5 after bar 8 — by moving the next loop's start and dropping the queued hits past it. Lengthening works the other way: from 4 bars to 8 while bar 3 plays, compile the longer song and queue its hits from bar 5 on in the loop already playing, so it runs to bar 8 instead of wrapping at 4. It needs the renderer to see the loop length every block rather than once per loop, which 4.5's tempo map asks for too. | S |
 
@@ -183,11 +193,11 @@ rather than the melody's; 3.4's per-layer effects need a layer to hang on.
 | Step | What | Effort |
 | --- | --- | --- |
 | 10.1 | ✓ **Done.** ★ **A track list in the studio**: add, remove, rename, reorder. One drum track, which is the grid as it stands, and any number of melody tracks. Each carries a name, a gain and a mute, both heard at once rather than at the next loop; the selected track is what the editor below shows — the grid and its code, or a melody's MIDI window (file, track, first bar) — and what the instrument panel beside the performance effects shows: the synth or the external MIDI synth. Every track is as long as the loop, whose length the jam sets; a jam config opens with the grid and the one melody it names. | M |
-| 10.2 | ★ **A melody track knows where its notes come from**, and there are three ways: a **piano roll** (4.2), **live code** (`note("c3 e3 g3")`, which is 3.1), and a **MIDI file window** — the file, the track inside it and the bars taken from it, which is what `PhraseRequest` holds and the studio does today for its one melody. The source is the track's own, so a jam can have a bass written in code over a lead loaded from a file. | M |
+| 10.2 | ◐ **Two of three done.** ★ **A melody track knows where its notes come from**, and there are three ways: a **piano roll** (4.2), **live code** (`note("c3 e3 g3")`, which is 3.1), and a **MIDI file window** — the file, the track inside it and the bars taken from it, which is what `PhraseRequest` holds and the studio does today for its one melody. The source is the track's own, so a jam can have a bass written in code over a lead loaded from a file. | M |
 | 10.3 | ✓ **Done.** ★ **The MIDI window drawn in the piano roll, and edited there.** A melody track's editor draws its notes as a piano roll - a key per row with every C named, a line per beat and bar, and the playhead over it while the jam plays. It shows at most four bars at a time and turns the page as the playhead passes the last one shown, with buttons to turn it by hand. The roll takes a hand as a DAW's does: click to add a note, drag to move it, drag its right edge to change its length, right-click to take it away. A drag over empty rows gathers every note it touches, shift-click adds one, and what is gathered moves, is turned up or is taken away with Delete as one; a lane of bars under the roll carries the notes' velocities, each dragged up or down. The roll opens on as many keys as it is tall enough to draw, so a line of three notes still has octaves to write in. Everything snaps to a sixteenth. The first edit of a window makes its notes the track's own - the file is from then on only where they came from, and a button reads it again - so a hand never changes what a file is read as. | M |
 | 10.4 | ✓ **Done.** **A patch per melody track.** Every melody track has an instrument of its own: a synth from a preset, with its own knobs, delay, reverb, crush and sidechain. The synth panel shows the selected track's and puts its knobs back where they were left; a delay locked to the beat follows a new tempo on every track, not only the one on show. In the engine a `Jam` names a synth per track, and each live synth has a channel of its own through its own effects, closed once the jam has let the synth go and its tail has died away. | M |
 | 10.5 | ✓ **Done.** **Each melody track can go out over MIDI** instead of being played here, rather than the one global "Melody over MIDI" switch. The instrument panel's Synth / External MIDI switch is the track's own, and so are its channel, its CC and its filter; the device and the latency stay the jam's. A new track starts empty, with a synth and the lowest channel no other has, leaving 10 to the drums. The engine sends each note on its track's channel, and the session always has somewhere to send them - whatever device is connected when a note is due - so connecting, disconnecting and sending a track out all happen while the jam plays; a track sent out with no device connected is played here. | S |
-| 10.6 | **Saving a jam with its tracks** (6.x's territory): a jam file naming each track, its source and its patch, so a set survives the window closing. | M |
+| 10.6 | **Saving a jam with its tracks** (6.x's territory): a jam file naming each track, its source — its window, or its own notes written out — its patch and its channel, so a set survives the window closing. Wants 6.1 first, which works out how a patch is written down. | M |
 
 ## Phase 11 — A hand that does not know the keyboard yet
 
@@ -207,12 +217,40 @@ and turning one note into a chord — without ever taking the choice away.
 
 ---
 
-## If only three things happen
+## What waits on what
 
-1. **Sidechain ducking on a per-track mixer** (1.1 + 1.3). Loudest result per hour spent.
-2. **`note(...)` in live code** (3.1). It joins the two halves of the program: the code writes the
-   drums but not the tune, which is the first thing anyone asks about.
-3. **Save a sound** (6.1). Everything else is undermined by losing a patch when the window closes.
+Most of the list is independent; these are the ties worth knowing before picking something up.
+
+- **1.2 sends** need **1.1**'s buses, and **3.4**'s per-layer effects need 1.2. Note that each
+  synth now carries its own delay and reverb, so sends are about *sharing* one, not about having
+  any at all.
+- **10.2**'s third source is **3.1**: the roll and the MIDI window are done, live code is not.
+- **10.6** (a jam file) wants **6.1** (a sound file) first: a jam names each track's patch, so
+  something has to know how a patch is written down.
+- **11.3** and **11.4** want **11.2**: a chord means little until the window knows the key. **11.5**
+  wants both, which is why it is last.
+- **8.2** (the Android spike) wants **8.1** (the core module); nothing else waits on either.
+- **4.1** (clip grid) and **1.1** are unblocked now that 10.1 has given the studio tracks.
+- **11.1** (a keyboard that sounds) is unblocked by 10.4: a key can be played through the selected
+  track's own instrument.
+
+## What is next
+
+For a studio meant to be **played live**, with the musical help of Phase 11 next and undo woven in:
+
+1. **11.1 — a keyboard you can play.** Small, and the one thing that makes the roll usable without
+   reading music: point at a key, hear it, put the note down.
+2. **4.4 — undo.** The roll can now lose a lot of work in one gesture. Worth doing before the
+   window gets any better at making work worth losing.
+3. **11.2 — a key and a scale.** Shading the rows that do not belong is what turns the roll from a
+   grid into a guide, and 11.3 and 11.4 both stand on it.
+4. **The rest of Phase 9** — Cutter (9.5), Reverb (9.11) and Pitch (9.16) are the three missing
+   strips a set actually reaches for, and **1.5**, a limiter, before stacking them.
+5. **11.3 / 11.4 — chords**, once the key is known.
+
+Kept for when the purpose changes: **6.1 + 10.6** (saving) matter the moment other people use this;
+**3.1** (`note(...)`) is the first thing anyone asks about in a workshop; **8.1** (the core module)
+is worth doing for its own sake, as a seam and as tests that need no audio device.
 
 ## Sources
 
