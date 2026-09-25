@@ -26,7 +26,7 @@ blank page.
 - **The roll.** Four bars at a time, turning the page with the playhead. Its keys are played by
   clicking them and light while the loop sounds on them. A hand adds, moves,
   stretches and removes notes, gathers several with a band and sets their velocities in a lane
-  under it. There is no undo (4.4).
+  under it. Ctrl+Z walks back through what a hand has written.
 - **Out.** Native audio, or any melody track to an external synth on a channel of its own, with a
   latency offset; the device and the latency are the jam's, the channel and the filter the
   track's.
@@ -90,7 +90,7 @@ The grid and the code understand each other; the melody does not.
 | 4.1 | ★ **Clip grid (session view)**: columns are tracks, rows are scenes, one clip per track at a time, launched on the next bar. Ableton's rules are worth copying exactly — a track plays one clip, a scene launches a row, and launches are quantized. Our loop-boundary compile is already that mechanism. | L |
 | 4.2 | ✓ **Done** as 10.3: the selected melody track's editor, four bars at a time, with the playhead, dragging, a band to gather notes and a velocity lane. | L |
 | 4.3 | **Recording**: capture clip launches and knob moves, then render the result to WAV (`writeWav` exists) and to a MIDI file. | M |
-| 4.4 | ★ **Undo** for roll edits, grid edits and code runs. The roll made this urgent: a band and a Delete can take fifteen notes away, and the only way back is to read the file again, which throws away everything else with them. One stack of past states, Ctrl+Z and Ctrl+Y. | S |
+| 4.4 | ✓ **Done.** ★ **Undo** for roll edits, grid edits, code runs and tracks added, removed or moved. Ctrl+Z and Ctrl+Y (or Ctrl+Shift+Z) anywhere in the window, except in a text field, which keeps its own. One stack of whole states — the tracks with their notes, which was selected, the grid and the code — sixty-four deep. A gain, a mute, the tempo and the synth's knobs are performance rather than work, so playing them never fills the history. | S |
 | 4.5 | ✓ **Done.** ★ **Tempo that changes now, not from the next loop.** Queued hits are kept in beats and placed through a `TempoMap` (the frame, beat and BPM of each recent change), so a change at frame F re-times every hit not yet played, the loop's end with them. The renderer reads the jam's tempo every block. `positionAt`, note lengths and a held stutter's slice all go through the map, and the melody for an external synth waits in beats too, turned into a frame only when it is due to be sent. Left for later: a tempo glide over a beat rather than a jump. | M |
 | 4.6 | ✓ **Done.** **Loop length that changes now.** Shortening a loop waits for the old one to end: from 8 bars to 4 while bar 3 plays, it runs on to bar 8. Instead, cut the loop that is playing at the first multiple of the new length still ahead — bar 3 of 8 set to 4 wraps after bar 4, bar 5 after bar 8 — by moving the next loop's start and dropping the queued hits past it. Lengthening works the other way: from 4 bars to 8 while bar 3 plays, compile the longer song and queue its hits from bar 5 on in the loop already playing, so it runs to bar 8 instead of wrapping at 4. It needs the renderer to see the loop length every block rather than once per loop, which 4.5's tempo map asks for too. | S |
 
@@ -260,8 +260,7 @@ Most of the list is independent; these are the ties worth knowing before picking
 For a studio meant to be **played live**, with the musical help of Phase 11 next and undo woven in:
 
 1. ~~**11.1 — a keyboard you can play.**~~ Done.
-2. **4.4 — undo.** The roll can now lose a lot of work in one gesture. Worth doing before the
-   window gets any better at making work worth losing.
+2. ~~**4.4 — undo.**~~ Done.
 3. **11.2 — a key and a scale.** Shading the rows that do not belong is what turns the roll from a
    grid into a guide, and 11.3 and 11.4 both stand on it.
 4. **The rest of Phase 9** — Cutter (9.5), Reverb (9.11) and Pitch (9.16) are the three missing

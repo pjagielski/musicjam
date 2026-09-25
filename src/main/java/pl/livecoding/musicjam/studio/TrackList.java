@@ -43,6 +43,16 @@ final class TrackList {
         return List.copyOf(tracks);
     }
 
+    /** Puts a whole list back, as an undo does; the tracks are the ones that were kept. */
+    void restore(List<StudioTrack> kept, int select) {
+        if (kept.isEmpty()) {
+            throw new IllegalArgumentException("A jam has tracks");
+        }
+        tracks.clear();
+        tracks.addAll(kept);
+        selected = Math.max(0, Math.min(tracks.size() - 1, select));
+    }
+
     int size() {
         return tracks.size();
     }

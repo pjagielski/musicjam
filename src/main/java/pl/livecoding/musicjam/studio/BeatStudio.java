@@ -24,6 +24,7 @@ import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextInputControl;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.input.KeyCode;
@@ -151,6 +152,8 @@ public final class BeatStudio extends Application {
 
     private PhraseRequest request;
     private TrackList tracks;
+    // what Ctrl+Z walks back through: the notes, the grid and the code, as they were before a change
+    private final EditHistory<Snapshot> history = new EditHistory<>(64);
     // the selected melody's roll, whose playhead follows the jam; none while the grid is shown
     private PianoRoll roll;
     private List<Path> midiFiles = List.of();
@@ -195,6 +198,7 @@ public final class BeatStudio extends Application {
             }
         });
         trackPanel.setOnEdit(this::publish);
+        trackPanel.setOnStructural(this::remember);
         trackPanel.setOnSelect(this::showSelected);
         applyMidiLatency();
 
@@ -257,6 +261,20 @@ public final class BeatStudio extends Application {
             scene.getRoot().setStyle("-fx-font-size: 18px;");
             code.setStyle("-fx-font-family: 'Consolas', 'Menlo', monospace; -fx-font-size: 18px;");
         }
+        scene.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if (!event.isShortcutDown() || scene.getFocusOwner() instanceof TextInputControl) {
+                // a text field has an undo of its own, and it is the one the typing hand wants
+                return;
+            }
+            if (event.getCode() == KeyCode.Z && !event.isShiftDown()) {
+                undo();
+            } else if (event.getCode() == KeyCode.Y || (event.getCode() == KeyCode.Z && event.isShiftDown())) {
+                redo();
+            } else {
+                return;
+            }
+            event.consume();
+        });
         stage.setScene(scene);
         stage.setTitle("MusicJam Studio");
         stage.getIcons().setAll(StudioIcon.sizes());
@@ -471,6 +489,54 @@ public final class BeatStudio extends Application {
         return name.startsWith("jam-") ? name.substring("jam-".length()) : name;
     }
 
+    /**
+     * What an undo puts back: the tracks with their notes, which of them was selected, the grid and
+     * the code. A gain, a mute, the tempo and the synth's knobs are performance rather than work,
+     * and are left where the hand put them.
+     */
+    private record Snapshot(List<StudioTrack> tracks, int selected, List<GridRow> rows, String code) {
+    }
+
+    /** The studio as it stands, to come back to. */
+    private Snapshot snapshot() {
+        return new Snapshot(tracks.tracks(), tracks.selectedIndex(), List.copyOf(rows), code.getText());
+    }
+
+    /** Called before a change worth undoing; while a jam is loading there is nothing to remember. */
+    private void remember() {
+        if (!loading && tracks != null) {
+            history.remember(snapshot());
+        }
+    }
+
+    private void undo() {
+        restore(history.undo(snapshot()));
+    }
+
+    private void redo() {
+        restore(history.redo(snapshot()));
+    }
+
+    /** Puts a whole state back and hands the jam over once, rather than once per piece of it. */
+    private void restore(Snapshot state) {
+        if (state == null) {
+            return;
+        }
+        loading = true;
+        try {
+            tracks.restore(state.tracks(), state.selected());
+            trackPanel.show(tracks);
+            rows.clear();
+            rows.addAll(state.rows());
+            buildGrid();
+            code.setText(state.code());
+        } finally {
+            loading = false;
+        }
+        showSelected();
+        publish();
+    }
+
     /** Everything a jam config says: MIDI file and window, the file's tempo, drums and synth. */
     private void loadJam(Path config) throws Exception {
         PhraseRequest next = PhraseRequest.fromPropertiesFile(config);
@@ -665,6 +731,7 @@ public final class BeatStudio extends Application {
 
     /** The editor always shows the selected track, so that is the one whose notes have changed. */
     private void sourceChanged(MelodySource next) {
+        remember();
         int index = tracks.selectedIndex();
         if (tracks.get(index) instanceof StudioTrack.Melody melody) {
             tracks.replace(index, melody.withSource(next));
@@ -697,6 +764,7 @@ public final class BeatStudio extends Application {
         try {
             List<GridRow> fromCode = GridRow.fromCode(LiveCode.parse(code.getText()));
             codeError.setText("");
+            remember();
             rows.clear();
             rows.addAll(fromCode);
             buildGrid();
@@ -787,6 +855,7 @@ public final class BeatStudio extends Application {
 
     /** rest -> x -> X -> o -> rest; any other gain, as drawn from code, is taken out with one click. */
     private void cycle(int row, int step) {
+        remember();
         float current = rows.get(row).accents()[step];
         float next = current == 0.0f ? 0.8f : current == 0.8f ? 1.0f : current == 1.0f ? 0.5f : 0.0f;
         rows.set(row, rows.get(row).withAccent(step, next));

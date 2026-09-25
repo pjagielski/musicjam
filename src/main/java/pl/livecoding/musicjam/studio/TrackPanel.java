@@ -40,17 +40,21 @@ final class TrackPanel {
     private TrackList tracks;
     private Runnable onEdit = () -> { };
     private Runnable onSelect = () -> { };
+    // called before a track is added, removed or moved, so the studio can keep what is about to change
+    private Runnable onStructural = () -> { };
 
     /** {@code newMelody} is what "+ Melody" adds: a track with a window already chosen. */
     TrackPanel(Supplier<StudioTrack.Melody> newMelody) {
         this.newMelody = newMelody;
         addMelody.setOnAction(event -> {
+            onStructural.run();
             tracks.add(this.newMelody.get());
             rebuild();
             onEdit.run();
             onSelect.run();
         });
         remove.setOnAction(event -> {
+            onStructural.run();
             tracks.remove(tracks.selectedIndex());
             rebuild();
             onEdit.run();
@@ -75,12 +79,21 @@ final class TrackPanel {
         onSelect = action;
     }
 
+    /**
+     * What a track being added, removed or moved is announced to before it happens: a gain or a
+     * mute is a performance and is not, so playing the faders never fills an undo history.
+     */
+    void setOnStructural(Runnable action) {
+        onStructural = action;
+    }
+
     void show(TrackList next) {
         tracks = next;
         rebuild();
     }
 
     private void move(int by) {
+        onStructural.run();
         tracks.move(tracks.selectedIndex(), by);
         rebuild();
         onEdit.run();
