@@ -178,6 +178,10 @@ final class PianoRoll {
     private int grabbedPitch;
     // the notes the hand is holding: what a move, a turn of velocity or a delete works on
     private List<Note> held = List.of();
+    // the same notes as they stood when the drag began. An edit makes new notes, so held is a list
+    // of values that dragFrom no longer contains; every step of a drag has to work from these two
+    // together, or the second step finds nothing to move and the first is undone.
+    private List<Note> dragHeld = List.of();
     // a press on empty rows, which becomes a band if the hand moves and a new note if it does not
     private boolean pressedOnEmpty;
     private boolean banding;
@@ -464,6 +468,7 @@ final class PianoRoll {
             hold(List.of(under));
         }
         dragFrom = shown;
+        dragHeld = held;
         dragged = under;
         resizing = event.getX() > rightEdgeOf(under) - EDGE;
         grabbedBeat = beatAt(event.getX());
@@ -489,7 +494,7 @@ final class PianoRoll {
             // the length this one ends up with is the length the next note added starts at
             lastLength = Math.max(NoteEdits.SHORTEST, NoteEdits.snap(beatAt(event.getX())) - dragged.beat());
         } else {
-            NoteEdits.Edit edit = NoteEdits.move(dragFrom, held, beatAt(event.getX()) - grabbedBeat,
+            NoteEdits.Edit edit = NoteEdits.move(dragFrom, dragHeld, beatAt(event.getX()) - grabbedBeat,
                     pitchAt(event.getY()) - grabbedPitch, pages.lengthBeats());
             held = edit.touched();
             change(edit.notes());
@@ -535,6 +540,7 @@ final class PianoRoll {
             hold(List.of(under));
         }
         dragFrom = shown;
+        dragHeld = held;
         dragged = under;
         velocityFromY = event.getY();
         drawNotes();
@@ -544,7 +550,7 @@ final class PianoRoll {
         if (dragged == null) {
             return;
         }
-        NoteEdits.Edit edit = NoteEdits.velocity(dragFrom, held,
+        NoteEdits.Edit edit = NoteEdits.velocity(dragFrom, dragHeld,
                 (float) ((velocityFromY - event.getY()) / LANE_HEIGHT));
         held = edit.touched();
         change(edit.notes());
@@ -553,6 +559,7 @@ final class PianoRoll {
     /** The end of a drag, or of an edit that took only a click: the line goes out as it now stands. */
     private void finish() {
         dragFrom = null;
+        dragHeld = List.of();
         dragged = null;
         if (onEdit != null) {
             onEdit.accept(shown);
