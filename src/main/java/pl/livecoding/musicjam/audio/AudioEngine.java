@@ -564,7 +564,8 @@ public final class AudioEngine {
          * No more loops and no more notes: what is already sounding plays out, and the effects keep
          * ringing. This is what a Stop that lets the delay finish its repeats is made of. A stutter
          * stops with it, or its repeats would never let the tail end, and so do the other
-         * performance effects.
+         * performance effects. A loop track is not a tail and ends with the jam, which the render
+         * thread does for itself at the next block.
          */
         void stopScheduling() {
             scheduling = false;
@@ -594,6 +595,13 @@ public final class AudioEngine {
                 }
             } else {
                 gains.hold();
+                // a note in its release is a tail worth ringing on; the rest of a break is not, so a
+                // loop still playing ends with the jam rather than filling the room until its bars
+                // are up. Here rather than in stopScheduling, which is called from another thread.
+                if (!loopVoices.isEmpty()) {
+                    loopVoices.values().forEach(LoopVoice::stop);
+                    loopVoices.clear();
+                }
             }
             updateStutter(blockEnd);
             long segmentStart = position;
@@ -930,9 +938,14 @@ public final class AudioEngine {
                         // the rate in doubles: it is rarely a whole number, and one of 1.37 read as
                         // 1 is a loop playing at the tempo it was cut at wherever the jam is
                         () -> new LoopVoice(audio.audio(),
-                                () -> audio.audio().frameCount() / (double) tempo.frames(pass)),
+                                () -> audio.audio().frameCount() / (double) tempo.frames(pass), fadeFrames()),
                         track));
             }
+        }
+
+        /** Five milliseconds: long enough that the end of a pass is not a click, short enough to be an end. */
+        private int fadeFrames() {
+            return Math.max(1, sampleRate / 200);
         }
 
         private Sample sampleFor(Note note, Transport transport, PitchSynth synth) {

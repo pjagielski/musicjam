@@ -10,18 +10,29 @@ import java.util.function.DoubleSupplier;
  *
  * <p>Faster means higher, as a sampler has always done: what it would take to move the tempo and
  * leave the pitch where it is has a step of its own (12.4).
+ *
+ * <p>It is ended, rather than left to play out, both when the jam stops and when the next pass
+ * starts — over a few milliseconds, since a loop cut dead halfway up a wave clicks.
  */
 final class LoopVoice implements VoiceSource {
 
     private final Sample audio;
     private final DoubleSupplier rate;
+    // how long the fade at the end lasts; a handful of milliseconds, no more
+    private final int fadeFrames;
     private double position;
     private boolean stopped;
+    // frames of the fade still to play, or -1 while it is not fading
+    private int fading = -1;
 
-    /** {@code rate} is frames of the sample read per frame played: 2 is twice as fast, an octave up. */
-    LoopVoice(Sample audio, DoubleSupplier rate) {
+    /**
+     * {@code rate} is frames of the sample read per frame played: 2 is twice as fast, an octave up.
+     * {@code fadeFrames} is how long {@link #stop()} takes to fall silent.
+     */
+    LoopVoice(Sample audio, DoubleSupplier rate, int fadeFrames) {
         this.audio = audio;
         this.rate = rate;
+        this.fadeFrames = Math.max(1, fadeFrames);
     }
 
     @Override
@@ -42,8 +53,15 @@ final class LoopVoice implements VoiceSource {
         }
         // between two frames of the sample: what is read at a rate that is rarely a whole number
         double blend = position - frame;
-        stereoOut[0] = (float) (audio.leftAt(frame) * (1 - blend) + audio.leftAt(frame + 1) * blend);
-        stereoOut[1] = (float) (audio.rightAt(frame) * (1 - blend) + audio.rightAt(frame + 1) * blend);
+        float level = 1.0f;
+        if (fading >= 0) {
+            level = Math.max(0.0f, (float) --fading / fadeFrames);
+            if (fading <= 0) {
+                stopped = true;
+            }
+        }
+        stereoOut[0] = (float) (audio.leftAt(frame) * (1 - blend) + audio.leftAt(frame + 1) * blend) * level;
+        stereoOut[1] = (float) (audio.rightAt(frame) * (1 - blend) + audio.rightAt(frame + 1) * blend) * level;
         position += Math.max(0, rate.getAsDouble());
     }
 
@@ -52,8 +70,14 @@ final class LoopVoice implements VoiceSource {
         return stopped || position >= audio.frameCount() - 1;
     }
 
-    /** Ends it now: what a loop being started again does to the pass still playing. */
+    /**
+     * Ends it: what the jam stopping does, and what a loop being started again does to the pass
+     * still playing. It falls to nothing over {@code fadeFrames} rather than at once, so the end of
+     * a pass is not a click.
+     */
     void stop() {
-        stopped = true;
+        if (fading < 0) {
+            fading = fadeFrames;
+        }
     }
 }

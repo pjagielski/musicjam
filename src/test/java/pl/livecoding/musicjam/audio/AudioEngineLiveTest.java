@@ -627,6 +627,21 @@ class AudioEngineLiveTest {
     }
 
     @Test
+    void aLoopEndsWithTheJamRatherThanPlayingOutItsPass() {
+        // a bar of loop, which at 120 BPM lasts 2000 frames: the stop comes 500 frames into it
+        Song song = new Song(120, 4, List.of(new LoopTrack(ramp(2000), 1, 1.0f)));
+        var renderer = engine().liveRenderer(() -> jam(song), false);
+
+        float[] playing = render(renderer, 4);
+        renderer.stopScheduling();
+        float[] stopped = render(renderer, 4);
+
+        assertTrue(playing[400] > 0.1f, "the loop is playing when the stop comes");
+        // a note in its release is a tail worth ringing on; three more bars of a break is not
+        assertEquals(0.0f, stopped[300], "and is over well inside the block after it");
+    }
+
+    @Test
     void aStereoLoopKeepsItsTwoChannelsAllTheWayToTheMix() {
         float[] hardLeft = new float[2000];
         float[] hardRight = new float[2000];
