@@ -5,6 +5,7 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ToggleButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -12,13 +13,16 @@ import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.util.StringConverter;
 import pl.livecoding.musicjam.audio.Sample;
+import pl.livecoding.musicjam.audio.Slices;
 import pl.livecoding.musicjam.studio.knobs.StudioPanels;
 
 import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.function.Consumer;
 
 /**
@@ -42,6 +46,21 @@ final class LoopEditor {
     /** The lengths the box offers, whatever the file turned out to be taken as. */
     private static final double[] CHOICES = {0.25, 0.5, 1, 2, 4, 8, 16, 32};
 
+    /** How a loop can be cut: no cutting, then a slice a beat and down from there. */
+    private static final String OFF = "Off";
+    private static final Map<String, Double> CUTS = new LinkedHashMap<>();
+
+    static {
+        CUTS.put(OFF, 0.0);
+        CUTS.put("1/4", 1.0);
+        CUTS.put("1/8", 0.5);
+        CUTS.put("1/16", 0.25);
+        CUTS.put("1/32", 0.125);
+    }
+
+    /** How far a boundary may move to find its hit: a fifth of a slice either way. */
+    private static final double NEAR = 0.1;
+
     private final Loops loops;
     private final Consumer<StudioTrack.Loop> onChange;
     private final Consumer<Exception> onError;
@@ -51,6 +70,8 @@ final class LoopEditor {
     // how long the jam's own loop is, which is all of the pass that is ever reached
     private double jamLengthBeats;
     private final ComboBox<Double> bars = new ComboBox<>();
+    private final ComboBox<String> cut = new ComboBox<>();
+    private final ToggleButton toHits = new ToggleButton("To the hits");
     private final LoopWave wave;
     private final Label fileName = new Label();
     private final Label reading = new Label();
@@ -91,6 +112,20 @@ final class LoopEditor {
             }
         });
 
+        cut.getItems().setAll(CUTS.keySet());
+        cut.setPrefWidth(90);
+        cut.setOnAction(event -> {
+            if (!filling && cut.getValue() != null) {
+                change(this.track.cutInto(new StudioTrack.Slicing(CUTS.get(cut.getValue()), toHits.isSelected())));
+            }
+        });
+        toHits.setOnAction(event -> {
+            if (!filling) {
+                change(this.track.cutInto(new StudioTrack.Slicing(this.track.slicing().beats(),
+                        toHits.isSelected())));
+            }
+        });
+
         Button browse = new Button("Browse...");
         browse.setOnAction(event -> browse(browse));
         fileName.setStyle("-fx-text-fill: #868e96;");
@@ -100,7 +135,8 @@ final class LoopEditor {
         HBox.setHgrow(push, Priority.ALWAYS);
         controls.setAlignment(Pos.CENTER_LEFT);
         controls.getChildren().setAll(new Label("File"), fileName, browse, gap(),
-                new Label("Fills"), bars, new Label("bars"), gap(), reading, push);
+                new Label("Fills"), bars, new Label("bars"), gap(),
+                new Label("Slices"), cut, toHits, gap(), reading, push);
 
         frame = StudioPanels.frame("", controls, details());
         fill();
@@ -161,6 +197,26 @@ final class LoopEditor {
                 cut);
     }
 
+    /** Where this loop's slices begin, or nothing at all when it is not being cut. */
+    private int[] slices() {
+        StudioTrack.Slicing slicing = track.slicing();
+        int count = slicing.count(track.bars() * beatsPerBar);
+        if (count <= 0) {
+            return new int[0];
+        }
+        return slicing.toHits() ? Slices.onTheHits(track.audio(), count, NEAR)
+                : Slices.onTheGrid(track.audio().frameCount(), count);
+    }
+
+    /** The name the box gives a slicing, which is the one it was chosen by. */
+    private static String label(StudioTrack.Slicing slicing) {
+        return CUTS.entrySet().stream()
+                .filter(each -> each.getValue() == slicing.beats())
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(OFF);
+    }
+
     private void browse(Button owner) {
         FileChooser chooser = new FileChooser();
         chooser.setTitle("A loop for " + track.name());
@@ -207,7 +263,10 @@ final class LoopEditor {
             fileName.setText(track.file().getFileName().toString());
             reading.setText(String.format(Locale.ROOT, "%.1f BPM as cut", track.sourceBpm(sampleRate, beatsPerBar)));
             details.setText(summary());
-            wave.show(track.audio(), track.bars(), beatsPerBar, jamLengthBeats);
+            cut.setValue(label(track.slicing()));
+            toHits.setSelected(track.slicing().toHits());
+            toHits.setDisable(!track.slicing().on());
+            wave.show(track.audio(), track.bars(), beatsPerBar, jamLengthBeats, slices());
             ((Label) frame.getChildren().getFirst()).setText("Loop · recorded audio".toUpperCase(Locale.ROOT));
         } finally {
             filling = false;

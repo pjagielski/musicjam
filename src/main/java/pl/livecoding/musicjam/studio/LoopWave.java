@@ -14,6 +14,11 @@ import pl.livecoding.musicjam.audio.Sample;
  * the way to see that the bars given to it are the right ones, since a break whose bars are wrong
  * has its hits visibly off the lines rather than merely sounding wrong.
  *
+ * <p>Where the loop is cut into slices, they are drawn too: a faint band behind every other one,
+ * so the blocks can be counted, and a mark at each boundary. The marks are the loop's own, not the
+ * jam's grid, which is the point of moving them to the hits - a break's slices land where its hits
+ * do, and the eye can tell at once whether they did.
+ *
  * <p>The waveform is drawn once, on its own canvas, and the playhead on a second over it, so the
  * line moving sixty times a second does not redraw a hundred thousand frames of audio with it.
  */
@@ -28,6 +33,8 @@ final class LoopWave {
     private static final Color BAR_TEXT = Color.web("#868e96");
     private static final Color PAST_THE_LOOP = Color.web("#e9ecef");
     private static final Color PLAYHEAD = Color.web("#e03131");
+    private static final Color SLICE_BAND = Color.web("#f1f3f5");
+    private static final Color SLICE_MARK = Color.web("#f76707");
 
     private final Canvas wave;
     private final Canvas playhead;
@@ -54,13 +61,22 @@ final class LoopWave {
      * before the jam's loop comes round and starts it again: the rest is shaded, since it is there
      * in the file but never heard.
      */
-    void show(Sample audio, double bars, int beatsPerBar, double playedBeats) {
+    void show(Sample audio, double bars, int beatsPerBar, double playedBeats, int[] slices) {
         double width = wave.getWidth();
         double height = wave.getHeight();
         double middle = height / 2;
         GraphicsContext g = wave.getGraphicsContext2D();
         g.setFill(BACKGROUND);
         g.fillRect(0, 0, width, height);
+
+        // behind the waveform, so a slice reads as a block rather than as a pair of lines
+        g.setFill(SLICE_BAND);
+        for (int slice = 1; slice < slices.length; slice += 2) {
+            double from = slices[slice] / (double) audio.frameCount() * width;
+            double to = (slice + 1 < slices.length ? slices[slice + 1] : audio.frameCount())
+                    / (double) audio.frameCount() * width;
+            g.fillRect(from, 0, to - from, height);
+        }
 
         float[] mono = audio.copyMono();
         int columns = (int) width;
@@ -92,6 +108,14 @@ final class LoopWave {
                 g.setFont(Font.font(10));
                 g.fillText(String.valueOf((int) (beat / beatsPerBar) + 1), x + 4, 12);
             }
+        }
+        // over the grid, since where a slice begins is the thing being judged against it
+        g.setStroke(SLICE_MARK);
+        g.setLineWidth(1);
+        for (int start : slices) {
+            double x = Math.round(start / (double) audio.frameCount() * width) + 0.5;
+            g.strokeLine(x, 0, x, 10);
+            g.strokeLine(x, height - 10, x, height);
         }
         if (playedBeats > 0 && playedBeats < beats) {
             g.setFill(PAST_THE_LOOP.deriveColor(0, 1, 1, 0.65));

@@ -100,37 +100,65 @@ sealed interface StudioTrack permits StudioTrack.Drums, StudioTrack.Melody, Stud
         }
     }
 
+    /**
+     * How a loop is cut up: not at all, or into slices of {@code beats} each, every boundary but
+     * the first moved to the hit nearest it when {@code toHits} and there is one to move to.
+     */
+    record Slicing(double beats, boolean toHits) {
+
+        static final Slicing NONE = new Slicing(0, true);
+
+        boolean on() {
+            return beats > 0;
+        }
+
+        /** How many slices that makes of a pass {@code lengthBeats} long. */
+        int count(double lengthBeats) {
+            return on() ? Math.max(1, (int) Math.round(lengthBeats / beats)) : 0;
+        }
+    }
+
     /** A piece of recorded audio, played over as many bars of the jam as it is taken to fill. */
-    record Loop(String name, float gain, boolean muted, Path file, double bars, Sample audio)
+    record Loop(String name, float gain, boolean muted, Path file, double bars, Sample audio, Slicing slicing)
             implements StudioTrack {
 
         public Loop {
             Objects.requireNonNull(name, "name");
             Objects.requireNonNull(file, "file");
             Objects.requireNonNull(audio, "audio");
+            Objects.requireNonNull(slicing, "slicing");
             checkGain(gain);
             if (!Double.isFinite(bars) || bars <= 0) {
                 throw new IllegalArgumentException("A loop fills a positive number of bars, not " + bars);
             }
         }
 
+        /** A loop with nothing cut out of it yet, which is how one is first chosen. */
+        Loop(String name, float gain, boolean muted, Path file, double bars, Sample audio) {
+            this(name, gain, muted, file, bars, audio, Slicing.NONE);
+        }
+
         @Override
         public Loop named(String next) {
-            return new Loop(next, gain, muted, file, bars, audio);
+            return new Loop(next, gain, muted, file, bars, audio, slicing);
         }
 
         @Override
         public Loop withGain(float next) {
-            return new Loop(name, next, muted, file, bars, audio);
+            return new Loop(name, next, muted, file, bars, audio, slicing);
         }
 
         @Override
         public Loop withMuted(boolean next) {
-            return new Loop(name, gain, next, file, bars, audio);
+            return new Loop(name, gain, next, file, bars, audio, slicing);
         }
 
         Loop over(double nextBars) {
-            return new Loop(name, gain, muted, file, nextBars, audio);
+            return new Loop(name, gain, muted, file, nextBars, audio, slicing);
+        }
+
+        Loop cutInto(Slicing next) {
+            return new Loop(name, gain, muted, file, bars, audio, next);
         }
 
         /** The tempo the audio was cut at, as far as its length and its bars tell. */

@@ -256,7 +256,8 @@ loader averages the channels — which a stereo loop would feel.
 | 12.2 | ✓ **Done.** ★ **The loop track in the studio**: `+ Loop` beside `+ Melody` opens a file picker, and what is chosen becomes a track like any other — gain, mute, order and undo come free. How many bars it fills is guessed from the file's name where it says so (`100_16_am-volo.wav`) and otherwise from its length at the tempo the jam is at, rounded to a length loops are actually cut to; the box says what was guessed and the hand can change it. The editor says what that amounts to: the BPM the audio must have been cut at, and how much faster or slower than that it is playing now, which follows the tempo as it moves. | M |
 | 12.3 | ✓ **Done.** **Stereo samples.** `Sample` keeps left and right, the WAV loader no longer averages a stereo file, and `VoiceSource` has a stereo `next` that every mono voice gets for free. Loops reach the mix in both ears; a synth voice, being the same in each, is unchanged. | M |
 | 12.4 | **Tempo without pitch.** The varispeed of 12.1 moves the pitch with the tempo, which is wrong for a vocal and merely dated for a break. WSOLA — overlap-add with the window chosen by correlation — is a few hundred lines of plain Java and a good workshop subject in its own right: it is where "why does it sound like that" has an answer you can hear. A switch per loop: follow the tempo, or keep the pitch. | L |
-| 12.5 | **Slices.** A loop cut at its bars and beats, so a slice can be played on its own, put in another order, or left out. It is what a sampler is for, and it would give Stutter (9.2) something of its own to chop. | L |
+| 12.5 | ✓ **Done.** **Where the slices fall.** A loop cut into slices of a quarter down to a thirty-second, drawn on the waveform as bands with a mark at each boundary. The cut starts on the loop's own grid and is then let go of a little: every boundary but the first moves to the nearest hit worth having within a tenth of a slice, since a break played by hand has its hits near the beat rather than on it, and a slice that begins a few milliseconds early begins with the tail of the one before. Nearest rather than loudest — the loudest within reach is often the next hit along, and a boundary that jumps that far has left its own slice behind. Nothing plays them yet; this is where they are. | M |
+| 12.7 | **Slices played**: a slice on its own, put in another order, or left out. Two ways in, and they are not the same job: a pattern per loop track, so many steps to a pass with a slice or a silence in each, dragged about on the waveform; or a slice under every key, played by hand like pads. The first is what turns a break into a part; the second is what turns it into an instrument. Either would give Stutter (9.2) something of its own to chop. | L |
 | 12.6 | ✓ **Done.** **The waveform drawn** where the roll is drawn for a melody, with the loop's bars and beats laid over it and the playhead crossing it once for every pass — so whether the bars given to a break are the right ones is something you can see, its hits sitting on the lines or beside them, rather than only hear. Where the jam's own loop is shorter than the loop's bars, the part never reached is shaded, and the editor says so. What is left for 12.5 is somewhere to drag the slices to. | M |
 
 Open questions worth settling before 12.1 rather than after:
@@ -305,9 +306,9 @@ For a studio meant to be **played live**, with the musical help of Phase 11 next
    (9.11) and Pitch (9.16) are the three missing strips a set actually reaches for.
 5. ~~**11.3 / 11.4 — chords**~~ Done.
 6. ~~**12.1 / 12.2 / 12.3 / 12.6 — loops that fit the jam, and drawn**~~ Done.
-7. **12.5 — slices**, which is where a break stops being a bed and becomes something to play, and
-   now has a waveform to be dragged about on. Then **12.4** (tempo without pitch), which is what a
-   vocal wants and a good subject in its own right.
+7. ~~**12.5 — where the slices fall.**~~ Done. Next **12.4** (tempo without pitch), which is what a
+   vocal wants and a good subject in its own right, and then **12.7**, the slices played, which is
+   where a break stops being a bed and becomes something to play.
 
 Kept for when the purpose changes: **6.1 + 10.6** (saving) matter the moment other people use this;
 **3.1** (`note(...)`) is the first thing anyone asks about in a workshop; **8.1** (the core module)
