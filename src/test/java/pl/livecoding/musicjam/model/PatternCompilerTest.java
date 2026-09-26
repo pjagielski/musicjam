@@ -1,5 +1,7 @@
 package pl.livecoding.musicjam.model;
 
+import pl.livecoding.musicjam.audio.Sample;
+
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -20,6 +22,28 @@ class PatternCompilerTest {
                 new Note(0.0, Drum.KICK, 1.0, 0.5f),
                 new Note(2.0, Drum.KICK, 1.0, 0.25f)
         ), notes);
+    }
+
+    @Test
+    void aLoopOfAudioDoesNotStretchTheJamsOwnLoop() {
+        var song = new Song(120, 4, List.of(
+                new MelodyTrack(List.of(), 8.0, 1.0f),
+                // four bars of audio in a jam whose loop is two: it is cut off and starts again
+                new LoopTrack(Sample.mono(new float[100]), 4, 1.0f)
+        ));
+
+        assertEquals(8.0, PatternCompiler.totalBeats(song));
+    }
+
+    @Test
+    void aSongOfNothingButALoopLoopsWithTheLoop() {
+        var song = new Song(120, 4, List.of(
+                new DrumTrack(Drum.KICK, "X...", 1.0f),
+                new LoopTrack(Sample.mono(new float[100]), 2, 1.0f)
+        ));
+
+        // nothing written to set the length, so the audio sets it: two bars
+        assertEquals(8.0, PatternCompiler.totalBeats(song));
     }
 
     @Test

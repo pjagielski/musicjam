@@ -607,6 +607,26 @@ class AudioEngineLiveTest {
     }
 
     @Test
+    void givingALoopMoreBarsThanTheJamsLoopLeavesItPlaying() {
+        float[] flat = new float[2000];
+        Arrays.fill(flat, 0.4f);
+        Sample audio = Sample.mono(flat);
+        // the jam's loop is eight beats, set by what is written; the loop is given four bars of it
+        var jam = new AtomicReference<>(jam(new Song(120, 4,
+                List.of(new LoopTrack(audio, 1, 1.0f), new MelodyTrack(List.of(), 8.0, 1.0f)))));
+        var renderer = engine().liveRenderer(jam::get, false);
+
+        render(renderer, 8);
+        jam.set(jam(new Song(120, 4,
+                List.of(new LoopTrack(audio, 4, 1.0f), new MelodyTrack(List.of(), 8.0, 1.0f)))));
+        float[] after = render(renderer, 56);
+
+        // a pass too long for the jam's loop is cut off at its end and started again, never dropped
+        assertTrue(after[3_000] > 0.3f, "still playing a loop later");
+        assertTrue(after[6_000] > 0.3f, "and a loop after that");
+    }
+
+    @Test
     void aStereoLoopKeepsItsTwoChannelsAllTheWayToTheMix() {
         float[] hardLeft = new float[2000];
         float[] hardRight = new float[2000];

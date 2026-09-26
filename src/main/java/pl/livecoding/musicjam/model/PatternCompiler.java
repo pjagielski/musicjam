@@ -47,21 +47,30 @@ public final class PatternCompiler {
     }
 
     /**
-     * The length of one loop of this song, in beats: {@code beatsPerBar} for a pattern-only song,
-     * or the longest {@link MelodyTrack} or {@link LoopTrack} when the song has one — drum
-     * patterns tile to match it.
+     * The length of one loop of this song, in beats: the longest {@link MelodyTrack}, which is what
+     * is written, or {@code beatsPerBar} for a pattern-only song — drum patterns tile to match it.
+     * A {@link LoopTrack} sets it only when nothing is written to set it, so that adding a break or
+     * giving one more bars never quietly makes the jam's own loop longer.
      */
     public static double totalBeats(Song song) {
-        double longest = song.tracks().stream()
-                .mapToDouble(track -> switch (track) {
-                    case MelodyTrack melody -> melody.patternLengthBeats();
-                    case LoopTrack loop -> loop.lengthBeats(song.beatsPerBar());
-                    // a drum pattern is one bar and tiles to whatever the rest of the song is
-                    case DrumTrack drums -> 0;
-                })
+        // what is written sets the length; a drum pattern is one bar and tiles to whatever it is
+        double written = song.tracks().stream()
+                .filter(track -> track instanceof MelodyTrack)
+                .mapToDouble(track -> ((MelodyTrack) track).patternLengthBeats())
                 .max()
                 .orElse(0);
-        return longest > 0 ? longest : song.beatsPerBar();
+        if (written > 0) {
+            return written;
+        }
+        // nothing written to set it, so a piece of audio sets it: a song of nothing but a break
+        // loops with the break. Where something is written, a longer loop is cut off at the end of
+        // the loop and starts again there, which is what the studio draws shaded.
+        double audio = song.tracks().stream()
+                .filter(track -> track instanceof LoopTrack)
+                .mapToDouble(track -> ((LoopTrack) track).lengthBeats(song.beatsPerBar()))
+                .max()
+                .orElse(0);
+        return audio > 0 ? audio : song.beatsPerBar();
     }
 
     private static List<Note> compileDrumTrack(DrumTrack track, double beatsPerBar, double totalBeats, float gain) {
