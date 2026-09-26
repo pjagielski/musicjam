@@ -41,20 +41,27 @@ public final class PatternCompiler {
         return switch (track) {
             case DrumTrack drumTrack -> compileDrumTrack(drumTrack, beatsPerBar, totalBeats, gain);
             case MelodyTrack melodyTrack -> compileMelodyTrack(melodyTrack, gain);
+            // a loop is audio, not notes: the engine plays it alongside what is compiled here
+            case LoopTrack loop -> List.of();
         };
     }
 
     /**
      * The length of one loop of this song, in beats: {@code beatsPerBar} for a pattern-only song,
-     * or the longest {@link MelodyTrack}'s length when the song has one — drum patterns tile to
-     * match it.
+     * or the longest {@link MelodyTrack} or {@link LoopTrack} when the song has one — drum
+     * patterns tile to match it.
      */
     public static double totalBeats(Song song) {
-        return song.tracks().stream()
-                .filter(track -> track instanceof MelodyTrack)
-                .mapToDouble(track -> ((MelodyTrack) track).patternLengthBeats())
+        double longest = song.tracks().stream()
+                .mapToDouble(track -> switch (track) {
+                    case MelodyTrack melody -> melody.patternLengthBeats();
+                    case LoopTrack loop -> loop.lengthBeats(song.beatsPerBar());
+                    // a drum pattern is one bar and tiles to whatever the rest of the song is
+                    case DrumTrack drums -> 0;
+                })
                 .max()
-                .orElse(song.beatsPerBar());
+                .orElse(0);
+        return longest > 0 ? longest : song.beatsPerBar();
     }
 
     private static List<Note> compileDrumTrack(DrumTrack track, double beatsPerBar, double totalBeats, float gain) {

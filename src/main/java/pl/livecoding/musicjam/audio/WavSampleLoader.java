@@ -33,7 +33,7 @@ public final class WavSampleLoader {
             }
 
             try (AudioInputStream converted = AudioSystem.getAudioInputStream(targetFormat, source)) {
-                return decodeMono(converted.readAllBytes(), channels, expectedFrames);
+                return decode(converted.readAllBytes(), channels, expectedFrames);
             }
         }
     }
@@ -46,7 +46,8 @@ public final class WavSampleLoader {
         return Math.round(sourceFrames * targetSampleRate / source.getFormat().getSampleRate());
     }
 
-    private static Sample decodeMono(byte[] pcm, int channels, long expectedFrames) {
+    /** One channel as it is, two kept apart, more than two averaged into both. */
+    private static Sample decode(byte[] pcm, int channels, long expectedFrames) {
         int frameSize = channels * 2;
         int decodedFrames = pcm.length / frameSize;
         int frames = decodedFrames;
@@ -54,17 +55,24 @@ public final class WavSampleLoader {
             frames = (int) Math.min(frames, expectedFrames);
         }
         int leadingPadding = decodedFrames - frames;
-        float[] mono = new float[frames];
+        float[] left = new float[frames];
+        float[] right = channels == 2 ? new float[frames] : left;
         for (int frame = 0; frame < frames; frame++) {
             int frameOffset = (frame + leadingPadding) * frameSize;
             float sum = 0.0f;
             for (int channel = 0; channel < channels; channel++) {
                 int offset = frameOffset + channel * 2;
                 int value = (pcm[offset] & 0xff) | (pcm[offset + 1] << 8);
-                sum += (short) value / 32768.0f;
+                float heard = (short) value / 32768.0f;
+                sum += heard;
+                if (channels == 2) {
+                    (channel == 0 ? left : right)[frame] = heard;
+                }
             }
-            mono[frame] = sum / channels;
+            if (channels != 2) {
+                left[frame] = sum / channels;
+            }
         }
-        return Sample.mono(mono);
+        return channels == 2 ? Sample.stereo(left, right) : Sample.mono(left);
     }
 }

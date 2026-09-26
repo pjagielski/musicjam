@@ -11,11 +11,12 @@ import java.io.ByteArrayInputStream;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WavSampleLoaderTest {
 
     @Test
-    void loadsStereoWavAsMono(@TempDir Path directory) throws Exception {
+    void aStereoWavKeepsItsTwoChannels(@TempDir Path directory) throws Exception {
         byte[] stereoPcm = {
                 (byte) 0xff, 0x7f, 0x00, (byte) 0x80,
                 0x00, 0x40, 0x00, 0x40
@@ -30,8 +31,12 @@ class WavSampleLoaderTest {
         Sample sample = WavSampleLoader.load(wav, 44_100);
 
         assertEquals(2, sample.frameCount());
-        assertEquals(0.0f, sample.valueAt(0), 0.0001f);
-        assertEquals(0.5f, sample.valueAt(1), 0.0001f);
+        assertTrue(sample.stereo(), "the two channels differ and are kept apart");
+        assertEquals(1.0f, sample.copyStereo()[0][0], 0.0001f, "hard left in one ear");
+        assertEquals(-1.0f, sample.copyStereo()[1][0], 0.0001f, "and the other way in the other");
+        // what is heard in the middle is what a mono caller gets: the two averaged
+        assertEquals(0.0f, sample.copyMono()[0], 0.0001f);
+        assertEquals(0.5f, sample.copyMono()[1], 0.0001f);
     }
 
     @Test

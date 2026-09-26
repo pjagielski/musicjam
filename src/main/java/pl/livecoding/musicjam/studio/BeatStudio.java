@@ -47,6 +47,7 @@ import pl.livecoding.musicjam.livecode.LiveCodeException;
 import pl.livecoding.musicjam.midi.ExternalMidiOutput;
 import pl.livecoding.musicjam.midi.MidiFileReader;
 import pl.livecoding.musicjam.model.DrumTrack;
+import pl.livecoding.musicjam.model.LoopTrack;
 import pl.livecoding.musicjam.model.MelodyTrack;
 import pl.livecoding.musicjam.model.Note;
 import pl.livecoding.musicjam.model.Progression;
@@ -890,6 +891,7 @@ public final class BeatStudio extends Application {
         return tracks.stream().map(track -> (Track) switch (track) {
             case DrumTrack drums -> new DrumTrack(drums.drum(), drums.steps(), 1.0f);
             case MelodyTrack melody -> new MelodyTrack(melody.notes(), melody.patternLengthBeats(), 1.0f);
+            case LoopTrack loop -> new LoopTrack(loop.audio(), loop.bars(), 1.0f);
         }).toList();
     }
 

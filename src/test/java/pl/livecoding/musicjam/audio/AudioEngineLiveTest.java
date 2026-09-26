@@ -3,6 +3,7 @@ package pl.livecoding.musicjam.audio;
 import pl.livecoding.musicjam.model.Drum;
 import pl.livecoding.musicjam.model.DrumTrack;
 import pl.livecoding.musicjam.model.Envelope;
+import pl.livecoding.musicjam.model.LoopTrack;
 import pl.livecoding.musicjam.model.MelodyTrack;
 import pl.livecoding.musicjam.model.Note;
 import pl.livecoding.musicjam.model.Song;
@@ -13,6 +14,7 @@ import pl.livecoding.musicjam.synth.PitchSynth;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -539,6 +541,73 @@ class AudioEngineLiveTest {
 
         // the second loop, from frame 2000, is the new synth's; the first falls quiet at 250 and goes
         assertEquals(1, renderer.busCount());
+    }
+
+    @Test
+    void aLoopIsReadAtWhateverRateMakesItsBarsTheJamsBars() {
+        // 2000 frames at 1000 a second is two seconds: one bar at 120 BPM exactly
+        Sample audio = ramp(2000);
+        Song atItsOwnTempo = new Song(120, 4, List.of(new LoopTrack(audio, 1, 1.0f)));
+        Song twiceAsFast = new Song(240, 4, List.of(new LoopTrack(audio, 1, 1.0f)));
+
+        float[] asRecorded = render(engine().liveRenderer(() -> jam(atItsOwnTempo), false), 8);
+        float[] hurried = render(engine().liveRenderer(() -> jam(twiceAsFast), false), 8);
+
+        assertEquals(audio.copyMono()[400], asRecorded[400], 1e-4f, "at its own tempo, frame for frame");
+        assertEquals(audio.copyMono()[800], hurried[400], 1e-4f, "at twice the tempo, twice through the sample");
+    }
+
+    @Test
+    void aLoopShorterThanTheJamsLoopPlaysAgainFromItsStart() {
+        Sample audio = ramp(2000);
+        // one bar of loop against a melody eight beats long: the loop comes round twice
+        Song song = new Song(120, 4, List.of(new LoopTrack(audio, 1, 1.0f),
+                new MelodyTrack(List.of(), 8.0, 1.0f)));
+
+        float[] left = render(engine().liveRenderer(() -> jam(song), false), 32);
+
+        assertEquals(audio.copyMono()[1900], left[1900], 1e-4f, "the end of the first pass");
+        assertEquals(audio.copyMono()[100], left[2100], 1e-4f, "and the start of the second");
+    }
+
+    @Test
+    void aStereoLoopKeepsItsTwoChannelsAllTheWayToTheMix() {
+        float[] hardLeft = new float[2000];
+        float[] hardRight = new float[2000];
+        Arrays.fill(hardLeft, 0.5f);
+        Arrays.fill(hardRight, -0.5f);
+        Song song = new Song(120, 4, List.of(new LoopTrack(Sample.stereo(hardLeft, hardRight), 1, 1.0f)));
+        var renderer = engine().liveRenderer(() -> jam(song), false);
+
+        float[] mix = new float[BLOCK * 2];
+        renderer.renderNext(mix);
+
+        // a block is 128 frames; the tenth of them is well inside the loop
+        assertEquals(0.5f, mix[10 * 2], 1e-4f, "one ear");
+        assertEquals(-0.5f, mix[10 * 2 + 1], 1e-4f, "and the other, as they were recorded");
+    }
+
+    @Test
+    void aMutedLoopFallsSilentWhileItIsPlaying() {
+        Sample audio = ramp(2000);
+        var jam = new AtomicReference<>(jam(new Song(120, 4, List.of(new LoopTrack(audio, 1, 1.0f)))));
+        var renderer = engine().liveRenderer(jam::get, false);
+
+        float[] heard = render(renderer, 3);
+        jam.set(jam(new Song(120, 4, List.of(new LoopTrack(audio, 1, 0.0f)))));
+        float[] quiet = render(renderer, 3);
+
+        assertTrue(heard[200] > 0.05f, "playing: " + heard[200]);
+        assertEquals(0.0f, quiet[300], 1e-4f, "a loop is faded like any other track, while it plays");
+    }
+
+    /** A sample that climbs from nothing to one, so where it is read from can be told from what comes out. */
+    private static Sample ramp(int frames) {
+        float[] climbing = new float[frames];
+        for (int frame = 0; frame < frames; frame++) {
+            climbing[frame] = frame / (float) frames;
+        }
+        return Sample.mono(climbing);
     }
 
     /** A synth whose voices play a constant {@code level}, through effects that multiply it by {@code factor}. */

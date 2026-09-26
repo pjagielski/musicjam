@@ -2,6 +2,7 @@ package pl.livecoding.musicjam.audio;
 
 import pl.livecoding.musicjam.model.Drum;
 import pl.livecoding.musicjam.model.Envelope;
+import pl.livecoding.musicjam.model.LoopTrack;
 import pl.livecoding.musicjam.model.Note;
 import pl.livecoding.musicjam.model.PatternCompiler;
 import pl.livecoding.musicjam.model.Song;
@@ -428,19 +429,24 @@ public final class AudioEngine {
      * is what lets a new tempo move every hit not yet played.
      */
     private record LiveHit(double beat, Sample sample, LivePitchSynth synth, int midiNote, double heldBeats,
-                           float gain, boolean kick, int track) {
+                           float gain, boolean kick, int track, Supplier<LoopVoice> loop) {
 
         static LiveHit sample(double beat, Sample sample, float gain, boolean kick, int track) {
-            return new LiveHit(beat, sample, null, 0, 0, gain, kick, track);
+            return new LiveHit(beat, sample, null, 0, 0, gain, kick, track, null);
         }
 
         static LiveHit note(double beat, LivePitchSynth synth, int midiNote, double heldBeats, float gain, int track) {
-            return new LiveHit(beat, null, synth, midiNote, heldBeats, gain, false, track);
+            return new LiveHit(beat, null, synth, midiNote, heldBeats, gain, false, track, null);
+        }
+
+        /** A loop starting its pass: the voice is made when it is due, so it reads the tempo as it then is. */
+        static LiveHit loop(double beat, Supplier<LoopVoice> loop, int track) {
+            return new LiveHit(beat, null, null, 0, 0, 1.0f, false, track, loop);
         }
 
         /** The same hit at {@code at}, held no longer than {@code room}: a stutter chops, it does not smear. */
         LiveHit repeatedAt(double at, double room) {
-            return new LiveHit(at, sample, synth, midiNote, Math.min(heldBeats, room), gain, kick, track);
+            return new LiveHit(at, sample, synth, midiNote, Math.min(heldBeats, room), gain, kick, track, loop);
         }
     }
 
@@ -496,6 +502,8 @@ public final class AudioEngine {
         private final PerformanceFx performance = new PerformanceFx(sampleRate);
         // each track's gain, read from the jam every block and applied to its voices as they play
         private final TrackGains gains = new TrackGains(blockSize);
+        // the pass each loop track is playing, so starting it again can end the one before it
+        private final Map<Integer, LoopVoice> loopVoices = new HashMap<>();
         private volatile double stutterRequested;
         private double stutterBeats;
         private double sliceStart;
@@ -629,6 +637,18 @@ public final class AudioEngine {
                 kickOffsets[kickCount++] = offset;
             }
             VoiceSlot slot = allocateVoice(voices, frame);
+            if (hit.loop() != null) {
+                // a loop starting again ends the pass still playing, rather than doubling with it
+                LoopVoice playing = loopVoices.get(hit.track());
+                if (playing != null) {
+                    playing.stop();
+                }
+                LoopVoice voice = hit.loop().get();
+                loopVoices.put(hit.track(), voice);
+                slot.trigger(voice, frame, hit.gain());
+                slot.track = hit.track();
+                return;
+            }
             if (hit.synth() != null) {
                 // the note's length at the tempo it starts in
                 int heldFrames = (int) tempo.frames(hit.heldBeats());
@@ -853,6 +873,11 @@ public final class AudioEngine {
             }
             // in order of their beats across the tracks, which is the order the hits are played in
             loop.sort(Comparator.comparingDouble(trackNote -> trackNote.note().beat()));
+            for (int track = 0; track < song.tracks().size(); track++) {
+                if (song.tracks().get(track) instanceof LoopTrack audio) {
+                    queueLoop(audio, track, song, loopStart, fromBeat, toBeat);
+                }
+            }
             for (TrackNote trackNote : loop) {
                 Note note = trackNote.note();
                 int track = trackNote.track();
@@ -880,6 +905,24 @@ public final class AudioEngine {
                     hits.addLast(LiveHit.sample(beat, sampleFor(note, transport, jam.synthFor(track)), note.velocity(),
                             note.voice() == Drum.KICK, track));
                 }
+            }
+        }
+
+        /**
+         * A loop starts at the top of the jam's loop and every {@code bars} bars after it, for as
+         * long as the loop runs. The rate is read as it plays rather than worked out here, so a
+         * tempo change re-times the pass under way.
+         */
+        private void queueLoop(LoopTrack audio, int track, Song song, double loopStart, double fromBeat,
+                               double toBeat) {
+            double pass = audio.lengthBeats(song.beatsPerBar());
+            for (double at = 0; at < toBeat; at += pass) {
+                if (at < fromBeat) {
+                    continue;
+                }
+                hits.addLast(LiveHit.loop(loopStart + at,
+                        () -> new LoopVoice(audio.audio(), () -> audio.audio().frameCount() / tempo.frames(pass)),
+                        track));
             }
         }
 
@@ -1125,6 +1168,8 @@ public final class AudioEngine {
         private VoiceSource source;
         private long startFrame;
         private float gain;
+        // what a voice writes into, one frame at a time: a stereo sample keeps its two channels
+        private final float[] stereo = new float[CHANNELS];
         // the track the voice plays for, whose gain it follows; -1 for none
         private int track = -1;
         // the synth bus it plays into, or null for the mix itself
@@ -1192,9 +1237,10 @@ public final class AudioEngine {
                     return;
                 }
                 int outputFrame = (int) (frame - blockStart);
-                float value = source.next() * gain * trackGain(gains, outputFrame);
-                mix[outputFrame * CHANNELS] += value;
-                mix[outputFrame * CHANNELS + 1] += value;
+                float level = gain * trackGain(gains, outputFrame);
+                source.next(stereo);
+                mix[outputFrame * CHANNELS] += stereo[0] * level;
+                mix[outputFrame * CHANNELS + 1] += stereo[1] * level;
             }
         }
 
