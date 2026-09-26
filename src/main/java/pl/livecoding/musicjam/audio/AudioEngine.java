@@ -160,6 +160,10 @@ public final class AudioEngine {
         return new LiveSession(jam, externalMelody);
     }
 
+    /**
+     * Sixteen bits, little-endian. The clamp is the last resort it has always been; what keeps the
+     * mix off it on the live path is {@link Limiter}, which runs before this.
+     */
     private static int encodePcm16(float[] mix, int frames, byte[] pcm) {
         int samplesToEncode = frames * CHANNELS;
         for (int i = 0; i < samplesToEncode; i++) {
@@ -1112,10 +1116,13 @@ public final class AudioEngine {
         private void render() {
             float[] mix = new float[blockSize * CHANNELS];
             byte[] pcm = new byte[blockSize * CHANNELS * 2];
+            // the last thing before the device, in place of the hard clip that used to be all there was
+            Limiter limiter = new Limiter(sampleRate, CHANNELS);
             long tailFrames = 0;
             try {
                 while (running) {
                     renderer.renderNext(mix);
+                    limiter.process(mix, blockSize);
                     writeFully(line, pcm, encodePcm16(mix, blockSize, pcm));
                     if (!releasing) {
                         continue;

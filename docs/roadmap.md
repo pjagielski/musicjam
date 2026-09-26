@@ -15,7 +15,8 @@ blank page.
 - **Routing.** Drums mixed dry; each live synth through a channel of its own carrying a crusher, a
   ping-pong delay and a Freeverb-style reverb, ducked under the kick when the panel asks for it.
   A channel closes once the jam has let its synth go and the tail has died away. Stop releases
-  rather than cuts, so tails ring out. The master is hard-clipped, with no limiter (1.5).
+  rather than cuts, so tails ring out. A look-ahead limiter sits on the master, the last thing
+  before the device.
 - **Synth.** One engine (`NovasawSynth`), seven unison saws, a sub sine, a diode shaper, a
   state-variable lowpass on an envelope of its own. Six patches, levelled against one another: anthem, pluck, pad,
   chords, sub bass, acid bass.
@@ -55,7 +56,7 @@ The single synth bus is already the seam for this; widening it is the biggest so
 | 1.2 | **Sends**: one delay and one reverb shared by the tracks that want them, each with a send level — Strudel calls this an *orbit*, one delay and one reverb per orbit. | M |
 | 1.3 | ✓ **Done.** ★ **Sidechain ducking**: the kick ducks the synth bus. Strudel's `duck` works on the whole orbit; ours can start with one source and one target. | S |
 | 1.4 | **Meters**: a level readout per track, drawn like the knobs. | S |
-| 1.5 | **A limiter on the master.** The mix is clipped hard at ±1 today, which a few Performance FX at once will find. One limiter after the FX slot, with the release long enough not to pump. | S |
+| 1.5 | ✓ **Done.** **A limiter on the master.** The mix used to be clipped hard at ±1, which a loop track finds at once — a break is a finished mix, not one voice. Two milliseconds of look-ahead, so the gain is down before the transient arrives rather than after; the ceiling is set by the loudest sample still in the line, not the newest, or a single loud frame would slip through; one gain for both channels, so a peak on one side does not pull the image over; a seventh of a second of release, long enough not to pump. The mix that peaked at 1.035 with 58 samples flattened by the clamp now peaks at 0.990 with none. | S |
 
 Why first: pumping bass under a kick is the sound of the genre the workshop plays in, and the
 mixer is the thing that makes the studio feel like a studio rather than a demo.
@@ -300,12 +301,13 @@ For a studio meant to be **played live**, with the musical help of Phase 11 next
 1. ~~**11.1 — a keyboard you can play.**~~ Done.
 2. ~~**4.4 — undo.**~~ Done.
 3. ~~**11.2 — a key and a scale.**~~ Done.
-4. **The rest of Phase 9** — Cutter (9.5), Reverb (9.11) and Pitch (9.16) are the three missing
-   strips a set actually reaches for, and **1.5**, a limiter, before stacking them.
+4. ~~**1.5 — a limiter on the master.**~~ Done. **The rest of Phase 9** — Cutter (9.5), Reverb
+   (9.11) and Pitch (9.16) are the three missing strips a set actually reaches for.
 5. ~~**11.3 / 11.4 — chords**~~ Done.
-6. ~~**12.1 / 12.2 / 12.3 / 12.6 — loops that fit the jam, and drawn**~~ Done. What is left of
-   Phase 12: **12.4** (tempo without pitch) is what a vocal wants, and **12.5** (slices) is where a
-   break becomes an instrument — and now has a waveform to be dragged about on.
+6. ~~**12.1 / 12.2 / 12.3 / 12.6 — loops that fit the jam, and drawn**~~ Done.
+7. **12.5 — slices**, which is where a break stops being a bed and becomes something to play, and
+   now has a waveform to be dragged about on. Then **12.4** (tempo without pitch), which is what a
+   vocal wants and a good subject in its own right.
 
 Kept for when the purpose changes: **6.1 + 10.6** (saving) matter the moment other people use this;
 **3.1** (`note(...)`) is the first thing anyone asks about in a workshop; **8.1** (the core module)
