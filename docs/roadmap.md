@@ -256,7 +256,7 @@ loader averages the channels — which a stereo loop would feel.
 | 12.3 | ✓ **Done.** **Stereo samples.** `Sample` keeps left and right, the WAV loader no longer averages a stereo file, and `VoiceSource` has a stereo `next` that every mono voice gets for free. Loops reach the mix in both ears; a synth voice, being the same in each, is unchanged. | M |
 | 12.4 | **Tempo without pitch.** The varispeed of 12.1 moves the pitch with the tempo, which is wrong for a vocal and merely dated for a break. WSOLA — overlap-add with the window chosen by correlation — is a few hundred lines of plain Java and a good workshop subject in its own right: it is where "why does it sound like that" has an answer you can hear. A switch per loop: follow the tempo, or keep the pitch. | L |
 | 12.5 | **Slices.** A loop cut at its bars and beats, so a slice can be played on its own, put in another order, or left out. It is what a sampler is for, and it would give Stutter (9.2) something of its own to chop. | L |
-| 12.6 | **The waveform drawn** where the roll is drawn for a melody, with the bar lines over it, so what is heard can be seen and the slices of 12.5 have somewhere to be dragged. | M |
+| 12.6 | ✓ **Done.** **The waveform drawn** where the roll is drawn for a melody, with the loop's bars and beats laid over it and the playhead crossing it once for every pass — so whether the bars given to a break are the right ones is something you can see, its hits sitting on the lines or beside them, rather than only hear. Where the jam's own loop is shorter than the loop's bars, the part never reached is shaded, and the editor says so. What is left for 12.5 is somewhere to drag the slices to. | M |
 
 Open questions worth settling before 12.1 rather than after:
 
@@ -303,10 +303,9 @@ For a studio meant to be **played live**, with the musical help of Phase 11 next
 4. **The rest of Phase 9** — Cutter (9.5), Reverb (9.11) and Pitch (9.16) are the three missing
    strips a set actually reaches for, and **1.5**, a limiter, before stacking them.
 5. ~~**11.3 / 11.4 — chords**~~ Done.
-6. ~~**12.1 / 12.2 / 12.3 — loops that fit the jam**~~ Done. What is left of Phase 12: **12.6**
-   (the waveform drawn) is what a loop track still needs to be looked at rather than read about,
-   **12.4** (tempo without pitch) is what a vocal wants, and **12.5** (slices) is where a break
-   becomes an instrument.
+6. ~~**12.1 / 12.2 / 12.3 / 12.6 — loops that fit the jam, and drawn**~~ Done. What is left of
+   Phase 12: **12.4** (tempo without pitch) is what a vocal wants, and **12.5** (slices) is where a
+   break becomes an instrument — and now has a waveform to be dragged about on.
 
 Kept for when the purpose changes: **6.1 + 10.6** (saving) matter the moment other people use this;
 **3.1** (`note(...)`) is the first thing anyone asks about in a workshop; **8.1** (the core module)

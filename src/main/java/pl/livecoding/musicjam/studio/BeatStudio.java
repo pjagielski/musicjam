@@ -256,8 +256,8 @@ public final class BeatStudio extends Application {
         });
         bars.valueProperty().addListener((property, before, after) -> {
             publish();
-            if (tracks.selected() instanceof StudioTrack.Melody) {
-                // its count of notes is over the loop, which has just changed
+            // a melody's count of notes and a loop's shaded tail are both over the loop that changed
+            if (tracks.selected() instanceof StudioTrack.Melody || tracks.selected() instanceof StudioTrack.Loop) {
                 showEditor();
             }
         });
@@ -780,7 +780,8 @@ public final class BeatStudio extends Application {
             case StudioTrack.Drums drums -> editor.getChildren().setAll(drumEditor);
             case StudioTrack.Loop loop -> {
                 loopEditor = new LoopEditor(loop, this::loopOf, this::loopChanged, BeatStudio::showError,
-                        AudioEngine.DEFAULT_SAMPLE_RATE, BEATS_PER_BAR, bpm.getValue());
+                        AudioEngine.DEFAULT_SAMPLE_RATE, BEATS_PER_BAR, bpm.getValue(), loopBeats(),
+                        FULL_WIDTH - 30);
                 VBox frame = loopEditor.node();
                 fitWidth(frame, FULL_WIDTH);
                 editor.getChildren().setAll(frame);
@@ -1110,6 +1111,9 @@ public final class BeatStudio extends Application {
         if (roll != null) {
             roll.setPlayhead(-1);
         }
+        if (loopEditor != null) {
+            loopEditor.setPlayhead(-1);
+        }
         loopProgress.setProgress(0);
         status.setText("Stopped");
         paintGrid();
@@ -1267,6 +1271,9 @@ public final class BeatStudio extends Application {
                 loopProgress.setProgress(position.beat() / position.lengthBeats());
                 if (roll != null) {
                     roll.setPlayhead(position.beat());
+                }
+                if (loopEditor != null) {
+                    loopEditor.setPlayhead(position.beat());
                 }
                 double fraction = (position.beat() % BEATS_PER_BAR) / BEATS_PER_BAR;
                 boolean moved = (int) (fraction * 64) != (int) (barFraction * 64);

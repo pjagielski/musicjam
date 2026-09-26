@@ -22,8 +22,9 @@ import java.util.Locale;
 import java.util.function.Consumer;
 
 /**
- * The editor of one loop track: which file it plays, how many bars of the jam that file is taken to
- * fill, and what those two together say about it — the tempo it must have been cut at, and how much
+ * The editor of one loop track: the audio drawn as a waveform with the bars it fills over it and
+ * the playhead moving across it, and above that which file it plays and how many bars it is taken
+ * to be — with what those two together say about it, the tempo it must have been cut at and how much
  * faster or slower than that it is playing at the jam's tempo now.
  *
  * <p>The bars are the only thing to set, because they are the only thing the engine needs: nothing
@@ -47,7 +48,10 @@ final class LoopEditor {
     private final int sampleRate;
     private final int beatsPerBar;
     private double jamBpm;
+    // how long the jam's own loop is, which is all of the pass that is ever reached
+    private double jamLengthBeats;
     private final ComboBox<Double> bars = new ComboBox<>();
+    private final LoopWave wave;
     private final Label fileName = new Label();
     private final Label reading = new Label();
     private final Label details = new Label();
@@ -57,8 +61,11 @@ final class LoopEditor {
     private boolean filling;
 
     LoopEditor(StudioTrack.Loop track, Loops loops, Consumer<StudioTrack.Loop> onChange,
-               Consumer<Exception> onError, int sampleRate, int beatsPerBar, double jamBpm) {
+               Consumer<Exception> onError, int sampleRate, int beatsPerBar, double jamBpm,
+               double jamLengthBeats, double width) {
         this.track = track;
+        this.jamLengthBeats = jamLengthBeats;
+        this.wave = new LoopWave(width, 150);
         this.loops = loops;
         this.onChange = onChange;
         this.onError = onError;
@@ -110,11 +117,23 @@ final class LoopEditor {
         details.setText(summary());
     }
 
+    /**
+     * Where the jam is, in beats of its own loop. A loop shorter than the jam's comes round more
+     * than once inside it, so the playhead crosses the waveform once for every pass.
+     */
+    void setPlayhead(double beat) {
+        if (beat < 0) {
+            wave.setPlayhead(-1);
+            return;
+        }
+        double pass = track.bars() * beatsPerBar;
+        wave.setPlayhead(beat % pass / pass);
+    }
+
     private Node details() {
         details.setStyle("-fx-text-fill: #495057; -fx-font-size: 12px;");
-        VBox box = new VBox(6, details);
+        VBox box = new VBox(8, wave.node(), details);
         box.setAlignment(Pos.TOP_LEFT);
-        box.setMinHeight(90);
         return box;
     }
 
@@ -128,12 +147,18 @@ final class LoopEditor {
                 : String.format(Locale.ROOT, "%.2f× %s than it was cut, so it sounds %s",
                         rate > 1 ? rate : 1 / rate, rate > 1 ? "faster" : "slower",
                         rate > 1 ? "higher" : "lower");
+        double pass = track.bars() * beatsPerBar;
+        String cut = jamLengthBeats <= 0 || jamLengthBeats >= pass ? ""
+                : String.format(Locale.ROOT, "%nThe jam's loop is only %s bars, so it starts again at the"
+                        + " shaded part: that much of the file is never reached.",
+                        LoopBars.label(jamLengthBeats / beatsPerBar));
         return String.format(Locale.ROOT,
                 "%.2f seconds of %s audio, taken to fill %s bars, which makes it %.1f BPM.%n"
                         + "The jam is at %.1f, so it plays %s.%n"
                         + "Change the bars if it does not land on the beat: a loop taken for twice its"
-                        + " length plays at half speed.",
-                seconds, audio.stereo() ? "stereo" : "mono", LoopBars.label(track.bars()), source, jamBpm, speed);
+                        + " length plays at half speed.%s",
+                seconds, audio.stereo() ? "stereo" : "mono", LoopBars.label(track.bars()), source, jamBpm, speed,
+                cut);
     }
 
     private void browse(Button owner) {
@@ -182,6 +207,7 @@ final class LoopEditor {
             fileName.setText(track.file().getFileName().toString());
             reading.setText(String.format(Locale.ROOT, "%.1f BPM as cut", track.sourceBpm(sampleRate, beatsPerBar)));
             details.setText(summary());
+            wave.show(track.audio(), track.bars(), beatsPerBar, jamLengthBeats);
             ((Label) frame.getChildren().getFirst()).setText("Loop · recorded audio".toUpperCase(Locale.ROOT));
         } finally {
             filling = false;
