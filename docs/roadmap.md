@@ -235,6 +235,40 @@ and turning one note into a chord — without ever taking the choice away.
 | 11.4 | ✓ **Done**, as an edit rather than a mode. **One note into a chord.** A `Chord it` button beside the roll turns the selected line into the chords of its bars: every note the bar's chord holds becomes that chord, voiced from the note played so what was written stays the lowest of them, and a note the chord does not hold is left alone — a passing note stays a passing note rather than becoming a clash. What it makes is ordinary notes, so the roll shows exactly what will sound, the notes can then be edited by hand, and Ctrl+Z takes the whole chording back. A track that plays chords as a standing mode, rather than once, is the version not built: this one is simpler and leaves the hand in charge. | M |
 | 11.5 | **A bar of suggestions.** With a scale and a chord known, the studio can offer a handful of phrases that fit — an arpeggio, a held root, a walking line — as one click each, to take or to change. It is the last step, not the first: it is only worth anything once 11.2 and 11.3 have taught the window what fits. | L |
 
+## Phase 12 — Loops that fit the jam
+
+A track that plays a piece of recorded audio — a break, a vocal, a two-bar chord loop — rather
+than notes. What makes it more than "play a wav" is that it has to bend to the jam: a loop
+recorded at 120 BPM has to fill the same bars at 128, and to keep doing so when the tempo changes
+while it plays.
+
+What is already in place: `VoiceSource` is the seam a live voice plays through, frame by frame,
+which is exactly what a loop player is; `TempoMap` gives the tempo of any frame, so a rate can be
+worked out per block; and `Track` is sealed, so the compiler will list every place that has to
+learn what a loop is. What is missing is anything that reads a sample at a rate other than one
+frame per frame: there is no resampling in the engine at all, and `Sample` is mono — the WAV
+loader averages the channels — which a stereo loop would feel.
+
+| Step | What | Effort |
+| --- | --- | --- |
+| 12.1 | ★ **A loop track the engine plays in time.** A `LoopTrack` naming a file and how many bars it is; a voice that reads it with a fractional index at `jam BPM / loop BPM`, restarting at the loop's start. Faster means higher, as a sampler has always done — 12.4 is what it would take not to. The rate is read per block, so a tempo change re-times it as it plays, the way 4.5 does for notes. The loop's own BPM need not be asked for: its bars and its length in seconds give it, and the studio shows what it worked out. | M |
+| 12.2 | ★ **The loop track in the studio**: `+ Loop` beside `+ Melody`, a file picker, how many bars it is taken to be, and the BPM it says it is with room to correct it. Gain, mute, order and its own channel come free, being a track like any other. | M |
+| 12.3 | **Stereo samples.** `Sample` holds one channel and the loader averages what it reads; a break loses its width that way. Two channels through `VoiceSlot` and the buses, which the engine is already stereo from `mixInBus` on. Worth doing with 12.1 rather than after, if a loop is to sound like the record it came off. | M |
+| 12.4 | **Tempo without pitch.** The varispeed of 12.1 moves the pitch with the tempo, which is wrong for a vocal and merely dated for a break. WSOLA — overlap-add with the window chosen by correlation — is a few hundred lines of plain Java and a good workshop subject in its own right: it is where "why does it sound like that" has an answer you can hear. A switch per loop: follow the tempo, or keep the pitch. | L |
+| 12.5 | **Slices.** A loop cut at its bars and beats, so a slice can be played on its own, put in another order, or left out. It is what a sampler is for, and it would give Stutter (9.2) something of its own to chop. | L |
+| 12.6 | **The waveform drawn** where the roll is drawn for a melody, with the bar lines over it, so what is heard can be seen and the slices of 12.5 have somewhere to be dragged. | M |
+
+Open questions worth settling before 12.1 rather than after:
+
+- **Where a loop sits in the mix.** Drums go in dry and a live synth through its own channel. A
+  loop wants a channel of its own for the same reason a synth does — 1.1 and 1.2 are waiting on
+  the same seam.
+- **Bars or BPM.** Given the file's length, one gives the other; asking for both is asking twice
+  and inviting them to disagree. Bars is the one anybody knows about a loop they have.
+- **What happens at the loop's end** when it is shorter than the jam's loop: play it again from
+  the start, or leave the rest silent. Playing it again is what a two-bar break in an eight-bar
+  loop wants; a one-shot that is meant to sound once is 12.5's territory.
+
 ---
 
 ## What waits on what
@@ -253,6 +287,9 @@ Most of the list is independent; these are the ties worth knowing before picking
   that lets a phone play the engine lets a step branch depend on it instead of copying it. That is
   two reasons for one piece of work.
 - **4.1** (clip grid) and **1.1** are unblocked now that 10.1 has given the studio tracks.
+- **12.3** (stereo samples) is worth doing with **12.1** rather than after it: every place that
+  reads a sample would otherwise be written twice. **12.5** and **12.6** both want 12.1 first, and
+  **9.16**'s pitch shift wants the same resampling 12.1 has to write.
 - **11.1** (a keyboard that sounds) is unblocked by 10.4: a key can be played through the selected
   track's own instrument.
 
