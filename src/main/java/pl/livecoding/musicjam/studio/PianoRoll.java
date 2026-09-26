@@ -8,6 +8,7 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
@@ -31,6 +32,11 @@ import java.util.function.IntConsumer;
  * read, and turns the page when the playhead runs off the one it is on. What it draws is the loop
  * as the engine hears it, so a window of a MIDI file starts at the left edge from whichever bar of
  * the file it opens on.
+ *
+ * <p>The roll opens on the keys its notes need and as many more as it is tall enough to draw; the
+ * wheel moves that window up and down the keyboard, a couple of keys at a time or an octave with
+ * shift, which is how a line an octave below what is written is reached. Once the wheel has been
+ * used the window stays where it was put.
  *
  * <p>The keys down the left are played by clicking them, whether the jam is running or stopped,
  * and light while a note of the loop is sounding on them. With a key chosen for the jam, the rows
@@ -79,6 +85,9 @@ final class PianoRoll {
     private static final Color BAR = Color.web("#74c0fc");
     // how near a note's right edge a press has to be to drag its length rather than the note
     private static final double EDGE = 5;
+    // how far the wheel moves the window: a couple of keys, or an octave with shift
+    private static final int WHEEL_KEYS = 2;
+    private static final int WHEEL_OCTAVE = 12;
     // the lane of velocity bars under the roll, and the gap above it
     private static final double LANE_HEIGHT = 46;
     private static final double LANE_GAP = 6;
@@ -184,6 +193,8 @@ final class PianoRoll {
     private int playheadPage = -1;
     private int shownX = -1;
     private boolean drawn;
+    // the wheel has moved the window: from then on it stays where the hand put it
+    private boolean chosenView;
     private IntConsumer onPage = page -> { };
     private Consumer<List<Note>> onEdit;
     private IntConsumer onKey = pitch -> { };
@@ -229,6 +240,7 @@ final class PianoRoll {
         notes.setOnMouseReleased(this::released);
         notes.setOnMouseMoved(this::hovered);
         notes.setOnMouseExited(event -> notes.setCursor(Cursor.DEFAULT));
+        notes.setOnScroll(this::scrolled);
         notes.setOnKeyPressed(this::keyed);
         velocities.setOnMousePressed(this::velocityPressed);
         velocities.setOnMouseDragged(this::velocityDragged);
@@ -242,6 +254,27 @@ final class PianoRoll {
             if (drawn) {
                 drawNotes();
             }
+        }
+    }
+
+    /**
+     * The wheel over the roll: the window of keys moves rather than the window behind it, so the
+     * scroll pane the studio sits in stays where it is.
+     */
+    private void scrolled(ScrollEvent event) {
+        int step = event.isShiftDown() ? WHEEL_OCTAVE : WHEEL_KEYS;
+        int by = event.getDeltaY() > 0 ? step : event.getDeltaY() < 0 ? -step : 0;
+        event.consume();
+        if (by == 0) {
+            return;
+        }
+        int rows = keys.rows();
+        int low = Math.max(0, Math.min(127 - rows + 1, keys.low() + by));
+        Keys next = new Keys(low, low + rows - 1);
+        if (!next.equals(keys)) {
+            keys = next;
+            chosenView = true;
+            drawNotes();
         }
     }
 
@@ -290,7 +323,7 @@ final class PianoRoll {
         pages = Pages.of(lengthBeats, beatsPerBar);
         // the keys stay where they are while the notes fit them, so an edit never slides the rest
         // of the line up or down under the hand that made it
-        if (!drawn || !keys.hold(this.shown)) {
+        if (!drawn || (!chosenView && !keys.hold(this.shown))) {
             // as many rows as the roll can draw at a comfortable size, and more when the notes need them
             double room = tallest - LANE_GAP - LANE_HEIGHT;
             keys = Keys.of(this.shown, Math.max(Keys.rowsFor(this.shown), (int) (room / PREFERRED_ROW)));

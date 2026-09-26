@@ -120,6 +120,7 @@ final class MelodyEditor {
         Tooltip.install(roll.node(), new Tooltip("""
                 Click an empty row to add a note, drag one to move it,
                 drag its right edge to change its length, right-click it to take it away.
+                The wheel moves the keyboard up and down, an octave at a time with shift.
                 Drag over empty rows to gather notes, shift-click to add one to them,
                 Delete to take them all away. The lane below carries their velocities:
                 drag a bar up or down. Everything lands on the nearest sixteenth."""));
