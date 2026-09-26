@@ -558,6 +558,26 @@ class AudioEngineLiveTest {
     }
 
     @Test
+    void aLoopIsStretchedByAFractionOfAFrameAsReadilyAsByAWholeOne() {
+        // a click on each of four beats of a bar 2000 frames long, which is a bar at 120 BPM
+        float[] clicks = new float[2000];
+        for (int click = 0; click < 4; click++) {
+            clicks[click * 500] = 1.0f;
+        }
+        // played at 160, where a bar is 1500 frames and a beat 375: the rate wanted is 1 and a third
+        Song song = new Song(160, 4, List.of(new LoopTrack(Sample.mono(clicks), 1, 1.0f),
+                new MelodyTrack(List.of(), 8.0, 1.0f)));
+
+        float[] left = render(engine().liveRenderer(() -> jam(song), false), 16);
+
+        for (int beat = 0; beat < 4; beat++) {
+            assertTrue(left[beat * 375] > 0.9f, "the click on beat " + beat + " of the jam");
+        }
+        // and nothing where the clicks would be if the sample were read a frame at a time
+        assertEquals(0.0f, left[500], 1e-3f, "no click where an unstretched loop would put one");
+    }
+
+    @Test
     void aLoopShorterThanTheJamsLoopPlaysAgainFromItsStart() {
         Sample audio = ramp(2000);
         // one bar of loop against a melody eight beats long: the loop comes round twice

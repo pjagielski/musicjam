@@ -927,7 +927,10 @@ public final class AudioEngine {
                     continue;
                 }
                 queued.add(LiveHit.loop(loopStart + at,
-                        () -> new LoopVoice(audio.audio(), () -> audio.audio().frameCount() / tempo.frames(pass)),
+                        // the rate in doubles: it is rarely a whole number, and one of 1.37 read as
+                        // 1 is a loop playing at the tempo it was cut at wherever the jam is
+                        () -> new LoopVoice(audio.audio(),
+                                () -> audio.audio().frameCount() / (double) tempo.frames(pass)),
                         track));
             }
         }
