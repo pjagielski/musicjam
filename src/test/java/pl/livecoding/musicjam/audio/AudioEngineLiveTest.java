@@ -571,6 +571,22 @@ class AudioEngineLiveTest {
     }
 
     @Test
+    void theOtherTracksAreStillHeardWhileAShorterLoopComesRound() {
+        // silent audio, so anything heard at all is the drums and not the loop
+        Sample silence = Sample.mono(new float[2000]);
+        // one bar of loop under a jam eight beats long: the loop starts twice within the one loop
+        Song song = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "XXXX", 0.5f),
+                new LoopTrack(silence, 1, 1.0f), new MelodyTrack(List.of(), 8.0, 1.0f)));
+
+        float[] left = render(engine().liveRenderer(() -> jam(song), false), 32);
+
+        // a kick on every beat, 500 frames apart, none of them waiting for the loop to come round
+        for (int beat = 0; beat < 8; beat++) {
+            assertEquals(0.5f, left[beat * 500], "the kick on beat " + beat);
+        }
+    }
+
+    @Test
     void aStereoLoopKeepsItsTwoChannelsAllTheWayToTheMix() {
         float[] hardLeft = new float[2000];
         float[] hardRight = new float[2000];

@@ -873,9 +873,12 @@ public final class AudioEngine {
             }
             // in order of their beats across the tracks, which is the order the hits are played in
             loop.sort(Comparator.comparingDouble(trackNote -> trackNote.note().beat()));
+            // gathered rather than queued as they are made: the queue is only ever read from its
+            // head, so a loop starting halfway through the pass would hold back every note behind it
+            List<LiveHit> queued = new ArrayList<>();
             for (int track = 0; track < song.tracks().size(); track++) {
                 if (song.tracks().get(track) instanceof LoopTrack audio) {
-                    queueLoop(audio, track, song, loopStart, fromBeat, toBeat);
+                    queueLoop(queued, audio, track, song, loopStart, fromBeat, toBeat);
                 }
             }
             for (TrackNote trackNote : loop) {
@@ -899,13 +902,16 @@ public final class AudioEngine {
                     busFor(live);
                     // a voice of its own, reading the synth's parameters as it plays, so a knob
                     // moved now is heard in this note rather than in the loop after it
-                    hits.addLast(LiveHit.note(beat, live, pitch.midiNote(), note.durationBeats(), note.velocity(),
+                    queued.add(LiveHit.note(beat, live, pitch.midiNote(), note.durationBeats(), note.velocity(),
                             track));
                 } else {
-                    hits.addLast(LiveHit.sample(beat, sampleFor(note, transport, jam.synthFor(track)), note.velocity(),
+                    queued.add(LiveHit.sample(beat, sampleFor(note, transport, jam.synthFor(track)), note.velocity(),
                             note.voice() == Drum.KICK, track));
                 }
             }
+            // a stable sort, so notes on the same beat keep the order their tracks put them in
+            queued.sort(Comparator.comparingDouble(LiveHit::beat));
+            hits.addAll(queued);
         }
 
         /**
@@ -913,14 +919,14 @@ public final class AudioEngine {
          * long as the loop runs. The rate is read as it plays rather than worked out here, so a
          * tempo change re-times the pass under way.
          */
-        private void queueLoop(LoopTrack audio, int track, Song song, double loopStart, double fromBeat,
-                               double toBeat) {
+        private void queueLoop(List<LiveHit> queued, LoopTrack audio, int track, Song song, double loopStart,
+                               double fromBeat, double toBeat) {
             double pass = audio.lengthBeats(song.beatsPerBar());
             for (double at = 0; at < toBeat; at += pass) {
                 if (at < fromBeat) {
                     continue;
                 }
-                hits.addLast(LiveHit.loop(loopStart + at,
+                queued.add(LiveHit.loop(loopStart + at,
                         () -> new LoopVoice(audio.audio(), () -> audio.audio().frameCount() / tempo.frames(pass)),
                         track));
             }
