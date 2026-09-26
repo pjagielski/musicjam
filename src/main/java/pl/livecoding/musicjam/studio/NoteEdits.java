@@ -1,6 +1,8 @@
 package pl.livecoding.musicjam.studio;
 
+import pl.livecoding.musicjam.model.Chord;
 import pl.livecoding.musicjam.model.Note;
+import pl.livecoding.musicjam.model.Progression;
 import pl.livecoding.musicjam.model.Voice;
 
 import java.util.ArrayList;
@@ -169,6 +171,31 @@ final class NoteEdits {
             changed.add(louder);
         }
         return new Edit(List.copyOf(next), changed);
+    }
+
+    /**
+     * Each note that its bar's chord holds played as that chord: the note stays where it is, and
+     * the chord's other notes are added above it. A note the chord does not hold is left alone, so
+     * a passing note stays a passing note rather than becoming a clash, and a bar with no chord
+     * keeps its line as it is.
+     */
+    static List<Note> chords(List<Note> notes, Progression bars, int beatsPerBar) {
+        if (bars.isEmpty()) {
+            return notes;
+        }
+        List<Note> next = new ArrayList<>();
+        for (Note note : notes) {
+            Chord chord = bars.at(note.beat(), beatsPerBar);
+            if (chord == null || !(note.voice() instanceof Voice.Pitch pitch) || !chord.holds(pitch.midiNote())) {
+                next.add(note);
+                continue;
+            }
+            for (int sounded : chord.over(pitch.midiNote())) {
+                next.add(new Note(note.beat(), new Voice.Pitch(sounded), note.durationBeats(), note.velocity(),
+                        note.envelope()));
+            }
+        }
+        return sorted(next);
     }
 
     /** Every note a band holds: those between two beats and two pitches, edges included. */

@@ -71,6 +71,7 @@ final class MelodyEditor {
     private final HBox paging;
     private final VBox frame;
     private final Label heading;
+    private Button chordButton;
 
     /**
      * {@code onChange} hears of every new source, {@code notes} gives one's notes over a loop of
@@ -148,6 +149,12 @@ final class MelodyEditor {
         startBar.valueProperty().addListener((property, before, after) -> change(window.withStartBar(after - 1)));
     }
 
+    /** The studio's own button for playing this line as chords, placed in the row above the roll. */
+    void setChordButton(Button button) {
+        chordButton = button;
+        fillControls();
+    }
+
     /** The roll, whose playhead follows the jam and whose keys can be played. */
     PianoRoll roll() {
         return roll;
@@ -162,6 +169,10 @@ final class MelodyEditor {
     private void fillControls() {
         controls.getChildren().setAll(source instanceof MidiWindow ? fileControls() : ownControls());
         controls.getChildren().addAll(gap(), summary, push, paging);
+        if (chordButton != null) {
+            controls.getChildren().add(controls.getChildren().indexOf(summary), chordButton);
+            controls.getChildren().add(controls.getChildren().indexOf(chordButton), gap());
+        }
         heading.setText((source instanceof MidiWindow ? "Melody from a MIDI file"
                 : "Melody · this track's own notes").toUpperCase(Locale.ROOT));
     }

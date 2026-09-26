@@ -167,6 +167,42 @@ class NoteEditsTest {
         assertEquals(3.0, within.get(1).durationBeats(), "cut off where the loop ends");
     }
 
+    @Test
+    void aLineBecomesTheChordsOfItsBars() {
+        var bars = pl.livecoding.musicjam.model.Progression.parse("Cm Ab");
+        List<Note> line = List.of(
+                new Note(0.0, new Voice.Pitch(60), 1.0, 0.8f),
+                new Note(4.0, new Voice.Pitch(68), 0.5, 0.6f));
+
+        List<Note> chords = NoteEdits.chords(line, bars, 4);
+
+        assertEquals(List.of(60, 63, 67, 68, 72, 75), chords.stream().map(NoteEditsTest::midiNote).toList());
+        assertEquals(0.5, chords.get(5).durationBeats(), "each note of a chord as long as the one it came from");
+        assertEquals(0.6f, chords.get(3).velocity());
+    }
+
+    @Test
+    void aNoteTheChordDoesNotHoldIsLeftAsItIs() {
+        var bars = pl.livecoding.musicjam.model.Progression.parse("Cm - Cm");
+        List<Note> line = List.of(
+                new Note(0.0, new Voice.Pitch(62), 1.0, 0.8f),
+                new Note(4.0, new Voice.Pitch(60), 1.0, 0.8f),
+                new Note(8.0, new Voice.Pitch(60), 1.0, 0.8f));
+
+        List<Note> chords = NoteEdits.chords(line, bars, 4);
+
+        assertEquals(5, chords.size());
+        assertEquals(List.of(62, 60, 60, 63, 67), chords.stream().map(NoteEditsTest::midiNote).toList(),
+                "a passing note and a bar with no chord stay single; the third bar is a chord");
+    }
+
+    @Test
+    void withNoChordsNamedALineIsLeftAlone() {
+        List<Note> line = List.of(new Note(0.0, new Voice.Pitch(60), 1.0, 0.8f));
+
+        assertEquals(line, NoteEdits.chords(line, pl.livecoding.musicjam.model.Progression.NONE, 4));
+    }
+
     private static int midiNote(Note note) {
         return ((Voice.Pitch) note.voice()).midiNote();
     }

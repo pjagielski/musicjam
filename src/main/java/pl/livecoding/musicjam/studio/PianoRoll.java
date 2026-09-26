@@ -13,7 +13,9 @@ import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.TextAlignment;
+import pl.livecoding.musicjam.model.Chord;
 import pl.livecoding.musicjam.model.Note;
+import pl.livecoding.musicjam.model.Progression;
 import pl.livecoding.musicjam.model.Scale;
 import pl.livecoding.musicjam.studio.knobs.NoPanning;
 import pl.livecoding.musicjam.model.Voice;
@@ -37,6 +39,10 @@ import java.util.function.IntConsumer;
  * wheel moves that window up and down the keyboard, a couple of keys at a time or an octave with
  * shift, which is how a line an octave below what is written is reached. Once the wheel has been
  * used the window stays where it was put.
+ *
+ * <p>With chords named for the jam, each bar marks the rows its own chord holds, more strongly
+ * than the key shades the rest, and carries the chord's name above it — so the notes that will
+ * sound consonant under the playhead are the obvious ones to reach for.
  *
  * <p>The keys down the left are played by clicking them, whether the jam is running or stopped,
  * and light while a note of the loop is sounding on them. With a key chosen for the jam, the rows
@@ -65,6 +71,9 @@ final class PianoRoll {
     private static final Color OUT_BLACK_KEY = Color.web("#868e96");
     private static final Color ROOT_ROW = Color.web("#eef6fc");
     private static final Color ROOT_TEXT = Color.web("#1c7ed6");
+    // the rows of the bar's own chord, and its name written above the bar
+    private static final Color CHORD_ROW = Color.web("#d0ebff");
+    private static final Color CHORD_TEXT = Color.web("#1971c2");
     private static final Color PAST_THE_LOOP = Color.web("#e9ecef");
     private static final Color OCTAVE_LINE = Color.web("#ced4da");
     private static final Color BAR_LINE = Color.web("#adb5bd");
@@ -201,6 +210,7 @@ final class PianoRoll {
     // the keys lit now: those a note of the loop is sounding on, and one pressed by hand
     private Set<Integer> lit = Set.of();
     private Scale scale = Scale.ANY;
+    private Progression chords = Progression.NONE;
     private int pressedKey = -1;
     // a drag in progress: the notes as they were when it started, and the one under the hand
     private List<Note> dragFrom;
@@ -275,6 +285,16 @@ final class PianoRoll {
             keys = next;
             chosenView = true;
             drawNotes();
+        }
+    }
+
+    /** The chords the jam goes round, one to a bar, which each bar marks its own rows by. */
+    void setChords(Progression next) {
+        if (!next.equals(chords)) {
+            chords = next;
+            if (drawn) {
+                drawNotes();
+            }
         }
     }
 
@@ -422,8 +442,20 @@ final class PianoRoll {
         for (int pitch = keys.low(); pitch <= keys.high(); pitch++) {
             double y = height - (pitch - keys.low() + 1) * row;
             boolean held = scale.holds(pitch);
-            g.setFill(!held ? OUT_ROW : scale.isRoot(pitch) ? ROOT_ROW : isBlack(pitch) ? BLACK_ROW : WHITE_ROW);
-            g.fillRect(KEYS_WIDTH, y, rollWidth, row);
+            Color plain = !held ? OUT_ROW : scale.isRoot(pitch) ? ROOT_ROW : isBlack(pitch) ? BLACK_ROW : WHITE_ROW;
+            if (chords.isEmpty()) {
+                g.setFill(plain);
+                g.fillRect(KEYS_WIDTH, y, rollWidth, row);
+            } else {
+                for (int bar = (int) Math.floor(from / beatsPerBar); bar * beatsPerBar < to; bar++) {
+                    double barFrom = Math.max(from, bar * beatsPerBar);
+                    double barTo = Math.min(to, (bar + 1.0) * beatsPerBar);
+                    Chord chord = chords.at(bar * (double) beatsPerBar, beatsPerBar);
+                    g.setFill(chord != null && chord.holds(pitch) && held ? CHORD_ROW : plain);
+                    g.fillRect(KEYS_WIDTH + (barFrom - from) * perBeat, y,
+                            (barTo - barFrom) * perBeat, row);
+                }
+            }
             if (isBlack(pitch)) {
                 g.setFill(held ? BLACK_KEY : OUT_BLACK_KEY);
                 g.fillRect(0, y, KEYS_WIDTH - 14, row);
@@ -467,6 +499,20 @@ final class PianoRoll {
             double x = Math.min(width - 0.5, Math.round(KEYS_WIDTH + (beat - from) * perBeat) + 0.5);
             g.setStroke(bar ? BAR_LINE : BEAT_LINE);
             g.strokeLine(x, 0, x, height);
+        }
+        if (!chords.isEmpty()) {
+            g.setFont(Font.font(10));
+            g.setTextAlign(TextAlignment.LEFT);
+            g.setTextBaseline(VPos.TOP);
+            g.setFill(CHORD_TEXT);
+            for (int bar = (int) Math.floor(from / beatsPerBar); bar * beatsPerBar < to; bar++) {
+                Chord chord = chords.at(bar * (double) beatsPerBar, beatsPerBar);
+                if (chord != null) {
+                    g.fillText(chord.name(), KEYS_WIDTH + 3 + (bar * beatsPerBar - from) * perBeat, 2);
+                }
+            }
+            g.setTextAlign(TextAlignment.RIGHT);
+            g.setTextBaseline(VPos.CENTER);
         }
         for (Note note : shown) {
             double end = Math.min(to, note.beat() + note.durationBeats());

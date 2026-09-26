@@ -26,7 +26,8 @@ blank page.
 - **The roll.** Four bars at a time, turning the page with the playhead. Its keys are played by
   clicking them and light while the loop sounds on them. A hand adds, moves,
   stretches and removes notes, gathers several with a band and sets their velocities in a lane
-  under it, shaded by the key the jam is in. Ctrl+Z walks back through what a hand has written.
+  under it, shaded by the key the jam is in and marked bar by bar with the chords it goes round.
+  Ctrl+Z walks back through what a hand has written.
 - **Out.** Native audio, or any melody track to an external synth on a channel of its own, with a
   latency offset; the device and the latency are the jam's, the channel and the filter the
   track's.
@@ -230,8 +231,8 @@ and turning one note into a chord — without ever taking the choice away.
 | --- | --- | --- |
 | 11.1 | ✓ **Done.** ★ **A keyboard you can play.** The roll's keys sound when clicked, through the selected track's own instrument and its effects, or out over MIDI on that track's channel when it goes there; a key lights while a note of the loop is sounding on it. A key is heard whether the jam plays or not: with it stopped, the studio opens a session that compiles no loop at the first key pressed, so nothing holds the audio device until someone asks to hear something. A note lasts 0.7 s, since a voice is made with its length rather than let go of by hand. | S |
 | 11.2 | ✓ **Done.** ★ **A key and a scale for the jam**, named once in the transport bar (C minor, F dorian, and the pentatonics) and shown in the roll: the rows and the keys the key does not hold are shaded, the root's rows carry a tint and its name where the C would be. Nothing is forbidden — a note off the scale plays as it always did, it just looks like the choice it is. A jam opens in the key its own melodies are in: `Scale.guess` weighs each note by how long it is held and how hard it is struck, takes the mode that holds the most of what is played, and tells two keys with the same notes apart - C major from A minor - by which root is played the most. A Guess button asks again for a line written or loaded since, and "Any" is still there to turn the shading off. On the jams in the repo it names Shape of You C# minor and Insomnia B minor; where a line plays both F and F# it says so by choosing the mode that covers more. The drum grid takes no shading: drums have no key. | M |
-| 11.3 | **Chord tones marked against the bar.** With a chord per bar (Cm, A♭, E♭), the roll marks the rows of the chord under the playhead more strongly than the rest of the scale, so the notes that will sound consonant are the obvious ones to reach for. Where the chords come from is the question: named by hand at first, later read from the MIDI file a track came from. | M |
-| 11.4 | **One note into a chord.** A melody track can be told to play chords: each note it holds becomes the chord of that bar, voiced from the note played — so a beginner draws a line and hears a progression. The mapping belongs to the track, beside its patch, and what it makes is ordinary notes, so the roll shows what will actually sound. | M |
+| 11.3 | ✓ **Done.** **Chord tones marked against the bar.** The chords are named by hand in the transport bar, as they are said — `Cm Ab Eb Bb`, with `-` for a bar that has none — and go round when the loop runs past them. Each bar of the roll then marks the rows its own chord holds, more strongly than the key shades the rest, and carries the chord's name above it. A word that is not a chord names nothing and says so by the colour of the text, so a half-typed name never changes what is shown. Reading a progression out of the MIDI file a track came from is still to do. | M |
+| 11.4 | ✓ **Done**, as an edit rather than a mode. **One note into a chord.** A `Chord it` button beside the roll turns the selected line into the chords of its bars: every note the bar's chord holds becomes that chord, voiced from the note played so what was written stays the lowest of them, and a note the chord does not hold is left alone — a passing note stays a passing note rather than becoming a clash. What it makes is ordinary notes, so the roll shows exactly what will sound, the notes can then be edited by hand, and Ctrl+Z takes the whole chording back. A track that plays chords as a standing mode, rather than once, is the version not built: this one is simpler and leaves the hand in charge. | M |
 | 11.5 | **A bar of suggestions.** With a scale and a chord known, the studio can offer a handful of phrases that fit — an arpeggio, a held root, a walking line — as one click each, to take or to change. It is the last step, not the first: it is only worth anything once 11.2 and 11.3 have taught the window what fits. | L |
 
 ---
@@ -264,7 +265,7 @@ For a studio meant to be **played live**, with the musical help of Phase 11 next
 3. ~~**11.2 — a key and a scale.**~~ Done.
 4. **The rest of Phase 9** — Cutter (9.5), Reverb (9.11) and Pitch (9.16) are the three missing
    strips a set actually reaches for, and **1.5**, a limiter, before stacking them.
-5. **11.3 / 11.4 — chords**, once the key is known.
+5. ~~**11.3 / 11.4 — chords**~~ Done.
 
 Kept for when the purpose changes: **6.1 + 10.6** (saving) matter the moment other people use this;
 **3.1** (`note(...)`) is the first thing anyone asks about in a workshop; **8.1** (the core module)

@@ -49,6 +49,7 @@ import pl.livecoding.musicjam.midi.MidiFileReader;
 import pl.livecoding.musicjam.model.DrumTrack;
 import pl.livecoding.musicjam.model.MelodyTrack;
 import pl.livecoding.musicjam.model.Note;
+import pl.livecoding.musicjam.model.Progression;
 import pl.livecoding.musicjam.model.Scale;
 import pl.livecoding.musicjam.model.Song;
 import pl.livecoding.musicjam.model.Track;
@@ -128,6 +129,10 @@ public final class BeatStudio extends Application {
     private final ComboBox<String> keyRoot = new ComboBox<>();
     private final ComboBox<Scale.Mode> keyMode = new ComboBox<>();
     private final Button guessKey = new Button("Guess");
+    // the chords the jam goes round, one to a bar, as they are said: Cm Ab Eb Bb
+    private final TextField chords = new TextField();
+    // in the selected melody's editor: its line played as the chords of its bars
+    private final Button chordIt = new Button("Chord it");
     private final TextArea code = new TextArea(STARTER_CODE);
     private final Button runCode = new Button("Run (Ctrl+Enter)");
     private final Label codeError = new Label();
@@ -202,6 +207,8 @@ public final class BeatStudio extends Application {
         keyRoot.setOnAction(event -> showScale());
         keyMode.setOnAction(event -> showScale());
         guessKey.setOnAction(event -> guessKey());
+        chords.textProperty().addListener((property, before, after) -> showChords());
+        chordIt.setOnAction(event -> chordSelection());
         // the panel plays the selected melody's instrument, and only that one
         synthControls.setOnChange((params, effects) -> {
             if (tracks != null && tracks.selected() instanceof StudioTrack.Melody melody
@@ -378,12 +385,14 @@ public final class BeatStudio extends Application {
 
         HBox tools = row(new Label("Zoom"), smaller, zoomLabel, larger, normal, fit,
                 nextScreen, fullScreen);
+        chords.setPromptText("Cm Ab Eb Bb");
+        chords.setPrefColumnCount(14);
         keyRoot.setPrefWidth(76);
         keyMode.setPrefWidth(150);
         showScale();
         HBox transport = row(play, new Label("Jam"), presets, new Label("Tempo"), bpm, bpmLabel,
                 new Label("Loop (bars)"), bars, new Label("Key"), keyRoot, keyMode, guessKey,
-                loopProgress, status);
+                new Label("Chords"), chords, loopProgress, status);
         HBox.setHgrow(loopProgress, Priority.ALWAYS);
 
         // pinned above the scroll pane: what you reach for while it plays should not scroll away
@@ -695,6 +704,8 @@ public final class BeatStudio extends Application {
                     roll = melodyEditor.roll();
                     roll.setOnKey(this::audition);
                     roll.setScale(scale());
+                    roll.setChords(Progression.parse(chords.getText()));
+                    melodyEditor.setChordButton(chordIt);
                 } catch (Exception exception) {
                     editor.getChildren().clear();
                     showError(exception);
@@ -768,6 +779,37 @@ public final class BeatStudio extends Application {
         keyMode.setValue(next.mode());
         keyRoot.setValue(next.rootName());
         showScale();
+    }
+
+    /**
+     * The selected melody played as the chords of its bars: every note the bar's chord holds
+     * becomes that chord, the rest are left as they are. It is an edit like any other, so the roll
+     * shows what will sound and Ctrl+Z takes it back.
+     */
+    private void chordSelection() {
+        Progression named = Progression.parse(chords.getText());
+        if (named.isEmpty() || !(tracks.selected() instanceof StudioTrack.Melody melody)) {
+            return;
+        }
+        List<Note> line = notesOf(melody.source(), loopBeats());
+        sourceChanged(new MelodySource.OwnNotes(NoteEdits.chords(line, named, BEATS_PER_BAR), melody.window()));
+        showEditor();
+    }
+
+    /**
+     * The chords the field names, shown in the roll. A word that is not a chord names nothing, so
+     * a half-typed name leaves the roll as it was and says so by the colour of the text.
+     */
+    private void showChords() {
+        Progression named = Progression.parse(chords.getText());
+        boolean sound = chords.getText().isBlank() || !named.isEmpty();
+        chords.setStyle(sound ? "" : "-fx-text-fill: #c92a2a;");
+        if (roll != null) {
+            roll.setChords(named);
+        }
+        if (chordIt != null) {
+            chordIt.setDisable(named.isEmpty());
+        }
     }
 
     /** The key the two pickers name. */
