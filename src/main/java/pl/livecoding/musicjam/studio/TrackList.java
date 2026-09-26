@@ -1,5 +1,6 @@
 package pl.livecoding.musicjam.studio;
 
+import pl.livecoding.musicjam.model.LoopTrack;
 import pl.livecoding.musicjam.model.MelodyTrack;
 import pl.livecoding.musicjam.model.Note;
 import pl.livecoding.musicjam.model.Song;
@@ -85,7 +86,7 @@ final class TrackList {
     }
 
     /** Adds a track at the end and selects it. */
-    void add(StudioTrack.Melody track) {
+    void add(StudioTrack track) {
         tracks.add(track);
         selected = tracks.size() - 1;
     }
@@ -141,11 +142,13 @@ final class TrackList {
     Song song(double bpm, int beatsPerBar, double lengthBeats, List<Note> drumNotes, Windows windows) {
         List<Track> songTracks = new ArrayList<>();
         for (StudioTrack track : tracks) {
-            List<Note> notes = switch (track) {
-                case StudioTrack.Drums drums -> drumNotes;
-                case StudioTrack.Melody melody -> windows.notes(melody.source(), lengthBeats);
-            };
-            songTracks.add(new MelodyTrack(notes, lengthBeats, track.audibleGain()));
+            songTracks.add(switch (track) {
+                case StudioTrack.Drums drums -> new MelodyTrack(drumNotes, lengthBeats, drums.audibleGain());
+                case StudioTrack.Melody melody -> new MelodyTrack(windows.notes(melody.source(), lengthBeats),
+                        lengthBeats, melody.audibleGain());
+                // audio rather than notes: how long the jam's loop is does not stretch or cut it
+                case StudioTrack.Loop loop -> new LoopTrack(loop.audio(), loop.bars(), loop.audibleGain());
+            });
         }
         return new Song(bpm, beatsPerBar, songTracks);
     }

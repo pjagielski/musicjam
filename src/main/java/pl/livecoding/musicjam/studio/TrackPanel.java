@@ -31,6 +31,7 @@ final class TrackPanel {
     private final VBox rows = new VBox(4);
     private final List<HBox> rowNodes = new ArrayList<>();
     private final Button addMelody = new Button("+ Melody");
+    private final Button addLoop = new Button("+ Loop");
     private final Button remove = new Button("Remove");
     private final Button up = new Button("Up");
     private final Button down = new Button("Down");
@@ -43,9 +44,23 @@ final class TrackPanel {
     // called before a track is added, removed or moved, so the studio can keep what is about to change
     private Runnable onStructural = () -> { };
 
-    /** {@code newMelody} is what "+ Melody" adds: a track with a window already chosen. */
-    TrackPanel(Supplier<StudioTrack.Melody> newMelody) {
+    /**
+     * {@code newMelody} is what "+ Melody" adds: a track with a window already chosen. {@code
+     * newLoop} is what "+ Loop" adds, or null when nothing was chosen to play.
+     */
+    TrackPanel(Supplier<StudioTrack.Melody> newMelody, Supplier<StudioTrack.Loop> newLoop) {
         this.newMelody = newMelody;
+        addLoop.setOnAction(event -> {
+            StudioTrack.Loop loop = newLoop.get();
+            if (loop == null) {
+                return;
+            }
+            onStructural.run();
+            tracks.add(loop);
+            rebuild();
+            onEdit.run();
+            onSelect.run();
+        });
         addMelody.setOnAction(event -> {
             onStructural.run();
             tracks.add(this.newMelody.get());
@@ -62,7 +77,7 @@ final class TrackPanel {
         });
         up.setOnAction(event -> move(-1));
         down.setOnAction(event -> move(1));
-        node = StudioPanels.frame("Tracks", rows, StudioPanels.row(addMelody, remove, up, down));
+        node = StudioPanels.frame("Tracks", rows, StudioPanels.row(addMelody, addLoop, remove, up, down));
     }
 
     VBox node() {
@@ -111,12 +126,19 @@ final class TrackPanel {
     }
 
     private HBox row(int index, StudioTrack track) {
-        boolean drums = track instanceof StudioTrack.Drums;
-        Label kind = new Label(drums ? "DRUMS" : "MELODY");
+        Label kind = new Label(switch (track) {
+            case StudioTrack.Drums ignored -> "DRUMS";
+            case StudioTrack.Melody ignored -> "MELODY";
+            case StudioTrack.Loop ignored -> "LOOP";
+        });
         kind.setMinWidth(58);
         kind.setAlignment(Pos.CENTER);
         kind.setStyle("-fx-font-size: 10px; -fx-font-weight: bold; -fx-text-fill: white; -fx-padding: 2 6;"
-                + " -fx-background-radius: 4; -fx-background-color: " + (drums ? "#e8590c" : "#1c7ed6") + ";");
+                + " -fx-background-radius: 4; -fx-background-color: " + switch (track) {
+                    case StudioTrack.Drums ignored -> "#e8590c";
+                    case StudioTrack.Melody ignored -> "#1c7ed6";
+                    case StudioTrack.Loop ignored -> "#2f9e44";
+                } + ";");
 
         TextField name = new TextField(track.name());
         name.setPrefColumnCount(12);

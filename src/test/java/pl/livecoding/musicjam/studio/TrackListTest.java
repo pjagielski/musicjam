@@ -1,6 +1,8 @@
 package pl.livecoding.musicjam.studio;
 
+import pl.livecoding.musicjam.audio.Sample;
 import pl.livecoding.musicjam.model.Drum;
+import pl.livecoding.musicjam.model.LoopTrack;
 import pl.livecoding.musicjam.model.MelodyTrack;
 import pl.livecoding.musicjam.model.Note;
 import pl.livecoding.musicjam.model.Song;
@@ -37,6 +39,28 @@ class TrackListTest {
                 new MelodyTrack(DRUMS, 32, 1.0f),
                 new MelodyTrack(WINDOWS.notes(LEAD, 32), 32, 1.0f))), song);
         assertInstanceOf(StudioTrack.Drums.class, tracks.selected());
+    }
+
+    @Test
+    void aLoopTrackIsHandedOverAsAudioOverItsOwnBars() {
+        TrackList tracks = TrackList.startingWith("Lead", LEAD);
+        Sample audio = Sample.mono(new float[1000]);
+        tracks.add(new StudioTrack.Loop("Break", 0.8f, false, Path.of("100_16_break.wav"), 4, audio));
+
+        // the jam loops over eight beats; the loop keeps its own four bars rather than being cut to them
+        Song song = tracks.song(128, 4, 8, DRUMS, WINDOWS);
+
+        assertEquals(new LoopTrack(audio, 4, 0.8f), song.tracks().get(2));
+    }
+
+    @Test
+    void aMutedLoopIsHandedOverSilentLikeAnyOtherTrack() {
+        TrackList tracks = TrackList.startingWith("Lead", LEAD);
+        tracks.add(new StudioTrack.Loop("Break", 0.8f, true, Path.of("break.wav"), 2, Sample.mono(new float[10])));
+
+        Song song = tracks.song(128, 4, 8, DRUMS, WINDOWS);
+
+        assertEquals(0.0f, ((LoopTrack) song.tracks().get(2)).gain());
     }
 
     @Test

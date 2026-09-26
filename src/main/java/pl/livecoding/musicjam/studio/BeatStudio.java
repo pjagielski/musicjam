@@ -36,12 +36,15 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import javafx.util.Duration;
+import javafx.stage.FileChooser;
 import javafx.stage.Screen;
 import pl.livecoding.musicjam.BeatApp;
 import pl.livecoding.musicjam.PhraseRequest;
 import pl.livecoding.musicjam.audio.AudioEngine;
 import pl.livecoding.musicjam.audio.NoteListener;
+import pl.livecoding.musicjam.audio.Sample;
 import pl.livecoding.musicjam.audio.SampleBank;
+import pl.livecoding.musicjam.audio.WavSampleLoader;
 import pl.livecoding.musicjam.livecode.LiveCode;
 import pl.livecoding.musicjam.livecode.LiveCodeException;
 import pl.livecoding.musicjam.midi.ExternalMidiOutput;
@@ -63,6 +66,7 @@ import pl.livecoding.musicjam.synth.PitchSynth;
 
 import javax.sound.midi.MidiSystem;
 import javax.sound.midi.Sequence;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -139,7 +143,7 @@ public final class BeatStudio extends Application {
     private final Label codeError = new Label();
     private final VBox codeColumn = new VBox(8, code, row(runCode, codeError));
     private final HBox drumEditor = new HBox(18, grid, codeColumn);
-    private final TrackPanel trackPanel = new TrackPanel(this::newMelody);
+    private final TrackPanel trackPanel = new TrackPanel(this::newMelody, this::newLoop);
     // the selected track's editor: the grid and its code, or a melody's window
     private final VBox editor = new VBox();
     private final TextField device = new TextField();
@@ -171,6 +175,12 @@ public final class BeatStudio extends Application {
     private final Map<Path, Sequence> sequences = new HashMap<>();
     private final Map<MidiWindow, List<Note>> windows = new HashMap<>();
     private double windowsLengthBeats;
+    // every loop file read so far, so picking one again does not read it again
+    private final Map<Path, Sample> loopAudio = new HashMap<>();
+    // where the last loop was chosen from, which is where the next chooser opens
+    private Path loopFolder;
+    // the selected loop track's editor, which follows the tempo; null while another kind is shown
+    private LoopEditor loopEditor;
     // the jam config's synth, for a track no instrument plays: the drum track's notes are samples
     private PitchSynth fallbackSynth;
     private AudioEngine engine;
@@ -239,6 +249,9 @@ public final class BeatStudio extends Application {
             updateBpmLabel();
             synthControls.setTempo(bpm.getValue());
             retimeDelays();
+            if (loopEditor != null) {
+                loopEditor.setTempo(bpm.getValue());
+            }
             publish();
         });
         bars.valueProperty().addListener((property, before, after) -> {
@@ -655,6 +668,78 @@ public final class BeatStudio extends Application {
     }
 
     /**
+     * What "+ Loop" adds: a piece of recorded audio, chosen there and then, since a loop track with
+     * nothing to play is no track at all. Null when the chooser was closed with nothing picked.
+     */
+    private StudioTrack.Loop newLoop() {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("A loop to play in time with the jam");
+        chooser.getExtensionFilters().add(
+                new FileChooser.ExtensionFilter("Audio files", "*.wav", "*.aif", "*.aiff", "*.au"));
+        File start = startingFolder();
+        if (start != null) {
+            chooser.setInitialDirectory(start);
+        }
+        File chosen = chooser.showOpenDialog(trackPanel.node().getScene().getWindow());
+        if (chosen == null) {
+            return null;
+        }
+        try {
+            Path file = chosen.toPath().toAbsolutePath().normalize();
+            Sample audio = loopOf(file);
+            double loopBars = LoopBars.guess(file, audio.frameCount(), AudioEngine.DEFAULT_SAMPLE_RATE,
+                    BEATS_PER_BAR, bpm.getValue());
+            loopFolder = file.getParent();
+            return new StudioTrack.Loop(unusedName(loopName(file)), 1.0f, false, file, loopBars, audio);
+        } catch (Exception exception) {
+            showError(exception);
+            return null;
+        }
+    }
+
+    /** Where the loop chooser opens: where the last one came from, or a loops folder by the config. */
+    private File startingFolder() {
+        List<Path> where = new ArrayList<>();
+        if (loopFolder != null) {
+            where.add(loopFolder);
+        }
+        // a loops folder in the project, which nothing is committed from: git leaves it alone
+        where.add(Path.of("loops").toAbsolutePath());
+        Path near = configPath().toAbsolutePath().getParent();
+        if (near != null) {
+            where.add(near.resolve("loops"));
+            where.add(near);
+        }
+        return where.stream().filter(Files::isDirectory).findFirst().map(Path::toFile).orElse(null);
+    }
+
+    /** A loop track's name from its file's: without the extension, and without the tempo it is named for. */
+    private static String loopName(Path file) {
+        String name = file.getFileName().toString().replaceFirst("\\.[^.]+$", "")
+                .replaceFirst("^\\d{2,3}[_-]\\d{1,3}[_-]", "");
+        return name.isEmpty() ? "Loop" : name;
+    }
+
+    private Sample loopOf(Path file) throws Exception {
+        Sample known = loopAudio.get(file);
+        if (known == null) {
+            known = WavSampleLoader.load(file, AudioEngine.DEFAULT_SAMPLE_RATE);
+            loopAudio.put(file, known);
+        }
+        return known;
+    }
+
+    /** A loop's file or its bars have changed: the same track, playing something else or for longer. */
+    private void loopChanged(StudioTrack.Loop next) {
+        remember();
+        int index = tracks.selectedIndex();
+        if (tracks.get(index) instanceof StudioTrack.Loop) {
+            tracks.replace(index, next);
+            publish();
+        }
+    }
+
+    /**
      * The lowest MIDI channel no melody goes out on, so a new track can be sent out without two
      * sharing one; channel 10, which General MIDI keeps for drums, is left alone.
      */
@@ -690,8 +775,16 @@ public final class BeatStudio extends Application {
     /** The selected track's editor in place of the last one's. */
     private void showEditor() {
         roll = null;
+        loopEditor = null;
         switch (tracks.selected()) {
             case StudioTrack.Drums drums -> editor.getChildren().setAll(drumEditor);
+            case StudioTrack.Loop loop -> {
+                loopEditor = new LoopEditor(loop, this::loopOf, this::loopChanged, BeatStudio::showError,
+                        AudioEngine.DEFAULT_SAMPLE_RATE, BEATS_PER_BAR, bpm.getValue());
+                VBox frame = loopEditor.node();
+                fitWidth(frame, FULL_WIDTH);
+                editor.getChildren().setAll(frame);
+            }
             case StudioTrack.Melody melody -> {
                 try {
                     double lengthBeats = loopBeats();
@@ -1261,13 +1354,14 @@ public final class BeatStudio extends Application {
         }
         Label title = new Label("INSTRUMENT");
         title.setStyle("-fx-text-fill: #868e96; -fx-font-size: 10px; -fx-font-weight: bold;");
-        if (tracks.selected() instanceof StudioTrack.Drums) {
-            Label drums = new Label("The drum track plays the samples in samples/, one per row of the grid.");
-            drums.setStyle("-fx-text-fill: #868e96;");
-            instrument.getChildren().setAll(title, drums);
+        if (!(tracks.selected() instanceof StudioTrack.Melody melody)) {
+            Label what = new Label(tracks.selected() instanceof StudioTrack.Drums
+                    ? "The drum track plays the samples in samples/, one per row of the grid."
+                    : "A loop plays its own recorded audio: there is no instrument to give it.");
+            what.setStyle("-fx-text-fill: #868e96;");
+            instrument.getChildren().setAll(title, what);
             return;
         }
-        StudioTrack.Melody melody = (StudioTrack.Melody) tracks.selected();
         title.setText("INSTRUMENT · " + melody.name().toUpperCase(Locale.ROOT));
         Instrument played = melody.instrument();
         boolean playable = played != null && played.playable();

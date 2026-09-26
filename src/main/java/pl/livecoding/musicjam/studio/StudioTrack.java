@@ -1,13 +1,17 @@
 package pl.livecoding.musicjam.studio;
 
+import pl.livecoding.musicjam.audio.Sample;
+
+import java.nio.file.Path;
 import java.util.Objects;
 
 /**
  * One track of the studio's jam as the track list shows it: a name, a gain and a mute, and what
- * it plays. There is one {@link Drums} track, which is the grid, and any number of {@link Melody}
- * tracks, each with its own source of notes.
+ * it plays. There is one {@link Drums} track, which is the grid, any number of {@link Melody}
+ * tracks, each with its own source of notes, and any number of {@link Loop} tracks, each playing a
+ * piece of recorded audio in time with the jam.
  */
-sealed interface StudioTrack permits StudioTrack.Drums, StudioTrack.Melody {
+sealed interface StudioTrack permits StudioTrack.Drums, StudioTrack.Melody, StudioTrack.Loop {
 
     String name();
 
@@ -93,6 +97,45 @@ sealed interface StudioTrack permits StudioTrack.Drums, StudioTrack.Melody {
 
         public Melody withSource(MelodySource next) {
             return new Melody(name, gain, muted, next, instrument);
+        }
+    }
+
+    /** A piece of recorded audio, played over as many bars of the jam as it is taken to fill. */
+    record Loop(String name, float gain, boolean muted, Path file, double bars, Sample audio)
+            implements StudioTrack {
+
+        public Loop {
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(file, "file");
+            Objects.requireNonNull(audio, "audio");
+            checkGain(gain);
+            if (!Double.isFinite(bars) || bars <= 0) {
+                throw new IllegalArgumentException("A loop fills a positive number of bars, not " + bars);
+            }
+        }
+
+        @Override
+        public Loop named(String next) {
+            return new Loop(next, gain, muted, file, bars, audio);
+        }
+
+        @Override
+        public Loop withGain(float next) {
+            return new Loop(name, next, muted, file, bars, audio);
+        }
+
+        @Override
+        public Loop withMuted(boolean next) {
+            return new Loop(name, gain, next, file, bars, audio);
+        }
+
+        Loop over(double nextBars) {
+            return new Loop(name, gain, muted, file, nextBars, audio);
+        }
+
+        /** The tempo the audio was cut at, as far as its length and its bars tell. */
+        double sourceBpm(int sampleRate, int beatsPerBar) {
+            return bars * beatsPerBar * 60.0 * sampleRate / audio.frameCount();
         }
     }
 
