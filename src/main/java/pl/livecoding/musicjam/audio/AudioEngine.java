@@ -458,8 +458,19 @@ public final class AudioEngine {
     private record TrackNote(Note note, int track) {
     }
 
-    /** A note asked for by hand, to be sounded at the next block rather than at a beat. */
-    private record Audition(PitchSynth synth, int midiNote, int frames, float velocity) {
+    /**
+     * Something asked for by hand, to be sounded at the next block rather than at a beat: a note
+     * through a synth, or - when {@code source} is given instead - a piece of audio as it stands.
+     */
+    private record Audition(PitchSynth synth, int midiNote, int frames, float velocity, VoiceSource source) {
+
+        static Audition note(PitchSynth synth, int midiNote, int frames, float velocity) {
+            return new Audition(synth, midiNote, frames, velocity, null);
+        }
+
+        static Audition of(VoiceSource source, float gain) {
+            return new Audition(null, 0, 0, gain, source);
+        }
     }
 
     /** A loop, from the beat of the jam it starts on; {@code lengthBeats} is how long it will actually run. */
@@ -508,6 +519,8 @@ public final class AudioEngine {
         private final TrackGains gains = new TrackGains(blockSize);
         // the pass each loop track is playing, so starting it again can end the one before it
         private final Map<Integer, LoopVoice> loopVoices = new HashMap<>();
+        // the last piece of audio tried by hand, so the next one asked for can end it
+        private LoopVoice tried;
         private volatile double stutterRequested;
         private double stutterBeats;
         private double sliceStart;
@@ -629,6 +642,14 @@ public final class AudioEngine {
          */
         private void sound(Audition asked) {
             VoiceSlot slot = allocateVoice(voices, position);
+            if (asked.source() != null) {
+                if (tried != null) {
+                    tried.stop();
+                }
+                tried = asked.source() instanceof LoopVoice loop ? loop : null;
+                slot.trigger(asked.source(), position, asked.velocity());
+                return;
+            }
             if (asked.synth() instanceof LivePitchSynth live) {
                 slot.trigger(live.voice(asked.midiNote(), asked.frames(), sampleRate), position, asked.velocity());
                 slot.out = busFor(live).frames;
@@ -640,7 +661,17 @@ public final class AudioEngine {
 
         /** Sounds {@code midiNote} through {@code synth} at the next block. Safe from any thread. */
         void audition(PitchSynth synth, int midiNote, double seconds, float velocity) {
-            auditions.add(new Audition(synth, midiNote, (int) Math.round(seconds * sampleRate), velocity));
+            auditions.add(Audition.note(synth, midiNote, (int) Math.round(seconds * sampleRate), velocity));
+        }
+
+        /**
+         * Sounds {@code audio} from {@code from} to {@code until} at the next block, read at
+         * {@code rate} frames of it a frame - the rate the loop it came from is playing at, so a
+         * slice tried by hand sounds as it will in the jam. Whatever was last tried this way stops,
+         * so clicking about does not pile loops on top of one another. Safe from any thread.
+         */
+        void audition(Sample audio, int from, int until, double rate, float gain) {
+            auditions.add(Audition.of(new LoopVoice(audio, () -> rate, fadeFrames(), from, until), gain));
         }
 
         private void play(LiveHit hit, long frame) {
@@ -1066,6 +1097,11 @@ public final class AudioEngine {
          * heard whether the jam is playing or the session is an idle one. It lasts
          * {@code seconds}, since a voice is made with its length rather than let go of by hand.
          */
+        /** Sounds a piece of audio now: a loop, or one slice of it, as it would sound in the jam. */
+        public void audition(Sample audio, int from, int until, double rate, float gain) {
+            renderer.audition(audio, from, until, rate, gain);
+        }
+
         public void audition(PitchSynth synth, int midiNote, double seconds, float velocity) {
             renderer.audition(synth, midiNote, seconds, velocity);
         }

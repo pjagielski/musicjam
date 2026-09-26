@@ -671,6 +671,38 @@ class AudioEngineLiveTest {
     }
 
     @Test
+    void aPieceOfALoopIsHeardOnItsOwnAndStopsWhereItEnds() {
+        Sample audio = ramp(2_000);
+        float[] climbing = audio.copyMono();
+        Song song = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "....", 1.0f)));
+        var renderer = engine().liveRenderer(() -> jam(song), false);
+
+        // frames 500 to 700 of it, read one for one
+        renderer.audition(audio, 500, 700, 1.0, 1.0f);
+        float[] left = render(renderer, 4);
+
+        assertEquals(climbing[500], left[0], 1e-4f, "from where it was asked for");
+        assertEquals(climbing[600], left[100], 1e-4f, "and on from there");
+        assertEquals(0.0f, left[300], 1e-4f, "and nothing past the end of the piece");
+    }
+
+    @Test
+    void whatIsTriedNextTakesThePlaceOfWhatWasTriedBefore() {
+        Sample audio = ramp(2_000);
+        float[] climbing = audio.copyMono();
+        Song song = new Song(120, 4, List.of(new DrumTrack(Drum.KICK, "....", 1.0f)));
+        var renderer = engine().liveRenderer(() -> jam(song), false);
+
+        renderer.audition(audio, 0, 2_000, 1.0, 1.0f);
+        render(renderer, 2);
+        renderer.audition(audio, 1_000, 1_200, 1.0, 1.0f);
+        float[] after = render(renderer, 4);
+
+        // only the second: clicking about the waveform does not pile one loop on another
+        assertEquals(climbing[1_100], after[100], 1e-4f, "the piece asked for second");
+    }
+
+    @Test
     void aLoopEndsWithTheJamRatherThanPlayingOutItsPass() {
         // a bar of loop, which at 120 BPM lasts 2000 frames: the stop comes 500 frames into it
         Song song = new Song(120, 4, List.of(new LoopTrack(ramp(2000), 1, 1.0f)));

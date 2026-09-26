@@ -19,10 +19,19 @@ import pl.livecoding.musicjam.audio.Sample;
  * jam's grid, which is the point of moving them to the hits - a break's slices land where its hits
  * do, and the eye can tell at once whether they did.
  *
+ * <p>A click asks for the slice under it, or for the whole loop when it is not being cut, so a cut
+ * can be judged by ear as well as by eye without setting the jam going.
+ *
  * <p>The waveform is drawn once, on its own canvas, and the playhead on a second over it, so the
  * line moving sixty times a second does not redraw a hundred thousand frames of audio with it.
  */
 final class LoopWave {
+
+    /** A piece of the loop asked for by hand, in frames: from {@code from} up to {@code until}. */
+    @FunctionalInterface
+    interface Region {
+        void tried(int from, int until);
+    }
 
     private static final Color BACKGROUND = Color.web("#ffffff");
     private static final Color EDGE = Color.web("#dee2e6");
@@ -41,11 +50,30 @@ final class LoopWave {
     private final Pane node = new Pane();
     // the last column the playhead was drawn in, so it is only redrawn when it has moved one
     private int shownX = -1;
+    // what is drawn now, so a click can say which slice it landed in
+    private int[] slices = new int[0];
+    private int frameCount;
+    private Region onTry = (from, until) -> { };
 
     LoopWave(double width, double height) {
         wave = new Canvas(width, height);
         playhead = new Canvas(width, height);
         playhead.setMouseTransparent(true);
+        wave.setCursor(javafx.scene.Cursor.HAND);
+        wave.setOnMousePressed(event -> {
+            if (frameCount <= 0) {
+                return;
+            }
+            int frame = (int) Math.max(0, Math.min(frameCount - 1, event.getX() / width * frameCount));
+            int at = 0;
+            while (at + 1 < slices.length && slices[at + 1] <= frame) {
+                at++;
+            }
+            int from = slices.length == 0 ? 0 : slices[at];
+            int until = slices.length == 0 ? frameCount
+                    : at + 1 < slices.length ? slices[at + 1] : frameCount;
+            onTry.tried(from, until);
+        });
         node.getChildren().addAll(wave, playhead);
         node.setMinSize(width, height);
         node.setPrefSize(width, height);
@@ -56,12 +84,19 @@ final class LoopWave {
         return node;
     }
 
+    /** What a click on the waveform asks to hear. */
+    void setOnTry(Region region) {
+        onTry = region;
+    }
+
     /**
      * The audio over {@code bars} bars of the jam. {@code playedBeats} is how much of it is reached
      * before the jam's loop comes round and starts it again: the rest is shaded, since it is there
      * in the file but never heard.
      */
     void show(Sample audio, double bars, int beatsPerBar, double playedBeats, int[] slices) {
+        this.slices = slices.clone();
+        this.frameCount = audio.frameCount();
         double width = wave.getWidth();
         double height = wave.getHeight();
         double middle = height / 2;

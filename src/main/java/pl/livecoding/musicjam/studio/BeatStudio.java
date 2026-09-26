@@ -729,6 +729,19 @@ public final class BeatStudio extends Application {
         return known;
     }
 
+    /**
+     * A piece of a loop heard on its own, at the rate it plays at in the jam. Like a key of the
+     * roll, it sounds whether the jam is running or stopped: a cut is judged by ear, and waiting
+     * for the bar it falls on is no way to judge one.
+     */
+    private void tryLoop(Sample audio, int from, int until, double rate) {
+        try {
+            listening().audition(audio, from, until, rate, 0.9f);
+        } catch (Exception exception) {
+            showError(exception);
+        }
+    }
+
     /** A loop's file or its bars have changed: the same track, playing something else or for longer. */
     private void loopChanged(StudioTrack.Loop next) {
         remember();
@@ -780,8 +793,8 @@ public final class BeatStudio extends Application {
             case StudioTrack.Drums drums -> editor.getChildren().setAll(drumEditor);
             case StudioTrack.Loop loop -> {
                 loopEditor = new LoopEditor(loop, this::loopOf, this::loopChanged, BeatStudio::showError,
-                        AudioEngine.DEFAULT_SAMPLE_RATE, BEATS_PER_BAR, bpm.getValue(), loopBeats(),
-                        FULL_WIDTH - 30);
+                        this::tryLoop, AudioEngine.DEFAULT_SAMPLE_RATE, BEATS_PER_BAR, bpm.getValue(),
+                        loopBeats(), FULL_WIDTH - 30);
                 VBox frame = loopEditor.node();
                 fitWidth(frame, FULL_WIDTH);
                 editor.getChildren().setAll(frame);

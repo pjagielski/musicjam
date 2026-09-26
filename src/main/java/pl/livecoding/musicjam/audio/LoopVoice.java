@@ -20,6 +20,7 @@ final class LoopVoice implements VoiceSource {
     private final DoubleSupplier rate;
     // how long the fade at the end lasts; a handful of milliseconds, no more
     private final int fadeFrames;
+    private final double until;
     private double position;
     private boolean stopped;
     // frames of the fade still to play, or -1 while it is not fading
@@ -38,10 +39,19 @@ final class LoopVoice implements VoiceSource {
      * stutter needs, which takes the loop back to where it had got to rather than to its start.
      */
     LoopVoice(Sample audio, DoubleSupplier rate, int fadeFrames, double from) {
+        this(audio, rate, fadeFrames, from, audio.frameCount());
+    }
+
+    /**
+     * The same, stopping at {@code until} rather than at the end of the sample: what one slice of a
+     * loop is, sounded on its own.
+     */
+    LoopVoice(Sample audio, DoubleSupplier rate, int fadeFrames, double from, double until) {
         this.audio = audio;
         this.rate = rate;
         this.fadeFrames = Math.max(1, fadeFrames);
         this.position = Math.max(0, from);
+        this.until = Math.min(audio.frameCount(), Math.max(from + 1, until));
     }
 
     @Override
@@ -54,7 +64,7 @@ final class LoopVoice implements VoiceSource {
     @Override
     public void next(float[] stereoOut) {
         int frame = (int) position;
-        if (stopped || frame >= audio.frameCount() - 1) {
+        if (stopped || frame >= until - 1) {
             stopped = true;
             stereoOut[0] = 0;
             stereoOut[1] = 0;
@@ -76,7 +86,7 @@ final class LoopVoice implements VoiceSource {
 
     @Override
     public boolean finished() {
-        return stopped || position >= audio.frameCount() - 1;
+        return stopped || position >= until - 1;
     }
 
     /**

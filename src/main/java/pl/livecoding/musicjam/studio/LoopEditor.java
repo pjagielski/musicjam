@@ -6,6 +6,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -43,6 +44,15 @@ final class LoopEditor {
         Sample of(Path file) throws Exception;
     }
 
+    /**
+     * A piece of the loop to be heard now, outside the jam: frames {@code from} up to {@code until},
+     * read at {@code rate} frames a frame, which is the rate the loop itself is playing at.
+     */
+    @FunctionalInterface
+    interface Tries {
+        void play(Sample audio, int from, int until, double rate);
+    }
+
     /** The lengths the box offers, whatever the file turned out to be taken as. */
     private static final double[] CHOICES = {0.25, 0.5, 1, 2, 4, 8, 16, 32};
 
@@ -64,6 +74,7 @@ final class LoopEditor {
     private final Loops loops;
     private final Consumer<StudioTrack.Loop> onChange;
     private final Consumer<Exception> onError;
+    private final Tries tries;
     private final int sampleRate;
     private final int beatsPerBar;
     private double jamBpm;
@@ -82,9 +93,10 @@ final class LoopEditor {
     private boolean filling;
 
     LoopEditor(StudioTrack.Loop track, Loops loops, Consumer<StudioTrack.Loop> onChange,
-               Consumer<Exception> onError, int sampleRate, int beatsPerBar, double jamBpm,
+               Consumer<Exception> onError, Tries tries, int sampleRate, int beatsPerBar, double jamBpm,
                double jamLengthBeats, double width) {
         this.track = track;
+        this.tries = tries;
         this.jamLengthBeats = jamLengthBeats;
         this.wave = new LoopWave(width, 150);
         this.loops = loops;
@@ -125,6 +137,11 @@ final class LoopEditor {
                         toHits.isSelected())));
             }
         });
+
+        wave.setOnTry((from, until) -> tries.play(track.audio(), from, until, rate()));
+        Tooltip.install(wave.node(), new Tooltip("""
+                Click to hear a slice on its own, or the whole loop when it is not being cut.
+                It sounds at the rate it plays at in the jam, whether the jam is running or not."""));
 
         Button browse = new Button("Browse...");
         browse.setOnAction(event -> browse(browse));
@@ -195,6 +212,12 @@ final class LoopEditor {
                         + " length plays at half speed.%s",
                 seconds, audio.stereo() ? "stereo" : "mono", LoopBars.label(track.bars()), source, jamBpm, speed,
                 cut);
+    }
+
+    /** Frames of the sample read for each frame played: what makes its bars the jam's bars. */
+    private double rate() {
+        double passFrames = track.bars() * beatsPerBar * 60.0 / jamBpm * sampleRate;
+        return passFrames <= 0 ? 1 : track.audio().frameCount() / passFrames;
     }
 
     /** Where this loop's slices begin, or nothing at all when it is not being cut. */
