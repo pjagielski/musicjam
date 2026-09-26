@@ -170,6 +170,8 @@ public final class BeatStudio extends Application {
     private final EditHistory<Snapshot> history = new EditHistory<>(64);
     // the selected melody's roll, whose playhead follows the jam; none while the grid is shown
     private PianoRoll roll;
+    // which track the editor on show belongs to, so a rebuild of it can keep the page it was on
+    private int shownIndex = -1;
     private List<Path> midiFiles = List.of();
     // every MIDI file read so far, and every window's notes over the loop as long as it is now
     private final Map<Path, Sequence> sequences = new HashMap<>();
@@ -787,6 +789,10 @@ public final class BeatStudio extends Application {
 
     /** The selected track's editor in place of the last one's. */
     private void showEditor() {
+        // the page the roll was on, kept across a rebuild: an undo, or a line turned into chords,
+        // should leave the eye where it was rather than throw it back to the first four bars
+        int wasPage = roll != null && tracks.selectedIndex() == shownIndex ? roll.page() : 0;
+        shownIndex = tracks.selectedIndex();
         roll = null;
         loopEditor = null;
         switch (tracks.selected()) {
@@ -814,6 +820,7 @@ public final class BeatStudio extends Application {
                     roll.setScale(scale());
                     roll.setChords(Progression.parse(chords.getText()));
                     melodyEditor.setChordButton(chordIt);
+                    roll.showPage(wasPage);
                 } catch (Exception exception) {
                     editor.getChildren().clear();
                     showError(exception);
