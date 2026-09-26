@@ -2,6 +2,7 @@ package pl.livecoding.musicjam.model;
 
 import pl.livecoding.musicjam.audio.Sample;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -12,17 +13,32 @@ import java.util.Objects;
  *
  * <p>A loop shorter than the jam's own loop plays again from its start; the engine starts it every
  * {@code bars} bars.
+ *
+ * <p>{@code steps} is how the pass is laid out when it has been cut up and rearranged: one
+ * {@link Step} for each equal part of the pass, each naming the piece of audio struck there. Empty
+ * - which is how a loop arrives - means the whole thing struck once, straight through.
  */
-public record LoopTrack(Sample audio, double bars, float gain) implements Track {
+public record LoopTrack(Sample audio, double bars, float gain, List<Step> steps) implements Track {
+
+    /** A loop played straight through, which is what one is until it is cut up. */
+    public LoopTrack(Sample audio, double bars, float gain) {
+        this(audio, bars, gain, List.of());
+    }
 
     public LoopTrack {
         Objects.requireNonNull(audio, "audio");
+        steps = List.copyOf(steps);
         if (!Double.isFinite(bars) || bars <= 0.0) {
             throw new IllegalArgumentException("A loop fills a positive number of bars, not " + bars);
         }
         if (!Float.isFinite(gain) || gain < 0.0f || gain > 1.0f) {
             throw new IllegalArgumentException("Gain must be between 0 and 1");
         }
+    }
+
+    /** Whether the pass is laid out step by step rather than struck once and left to run. */
+    public boolean laidOut() {
+        return !steps.isEmpty();
     }
 
     /** How long one pass lasts, in beats. */

@@ -7,6 +7,7 @@ import pl.livecoding.musicjam.model.LoopTrack;
 import pl.livecoding.musicjam.model.MelodyTrack;
 import pl.livecoding.musicjam.model.Note;
 import pl.livecoding.musicjam.model.Song;
+import pl.livecoding.musicjam.model.Step;
 import pl.livecoding.musicjam.model.Voice;
 import pl.livecoding.musicjam.synth.LivePitchSynth;
 import pl.livecoding.musicjam.synth.PitchSynth;
@@ -700,6 +701,42 @@ class AudioEngineLiveTest {
 
         // only the second: clicking about the waveform does not pile one loop on another
         assertEquals(climbing[1_100], after[100], 1e-4f, "the piece asked for second");
+    }
+
+    @Test
+    void aLaidOutPassPlaysItsStepsInTheOrderTheyAreIn() {
+        // four quarters of a bar, each at a level of its own, so which one sounded can be told
+        float[] quarters = new float[2_000];
+        for (int frame = 0; frame < quarters.length; frame++) {
+            quarters[frame] = 0.1f + 0.1f * (frame / 500);
+        }
+        List<Step> steps = List.of(new Step(1_500, 2_000), new Step(0, 500), Step.REST, new Step(500, 1_000));
+        Song song = new Song(120, 4, List.of(new LoopTrack(Sample.mono(quarters), 1, 1.0f, steps)));
+        var renderer = engine().liveRenderer(() -> jam(song), false);
+
+        float[] left = render(renderer, 16);
+
+        assertEquals(0.4f, left[100], 1e-4f, "the fourth quarter, put first");
+        assertEquals(0.1f, left[600], 1e-4f, "then the first");
+        assertEquals(0.0f, left[1_200], 1e-4f, "then nothing struck, and the one before it is over");
+        assertEquals(0.2f, left[1_700], 1e-4f, "then the second");
+    }
+
+    @Test
+    void aStepStrikesItsPieceAndLetsItRingIntoTheNext() {
+        float[] quarters = new float[2_000];
+        for (int frame = 0; frame < quarters.length; frame++) {
+            quarters[frame] = 0.1f + 0.1f * (frame / 500);
+        }
+        // a step a beat long, but the piece in it is a beat and a half: it runs on into the rest
+        List<Step> steps = List.of(new Step(0, 750), Step.REST, Step.REST, Step.REST);
+        Song song = new Song(120, 4, List.of(new LoopTrack(Sample.mono(quarters), 1, 1.0f, steps)));
+        var renderer = engine().liveRenderer(() -> jam(song), false);
+
+        float[] left = render(renderer, 16);
+
+        assertEquals(0.2f, left[600], 1e-4f, "past the step it began in, still ringing");
+        assertEquals(0.0f, left[800], 1e-4f, "and over where its own piece ends");
     }
 
     @Test

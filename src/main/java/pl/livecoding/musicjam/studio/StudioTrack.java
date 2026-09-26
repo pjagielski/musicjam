@@ -1,8 +1,12 @@
 package pl.livecoding.musicjam.studio;
 
 import pl.livecoding.musicjam.audio.Sample;
+import pl.livecoding.musicjam.audio.Slices;
+import pl.livecoding.musicjam.model.Step;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -101,20 +105,105 @@ sealed interface StudioTrack permits StudioTrack.Drums, StudioTrack.Melody, Stud
     }
 
     /**
-     * How a loop is cut up: not at all, or into slices of {@code beats} each, every boundary but
-     * the first moved to the hit nearest it when {@code toHits} and there is one to move to.
+     * How a loop is cut up and in what order its slices are played: not at all, or into slices of
+     * {@code beats} each, every boundary but the first moved to the hit nearest it when
+     * {@code toHits} and there is one to move to.
+     *
+     * <p>{@code starts} is where the slices begin, worked out once when the cut changes rather than
+     * every time the jam is handed over - finding the hits means reading the whole sample.
+     * {@code order} is which slice each step of the pass plays, or -1 for a step that strikes
+     * nothing; an order that is simply 0, 1, 2 ... is a loop played as it was recorded.
      */
-    record Slicing(double beats, boolean toHits) {
+    record Slicing(double beats, boolean toHits, List<Integer> starts, List<Integer> order) {
 
-        static final Slicing NONE = new Slicing(0, true);
+        static final Slicing NONE = new Slicing(0, true, List.of(), List.of());
 
-        boolean on() {
-            return beats > 0;
+        /** How far a boundary may move to find its hit: a tenth of a slice either way. */
+        private static final double NEAR = 0.1;
+
+        public Slicing {
+            starts = List.copyOf(starts);
+            order = List.copyOf(order);
         }
 
-        /** How many slices that makes of a pass {@code lengthBeats} long. */
-        int count(double lengthBeats) {
-            return on() ? Math.max(1, (int) Math.round(lengthBeats / beats)) : 0;
+        boolean on() {
+            return beats > 0 && !starts.isEmpty();
+        }
+
+        int count() {
+            return starts.size();
+        }
+
+        /**
+         * Where the slices of {@code audio} fall for a cut of {@code beats} over a pass of
+         * {@code lengthBeats}, with {@code wanted} kept where it still fits and the rest of the
+         * order laid out plainly. This is the one place a cut is worked out.
+         */
+        static Slicing of(Sample audio, double beats, boolean toHits, double lengthBeats, List<Integer> wanted) {
+            if (beats <= 0 || lengthBeats <= 0) {
+                return NONE;
+            }
+            int count = Math.max(1, (int) Math.round(lengthBeats / beats));
+            int[] found = toHits ? Slices.onTheHits(audio, count, NEAR)
+                    : Slices.onTheGrid(audio.frameCount(), count);
+            List<Integer> starts = new ArrayList<>(found.length);
+            for (int start : found) {
+                starts.add(start);
+            }
+            List<Integer> order = new ArrayList<>(count);
+            for (int step = 0; step < count; step++) {
+                int was = step < wanted.size() ? wanted.get(step) : step;
+                // a step naming a slice the cut no longer has goes back to naming its own
+                order.add(was >= count ? step : was);
+            }
+            return new Slicing(beats, toHits, starts, order);
+        }
+
+        /** The same cut with {@code step} playing {@code slice}, or -1 for nothing struck there. */
+        Slicing with(int step, int slice) {
+            List<Integer> next = new ArrayList<>(order);
+            next.set(step, slice);
+            return new Slicing(beats, toHits, starts, next);
+        }
+
+        /** The same cut, played as it was recorded. */
+        Slicing straightened() {
+            List<Integer> next = new ArrayList<>(count());
+            for (int step = 0; step < count(); step++) {
+                next.add(step);
+            }
+            return new Slicing(beats, toHits, starts, next);
+        }
+
+        /** Whether the slices are played in the order they were recorded in, which is the plain case. */
+        boolean straight() {
+            for (int step = 0; step < order.size(); step++) {
+                if (order.get(step) != step) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /**
+         * The steps the engine plays, or nothing at all where the order is the plain one - a loop
+         * played as recorded is one piece of audio struck once, not a slice struck at every step.
+         */
+        List<Step> steps(int frameCount) {
+            if (!on() || straight()) {
+                return List.of();
+            }
+            List<Step> steps = new ArrayList<>(order.size());
+            for (int slice : order) {
+                if (slice < 0 || slice >= starts.size()) {
+                    steps.add(Step.REST);
+                    continue;
+                }
+                int from = starts.get(slice);
+                int until = slice + 1 < starts.size() ? starts.get(slice + 1) : frameCount;
+                steps.add(new Step(from, until));
+            }
+            return steps;
         }
     }
 

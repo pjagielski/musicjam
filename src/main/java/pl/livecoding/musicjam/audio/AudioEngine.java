@@ -3,6 +3,7 @@ package pl.livecoding.musicjam.audio;
 import pl.livecoding.musicjam.model.Drum;
 import pl.livecoding.musicjam.model.Envelope;
 import pl.livecoding.musicjam.model.LoopTrack;
+import pl.livecoding.musicjam.model.Step;
 import pl.livecoding.musicjam.model.Note;
 import pl.livecoding.musicjam.model.PatternCompiler;
 import pl.livecoding.musicjam.model.Song;
@@ -35,6 +36,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.DoubleSupplier;
 import java.util.function.Supplier;
 
 public final class AudioEngine {
@@ -433,24 +435,33 @@ public final class AudioEngine {
      * is what lets a new tempo move every hit not yet played.
      */
     private record LiveHit(double beat, Sample sample, LivePitchSynth synth, int midiNote, double heldBeats,
-                           float gain, boolean kick, int track, Supplier<LoopVoice> loop) {
+                           float gain, boolean kick, int track, Supplier<LoopVoice> loop, boolean passes) {
 
         static LiveHit sample(double beat, Sample sample, float gain, boolean kick, int track) {
-            return new LiveHit(beat, sample, null, 0, 0, gain, kick, track, null);
+            return new LiveHit(beat, sample, null, 0, 0, gain, kick, track, null, false);
         }
 
         static LiveHit note(double beat, LivePitchSynth synth, int midiNote, double heldBeats, float gain, int track) {
-            return new LiveHit(beat, null, synth, midiNote, heldBeats, gain, false, track, null);
+            return new LiveHit(beat, null, synth, midiNote, heldBeats, gain, false, track, null, false);
         }
 
         /** A loop starting its pass: the voice is made when it is due, so it reads the tempo as it then is. */
-        static LiveHit loop(double beat, Supplier<LoopVoice> loop, int track) {
-            return new LiveHit(beat, null, null, 0, 0, 1.0f, false, track, loop);
+        static LiveHit pass(double beat, Supplier<LoopVoice> loop, int track) {
+            return new LiveHit(beat, null, null, 0, 0, 1.0f, false, track, loop, true);
+        }
+
+        /**
+         * One step of a pass that has been laid out: a piece of the audio struck and left to ring,
+         * which is why it does not end the piece struck before it the way a whole pass does.
+         */
+        static LiveHit slice(double beat, Supplier<LoopVoice> loop, int track) {
+            return new LiveHit(beat, null, null, 0, 0, 1.0f, false, track, loop, false);
         }
 
         /** The same hit at {@code at}, held no longer than {@code room}: a stutter chops, it does not smear. */
         LiveHit repeatedAt(double at, double room) {
-            return new LiveHit(at, sample, synth, midiNote, Math.min(heldBeats, room), gain, kick, track, loop);
+            return new LiveHit(at, sample, synth, midiNote, Math.min(heldBeats, room), gain, kick, track, loop,
+                    passes);
         }
     }
 
@@ -681,13 +692,15 @@ public final class AudioEngine {
             }
             VoiceSlot slot = allocateVoice(voices, frame);
             if (hit.loop() != null) {
-                // a loop starting again ends the pass still playing, rather than doubling with it
-                LoopVoice playing = loopVoices.get(hit.track());
-                if (playing != null) {
-                    playing.stop();
-                }
                 LoopVoice voice = hit.loop().get();
-                loopVoices.put(hit.track(), voice);
+                if (hit.passes()) {
+                    // a loop starting again ends the pass still playing, rather than doubling with it
+                    LoopVoice playing = loopVoices.get(hit.track());
+                    if (playing != null) {
+                        playing.stop();
+                    }
+                    loopVoices.put(hit.track(), voice);
+                }
                 slot.trigger(voice, frame, hit.gain());
                 slot.track = hit.track();
                 return;
@@ -976,16 +989,45 @@ public final class AudioEngine {
                                double fromBeat, double toBeat) {
             double pass = audio.lengthBeats(song.beatsPerBar());
             for (double at = 0; at < toBeat; at += pass) {
+                if (audio.laidOut()) {
+                    queueSteps(queued, audio, track, loopStart, at, pass, fromBeat, toBeat);
+                    continue;
+                }
                 if (at < fromBeat) {
                     continue;
                 }
-                queued.add(LiveHit.loop(loopStart + at,
+                queued.add(LiveHit.pass(loopStart + at,
                         // the rate in doubles: it is rarely a whole number, and one of 1.37 read as
                         // 1 is a loop playing at the tempo it was cut at wherever the jam is
-                        () -> new LoopVoice(audio.audio(),
-                                () -> audio.audio().frameCount() / (double) tempo.frames(pass), fadeFrames()),
+                        () -> new LoopVoice(audio.audio(), rateOf(audio, pass), fadeFrames()),
                         track));
             }
+        }
+
+        /**
+         * A pass that has been laid out: one hit for every step of it that strikes anything, each at
+         * the piece of the audio that step names, all read at the rate the whole loop would be.
+         */
+        private void queueSteps(List<LiveHit> queued, LoopTrack audio, int track, double loopStart, double at,
+                                double pass, double fromBeat, double toBeat) {
+            List<Step> steps = audio.steps();
+            double each = pass / steps.size();
+            for (int step = 0; step < steps.size(); step++) {
+                double beat = at + step * each;
+                if (beat < fromBeat || beat >= toBeat || steps.get(step).rests()) {
+                    continue;
+                }
+                Step struck = steps.get(step);
+                queued.add(LiveHit.slice(loopStart + beat,
+                        () -> new LoopVoice(audio.audio(), rateOf(audio, pass), fadeFrames(),
+                                struck.from(), struck.until()),
+                        track));
+            }
+        }
+
+        /** Frames of the sample read for each frame played, asked for as it plays so the tempo can move. */
+        private DoubleSupplier rateOf(LoopTrack audio, double pass) {
+            return () -> audio.audio().frameCount() / (double) tempo.frames(pass);
         }
 
         /** The jam loop {@code beat} falls in: the one compiled for it, not the one compiled ahead of it. */
@@ -1010,11 +1052,14 @@ public final class AudioEngine {
                 if (!(song.tracks().get(track) instanceof LoopTrack audio)) {
                     continue;
                 }
+                if (audio.laidOut()) {
+                    // its steps are hits of their own, which the slice picks up like any other
+                    continue;
+                }
                 double pass = audio.lengthBeats(song.beatsPerBar());
                 double from = (beat - mark.startBeat()) % pass / pass * audio.audio().frameCount();
-                found.add(LiveHit.loop(beat, () -> new LoopVoice(audio.audio(),
-                        () -> audio.audio().frameCount() / (double) tempo.frames(pass), fadeFrames(), from),
-                        track));
+                found.add(LiveHit.pass(beat, () -> new LoopVoice(audio.audio(), rateOf(audio, pass),
+                        fadeFrames(), from), track));
             }
             return found;
         }

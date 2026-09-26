@@ -7,6 +7,7 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
+import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
@@ -14,7 +15,6 @@ import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.util.StringConverter;
 import pl.livecoding.musicjam.audio.Sample;
-import pl.livecoding.musicjam.audio.Slices;
 import pl.livecoding.musicjam.studio.knobs.StudioPanels;
 
 import java.io.File;
@@ -68,9 +68,6 @@ final class LoopEditor {
         CUTS.put("1/32", 0.125);
     }
 
-    /** How far a boundary may move to find its hit: a fifth of a slice either way. */
-    private static final double NEAR = 0.1;
-
     private final Loops loops;
     private final Consumer<StudioTrack.Loop> onChange;
     private final Consumer<Exception> onError;
@@ -83,6 +80,11 @@ final class LoopEditor {
     private final ComboBox<Double> bars = new ComboBox<>();
     private final ComboBox<String> cut = new ComboBox<>();
     private final ToggleButton toHits = new ToggleButton("To the hits");
+    private final Button straighten = new Button("Straight");
+    // one cell a step of the pass, each naming the slice it plays
+    private final HBox stepRow = new HBox(2);
+    // the step a click on the waveform will set, or -1 when a click is only asking to hear
+    private int setting = -1;
     private final LoopWave wave;
     private final Label fileName = new Label();
     private final Label reading = new Label();
@@ -92,10 +94,12 @@ final class LoopEditor {
     private StudioTrack.Loop track;
     private boolean filling;
 
-    LoopEditor(StudioTrack.Loop track, Loops loops, Consumer<StudioTrack.Loop> onChange,
+    LoopEditor(StudioTrack.Loop loop, Loops loops, Consumer<StudioTrack.Loop> onChange,
                Consumer<Exception> onError, Tries tries, int sampleRate, int beatsPerBar, double jamBpm,
                double jamLengthBeats, double width) {
-        this.track = track;
+        // named apart from the field on purpose: a lambda written here that means the field and
+        // says the parameter reads the loop as it first was, for ever, and looks perfectly right
+        this.track = loop;
         this.tries = tries;
         this.jamLengthBeats = jamLengthBeats;
         this.wave = new LoopWave(width, 150);
@@ -128,17 +132,28 @@ final class LoopEditor {
         cut.setPrefWidth(90);
         cut.setOnAction(event -> {
             if (!filling && cut.getValue() != null) {
-                change(this.track.cutInto(new StudioTrack.Slicing(CUTS.get(cut.getValue()), toHits.isSelected())));
+                recut(CUTS.get(cut.getValue()), toHits.isSelected());
             }
         });
         toHits.setOnAction(event -> {
             if (!filling) {
-                change(this.track.cutInto(new StudioTrack.Slicing(this.track.slicing().beats(),
-                        toHits.isSelected())));
+                recut(this.track.slicing().beats(), toHits.isSelected());
             }
         });
+        straighten.setOnAction(event -> {
+            setting = -1;
+            change(this.track.cutInto(this.track.slicing().straightened()));
+        });
 
-        wave.setOnTry((from, until) -> tries.play(track.audio(), from, until, rate()));
+        wave.setOnTry((slice, from, until) -> {
+            if (setting >= 0 && slice >= 0) {
+                // a step is waiting to be set, so a click on the waveform says what it plays
+                StudioTrack.Loop next = track.cutInto(track.slicing().with(setting, slice));
+                setting = Math.min(setting + 1, next.slicing().count() - 1);
+                change(next);
+            }
+            tries.play(track.audio(), from, until, rate());
+        });
         Tooltip.install(wave.node(), new Tooltip("""
                 Click to hear a slice on its own, or the whole loop when it is not being cut.
                 It sounds at the rate it plays at in the jam, whether the jam is running or not."""));
@@ -155,6 +170,7 @@ final class LoopEditor {
                 new Label("Fills"), bars, new Label("bars"), gap(),
                 new Label("Slices"), cut, toHits, gap(), reading, push);
 
+        stepRow.setAlignment(Pos.CENTER_LEFT);
         frame = StudioPanels.frame("", controls, details());
         fill();
     }
@@ -185,7 +201,7 @@ final class LoopEditor {
 
     private Node details() {
         details.setStyle("-fx-text-fill: #495057; -fx-font-size: 12px;");
-        VBox box = new VBox(8, wave.node(), details);
+        VBox box = new VBox(8, wave.node(), stepRow, details);
         box.setAlignment(Pos.TOP_LEFT);
         return box;
     }
@@ -222,13 +238,63 @@ final class LoopEditor {
 
     /** Where this loop's slices begin, or nothing at all when it is not being cut. */
     private int[] slices() {
-        StudioTrack.Slicing slicing = track.slicing();
-        int count = slicing.count(track.bars() * beatsPerBar);
-        if (count <= 0) {
-            return new int[0];
+        List<Integer> starts = track.slicing().starts();
+        int[] found = new int[starts.size()];
+        for (int at = 0; at < found.length; at++) {
+            found[at] = starts.get(at);
         }
-        return slicing.toHits() ? Slices.onTheHits(track.audio(), count, NEAR)
-                : Slices.onTheGrid(track.audio().frameCount(), count);
+        return found;
+    }
+
+    /** The cut worked out afresh, keeping the order where it still fits. */
+    private void recut(double beats, boolean toHits) {
+        setting = -1;
+        change(track.cutInto(StudioTrack.Slicing.of(track.audio(), beats, toHits,
+                track.bars() * beatsPerBar, track.slicing().order())));
+    }
+
+    /**
+     * A cell for each step of the pass, naming the slice it plays. Clicking one says the next click
+     * on the waveform is for it; clicking it again lets go. The right button empties a step, so
+     * whatever was struck before it rings on through.
+     */
+    private void fillSteps() {
+        stepRow.getChildren().clear();
+        StudioTrack.Slicing slicing = track.slicing();
+        if (!slicing.on()) {
+            return;
+        }
+        Label what = new Label("Order");
+        what.setStyle("-fx-text-fill: #868e96;");
+        stepRow.getChildren().add(what);
+        for (int step = 0; step < slicing.order().size(); step++) {
+            int at = step;
+            int slice = slicing.order().get(step);
+            Button cell = new Button(slice < 0 ? "\u2013" : String.valueOf(slice + 1));
+            cell.setMinWidth(34);
+            cell.setFocusTraversable(false);
+            cell.setStyle(cellStyle(at == setting, slice == at));
+            cell.setOnAction(event -> {
+                setting = setting == at ? -1 : at;
+                fillSteps();
+            });
+            cell.setOnMouseClicked(event -> {
+                if (event.getButton() == MouseButton.SECONDARY) {
+                    setting = -1;
+                    change(track.cutInto(track.slicing().with(at, -1)));
+                }
+            });
+            stepRow.getChildren().add(cell);
+        }
+        stepRow.getChildren().addAll(gap(), straighten);
+    }
+
+    private static String cellStyle(boolean waiting, boolean asRecorded) {
+        String face = waiting ? "-fx-background-color: #ffd8a8; -fx-border-color: #e8590c;"
+                : asRecorded ? "-fx-background-color: #f1f3f5; -fx-border-color: #dee2e6;"
+                : "-fx-background-color: #d0ebff; -fx-border-color: #1c7ed6;";
+        return face + " -fx-font-size: 11px; -fx-padding: 2 4; -fx-background-radius: 4;"
+                + " -fx-border-radius: 4; -fx-border-width: 1;";
     }
 
     /** The name the box gives a slicing, which is the one it was chosen by. */
@@ -289,7 +355,9 @@ final class LoopEditor {
             cut.setValue(label(track.slicing()));
             toHits.setSelected(track.slicing().toHits());
             toHits.setDisable(!track.slicing().on());
+            straighten.setDisable(track.slicing().straight());
             wave.show(track.audio(), track.bars(), beatsPerBar, jamLengthBeats, slices());
+            fillSteps();
             ((Label) frame.getChildren().getFirst()).setText("Loop · recorded audio".toUpperCase(Locale.ROOT));
         } finally {
             filling = false;

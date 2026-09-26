@@ -27,10 +27,13 @@ import pl.livecoding.musicjam.audio.Sample;
  */
 final class LoopWave {
 
-    /** A piece of the loop asked for by hand, in frames: from {@code from} up to {@code until}. */
+    /**
+     * A piece of the loop asked for by hand: which slice it is, and the frames it covers. The slice
+     * is -1 where the loop is not cut and the whole of it was asked for.
+     */
     @FunctionalInterface
     interface Region {
-        void tried(int from, int until);
+        void tried(int slice, int from, int until);
     }
 
     private static final Color BACKGROUND = Color.web("#ffffff");
@@ -53,7 +56,7 @@ final class LoopWave {
     // what is drawn now, so a click can say which slice it landed in
     private int[] slices = new int[0];
     private int frameCount;
-    private Region onTry = (from, until) -> { };
+    private Region onTry = (slice, from, until) -> { };
 
     LoopWave(double width, double height) {
         wave = new Canvas(width, height);
@@ -72,7 +75,7 @@ final class LoopWave {
             int from = slices.length == 0 ? 0 : slices[at];
             int until = slices.length == 0 ? frameCount
                     : at + 1 < slices.length ? slices[at + 1] : frameCount;
-            onTry.tried(from, until);
+            onTry.tried(slices.length == 0 ? -1 : at, from, until);
         });
         node.getChildren().addAll(wave, playhead);
         node.setMinSize(width, height);

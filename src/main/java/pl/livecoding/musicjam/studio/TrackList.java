@@ -147,7 +147,8 @@ final class TrackList {
                 case StudioTrack.Melody melody -> new MelodyTrack(windows.notes(melody.source(), lengthBeats),
                         lengthBeats, melody.audibleGain());
                 // audio rather than notes: how long the jam's loop is does not stretch or cut it
-                case StudioTrack.Loop loop -> new LoopTrack(loop.audio(), loop.bars(), loop.audibleGain());
+                case StudioTrack.Loop loop -> new LoopTrack(loop.audio(), loop.bars(), loop.audibleGain(),
+                        loop.slicing().steps(loop.audio().frameCount()));
             });
         }
         return new Song(bpm, beatsPerBar, songTracks);
