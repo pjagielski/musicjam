@@ -709,18 +709,20 @@ public final class AudioEngine {
             double now = tempo.beatAt(position);
             double wanted = stutterRequested;
             if (wanted != stutterBeats) {
+                boolean held = stutterBeats > 0;
                 repeats.clear();
                 slice.clear();
                 stutterBeats = 0;
-                Loops snapshot = loops;
                 // the loop this block starts in, which is not the one compiled for later in the block
-                LoopMark loop = snapshot.current() != null && snapshot.current().startBeat() > now
-                        ? snapshot.previous()
-                        : snapshot.current();
+                LoopMark loop = markAt(now);
                 if (wanted > 0 && loop != null) {
                     sliceStart = now - Math.max(0.0, now - loop.startBeat()) % wanted;
                     nextRepeat = sliceStart + wanted;
                     stutterBeats = wanted;
+                } else if (held && loop != null) {
+                    // let go: the loops go back to where the jam has got to, rather than staying
+                    // wherever the last repeat left them until the next pass comes round
+                    repeats.addAll(loopsAt(now));
                 }
             }
             while (!recent.isEmpty() && recent.peekFirst().beat() < now - STUTTER_MEMORY_BEATS) {
@@ -738,6 +740,14 @@ public final class AudioEngine {
                         if (hit.beat() >= sliceStart && hit.beat() < sliceEnd) {
                             slice.add(hit);
                         }
+                    }
+                }
+                // a loop of audio has one hit a pass, which a slice taken anywhere else has missed.
+                // It is added here, where the loop had got to by the slice's start, so a repeat
+                // takes the loop back with everything else rather than letting it run on underneath.
+                for (LiveHit loop : loopsAt(sliceStart)) {
+                    if (slice.stream().noneMatch(in -> in.loop() != null && in.track() == loop.track())) {
+                        slice.add(loop);
                     }
                 }
             }
@@ -941,6 +951,37 @@ public final class AudioEngine {
                                 () -> audio.audio().frameCount() / (double) tempo.frames(pass), fadeFrames()),
                         track));
             }
+        }
+
+        /** The jam loop {@code beat} falls in: the one compiled for it, not the one compiled ahead of it. */
+        private LoopMark markAt(double beat) {
+            Loops snapshot = loops;
+            LoopMark current = snapshot.current();
+            return current != null && current.startBeat() > beat ? snapshot.previous() : current;
+        }
+
+        /**
+         * A hit for each loop track playing at {@code beat}, each starting where that loop would
+         * have got to by then rather than at its beginning.
+         */
+        private List<LiveHit> loopsAt(double beat) {
+            LoopMark mark = markAt(beat);
+            if (mark == null) {
+                return List.of();
+            }
+            List<LiveHit> found = new ArrayList<>();
+            Song song = mark.song();
+            for (int track = 0; track < song.tracks().size(); track++) {
+                if (!(song.tracks().get(track) instanceof LoopTrack audio)) {
+                    continue;
+                }
+                double pass = audio.lengthBeats(song.beatsPerBar());
+                double from = (beat - mark.startBeat()) % pass / pass * audio.audio().frameCount();
+                found.add(LiveHit.loop(beat, () -> new LoopVoice(audio.audio(),
+                        () -> audio.audio().frameCount() / (double) tempo.frames(pass), fadeFrames(), from),
+                        track));
+            }
+            return found;
         }
 
         /** Five milliseconds: long enough that the end of a pass is not a click, short enough to be an end. */

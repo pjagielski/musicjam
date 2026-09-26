@@ -30,9 +30,18 @@ final class LoopVoice implements VoiceSource {
      * {@code fadeFrames} is how long {@link #stop()} takes to fall silent.
      */
     LoopVoice(Sample audio, DoubleSupplier rate, int fadeFrames) {
+        this(audio, rate, fadeFrames, 0);
+    }
+
+    /**
+     * The same, starting {@code from} frames into the sample rather than at its beginning: what a
+     * stutter needs, which takes the loop back to where it had got to rather than to its start.
+     */
+    LoopVoice(Sample audio, DoubleSupplier rate, int fadeFrames, double from) {
         this.audio = audio;
         this.rate = rate;
         this.fadeFrames = Math.max(1, fadeFrames);
+        this.position = Math.max(0, from);
     }
 
     @Override

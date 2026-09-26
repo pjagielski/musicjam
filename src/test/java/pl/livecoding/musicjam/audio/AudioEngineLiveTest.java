@@ -627,6 +627,50 @@ class AudioEngineLiveTest {
     }
 
     @Test
+    void aStutterTakenInTheMiddleOfALoopTakesTheLoopBackWithIt() {
+        // a bar of loop with a click on each of its first three beats, each quieter than the last
+        float[] clicks = new float[2000];
+        clicks[0] = 1.0f;
+        clicks[500] = 0.8f;
+        clicks[1_000] = 0.6f;
+        Song song = new Song(120, 4, List.of(new LoopTrack(Sample.mono(clicks), 1, 1.0f),
+                new MelodyTrack(List.of(), 8.0, 1.0f)));
+        var renderer = engine().liveRenderer(() -> jam(song), false);
+
+        // two beats in, where the loop has just played its third click
+        render(renderer, 8);
+        renderer.stutter(1);
+        float[] after = render(renderer, 16);
+
+        // the slice starts on beat 2, so every repeat takes the loop back to that click
+        assertEquals(0.6f, after[1_500 - 1_024], 1e-3f, "the first repeat");
+        assertEquals(0.6f, after[2_000 - 1_024], 1e-3f, "the second");
+        assertEquals(0.6f, after[2_500 - 1_024], 1e-3f, "the third");
+    }
+
+    @Test
+    void lettingGoOfAStutterPutsTheLoopBackWhereTheJamHasGot() {
+        float[] clicks = new float[2000];
+        clicks[0] = 1.0f;
+        clicks[500] = 0.8f;
+        clicks[1_000] = 0.6f;
+        Song song = new Song(120, 4, List.of(new LoopTrack(Sample.mono(clicks), 1, 1.0f),
+                new MelodyTrack(List.of(), 8.0, 1.0f)));
+        var renderer = engine().liveRenderer(() -> jam(song), false);
+
+        render(renderer, 8);
+        renderer.stutter(1);
+        // held to frame 2432, which is beat 4.864: most of the way through the loop's second pass
+        render(renderer, 11);
+        renderer.stutter(0);
+        float[] after = render(renderer, 8);
+
+        // the loop picks up where the jam has got to, so its clicks land on the beat again
+        assertEquals(0.8f, after[2_500 - 2_432], 1e-3f, "the click due on beat 5");
+        assertEquals(0.6f, after[3_000 - 2_432], 1e-3f, "and the one due on beat 6");
+    }
+
+    @Test
     void aLoopEndsWithTheJamRatherThanPlayingOutItsPass() {
         // a bar of loop, which at 120 BPM lasts 2000 frames: the stop comes 500 frames into it
         Song song = new Song(120, 4, List.of(new LoopTrack(ramp(2000), 1, 1.0f)));
