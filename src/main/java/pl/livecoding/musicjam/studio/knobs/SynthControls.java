@@ -187,7 +187,7 @@ public final class SynthControls {
     private final Label syncLabel = new Label("Sync");
     private final Choice<DelayMode> delayMode;
     // what the drive knob drives into: how hard is the knob, what kind is this
-    private final Choice<Saturation> shape;
+    private final Knob shape;
     // two poles or four: not one filter at two settings, but two filters
     private final Choice<FilterKind> filterKind;
     // what each oscillator puts out before anything is done to it: three named things, so a knob
@@ -230,7 +230,8 @@ public final class SynthControls {
         drift = knob(Param.linear("Drift", 0, 1, "", 2, 0.34), Theme.Accent.OSC, 62);
         // seven is a lead; a bass wants one to three, and a 303 line wants one
         voices = knob(Param.linear("Voices", 1, 7, "", 0, 7), Theme.Accent.OSC, 62);
-        waveform = knob(Param.steps("Wave", "Saw", "Square", "Sine"), Theme.Accent.OSC, 62);
+        waveform = knob(Param.steps("Wave", names(Waveform.values())), Theme.Accent.OSC, 62);
+        shape = knob(Param.steps("Shape", names(Saturation.values())), Theme.Accent.AMP, 62);
         drive = knob(Param.linear("Drive", 0, 2, "", 2, 1.09), Theme.Accent.AMP, 62);
         trim = knob(Param.linear("Output", 0, 1.5, "", 2, 1.0), Theme.Accent.AMP, 62);
 
@@ -292,9 +293,6 @@ public final class SynthControls {
         delayMode = new Choice<>(Choice.Look.SEGMENTS, List.of(DelayMode.values()),
                 EffectParams.DEFAULT.delayMode(), Theme.Accent.FX, theme);
         delayMode.setOnChange(mode -> publish());
-        shape = new Choice<>(Choice.Look.CHIPS, List.of(Saturation.values()), Saturation.DIODE,
-                Theme.Accent.AMP, theme);
-        shape.setOnChange(next -> publish());
         filterKind = new Choice<>(Choice.Look.SEGMENTS, List.of(FilterKind.values()), FilterKind.TWO_POLE,
                 Theme.Accent.FILTER, theme);
         filterKind.setOnChange(next -> publish());
@@ -328,7 +326,8 @@ public final class SynthControls {
         List<VBox> groupBoxes = List.of(
                 section("Oscillator", Theme.Accent.OSC, null, span,
                         waveform, voices, detune, sub, vibrato, motionRate, drift),
-                section("Amp · Sidechain", Theme.Accent.AMP, shape, span, drive, trim, crush, duckDepth, duckRecover),
+                section("Amp · Sidechain", Theme.Accent.AMP, null, span,
+                        shape, drive, trim, crush, duckDepth, duckRecover),
                 section("Filter", Theme.Accent.FILTER, new VBox(6, filterKind, pad),
                         cutoff, resonance, envAmount, keyTrack),
                 section("Envelope", Theme.Accent.AMP, envelopes),
@@ -442,7 +441,7 @@ public final class SynthControls {
                 (float) (filterAttack.value() / 1000), (float) (filterDecay.value() / 1000),
                 (float) filterSustain.value(), (float) (filterRelease.value() / 1000),
                 (float) drive.value(), (float) trim.value())
-                .withShape(shape.value())
+                .withShape(Saturation.values()[(int) Math.round(shape.value())])
                 .withFilter(filterKind.value())
                 .withVoices((int) Math.round(voices.value()))
                 .withWaveform(Waveform.values()[(int) Math.round(
@@ -495,7 +494,7 @@ public final class SynthControls {
     }
 
     private void setKnobs(SynthParams params) {
-        shape.select(params.shape());
+        shape.setValue(params.shape().ordinal());
         filterKind.select(params.filter());
         voices.setValue(params.unisonVoices());
         waveform.setValue(params.waveform().ordinal());
@@ -594,7 +593,6 @@ public final class SynthControls {
         syncLabel.setStyle(muted);
         sync.setTheme(next);
         delayMode.setTheme(next);
-        shape.setTheme(next);
         filterKind.setTheme(next);
         delayDiagram.setTheme(next);
         reverbDiagram.setTheme(next);
@@ -637,6 +635,15 @@ public final class SynthControls {
         Region filler = new Region();
         VBox.setVgrow(filler, Priority.ALWAYS);
         return filler;
+    }
+
+    /** The names of a set of things to turn between, in the order they are declared in. */
+    private static String[] names(Object[] values) {
+        String[] labels = new String[values.length];
+        for (int at = 0; at < values.length; at++) {
+            labels[at] = values[at].toString();
+        }
+        return labels;
     }
 
     private Knob knob(Param param, Theme.Accent accent, double size) {
