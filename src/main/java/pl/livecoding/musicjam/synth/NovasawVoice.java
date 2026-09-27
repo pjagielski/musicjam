@@ -27,7 +27,23 @@ public final class NovasawVoice implements VoiceSource {
 
     static final int UNISON_VOICES = 7;
 
-    private static final double[] UNISON_OFFSETS = {-1.0, -0.58, -0.23, 0.0, 0.23, 0.58, 1.0};
+    /**
+     * Where each saw sits in the detune, from one edge to the other, for every count of them. Seven
+     * is the shape the patches were written on and is left exactly as it was; the smaller counts are
+     * drawn from the same shape and kept symmetric, so turning the voices down narrows the chorus
+     * rather than leaning it to one side. One saw sits in the middle and is not detuned at all,
+     * which is what a bass wants and what a 303 has.
+     */
+    private static final double[][] UNISON_OFFSETS = {
+            {},
+            {0.0},
+            {-1.0, 1.0},
+            {-1.0, 0.0, 1.0},
+            {-1.0, -0.23, 0.23, 1.0},
+            {-1.0, -0.58, 0.0, 0.58, 1.0},
+            {-1.0, -0.58, -0.23, 0.23, 0.58, 1.0},
+            {-1.0, -0.58, -0.23, 0.0, 0.23, 0.58, 1.0},
+    };
     // the shaper used to carry the drive's own gain, some five times over at the drive a patch
     // sits at; now that it is levelled, that gain lives here instead
     private static final float MAX_OUTPUT_GAIN = 1.046f;
@@ -81,10 +97,12 @@ public final class NovasawVoice implements VoiceSource {
         motionPhase = wrapTwoPi(motionPhase + 2.0 * Math.PI * current.motionRateHz() / sampleRate);
 
         float mono = 0.0f;
-        for (int unison = 0; unison < UNISON_VOICES; unison++) {
+        int voices = current.unisonVoices();
+        double[] offsets = UNISON_OFFSETS[voices];
+        for (int unison = 0; unison < voices; unison++) {
             double driftCents = Math.sin(driftPhase[unison]) * current.motion() * 0.55;
             double detuneRatio = Math.pow(
-                    2.0, (UNISON_OFFSETS[unison] * current.detuneCents() + vibrato + driftCents) / 1200.0);
+                    2.0, (offsets[unison] * current.detuneCents() + vibrato + driftCents) / 1200.0);
             float phaseIncrement = (float) (frequency * detuneRatio / sampleRate);
             mono += polyBlepSaw((float) phase[unison], phaseIncrement);
 
@@ -98,7 +116,7 @@ public final class NovasawVoice implements VoiceSource {
 
         if (current.subLevel() > 0) {
             // a sine an octave down, under the saws and through the same filter and drive: what
-            // gives a bass line its fundamental, since seven detuned saws alone come out thin
+            // gives a bass line its fundamental, since detuned saws alone come out thin
             mono += (float) Math.sin(subPhase) * current.subLevel() * SUB_GAIN;
             subPhase = wrapTwoPi(subPhase + Math.PI * frequency / sampleRate);
         }

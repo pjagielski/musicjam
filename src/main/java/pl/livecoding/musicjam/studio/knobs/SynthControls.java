@@ -152,6 +152,7 @@ public final class SynthControls {
     private final Knob vibrato;
     private final Knob motionRate;
     private final Knob drift;
+    private final Knob voices;
     private final Knob cutoff;
     private final Knob resonance;
     private final Knob envAmount;
@@ -223,6 +224,8 @@ public final class SynthControls {
         vibrato = knob(Param.linear("Vibrato", 0, 12, "ct", 2, 1.4), Theme.Accent.OSC, 62);
         motionRate = knob(Param.exponential("Motion", 0.05, 12, "Hz", 2, 5.2), Theme.Accent.OSC, 62);
         drift = knob(Param.linear("Drift", 0, 1, "", 2, 0.34), Theme.Accent.OSC, 62);
+        // seven is a lead; a bass wants one to three, and a 303 line wants one
+        voices = knob(Param.linear("Voices", 1, 7, "", 0, 7), Theme.Accent.OSC, 62);
         drive = knob(Param.linear("Drive", 0, 2, "", 2, 1.09), Theme.Accent.AMP, 62);
         trim = knob(Param.linear("Output", 0, 1.5, "", 2, 1.0), Theme.Accent.AMP, 62);
 
@@ -317,7 +320,8 @@ public final class SynthControls {
         // across a window the two groups without a picture take two columns each, in a row of their own
         int span = columns >= 4 ? 2 : 1;
         List<VBox> groupBoxes = List.of(
-                section("Oscillator", Theme.Accent.OSC, null, span, detune, sub, vibrato, motionRate, drift),
+                section("Oscillator", Theme.Accent.OSC, null, span,
+                        voices, detune, sub, vibrato, motionRate, drift),
                 section("Amp · Sidechain", Theme.Accent.AMP, shape, span, drive, trim, crush, duckDepth, duckRecover),
                 section("Filter", Theme.Accent.FILTER, new VBox(6, filterKind, pad),
                         cutoff, resonance, envAmount, keyTrack),
@@ -433,7 +437,8 @@ public final class SynthControls {
                 (float) filterSustain.value(), (float) (filterRelease.value() / 1000),
                 (float) drive.value(), (float) trim.value())
                 .withShape(shape.value())
-                .withFilter(filterKind.value());
+                .withFilter(filterKind.value())
+                .withVoices((int) Math.round(voices.value()));
     }
 
     /** The whole panel as it stands, to be put back with {@link #restore}. */
@@ -484,6 +489,7 @@ public final class SynthControls {
     private void setKnobs(SynthParams params) {
         shape.select(params.shape());
         filterKind.select(params.filter());
+        voices.setValue(params.unisonVoices());
         detune.setValue(params.detuneCents());
         sub.setValue(params.subLevel());
         vibrato.setValue(params.vibratoCents());

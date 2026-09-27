@@ -68,7 +68,7 @@ mixer is the thing that makes the studio feel like a studio rather than a demo.
 | 2.1 | ✓ **Done.** ★ **A filter envelope of its own.** Today `Env→Filt` reuses the amplitude envelope; a separate ADSR for the filter is what separates a preset from an instrument. Strudel keeps `lpenv` apart from the amp envelope for the same reason. | M |
 | 2.2 | **Glide (portamento)**, so a mono bass line slides between notes. The acid patch is half-finished without it. | M |
 | 2.3 | **Highpass and bandpass** alongside the lowpass, chosen per patch. | S |
-| 2.4 | **Unison voice count** as a parameter (7 is a lead; a bass wants 1–3). | S |
+| 2.4 | ✓ **Done.** **Unison voice count** as a parameter, first knob in the oscillator group. Seven is a lead; a bass wants one to three, and an acid line wants one — the patch called acid was running seven saws at 6.5 cents, which is a supersaw, and is a thing the machine it is named after cannot do. The detune spreads for the smaller counts are drawn from the same shape as the seven and kept symmetric, and one saw is not detuned at all. Seven is bit-for-bit what it was, so no patch changes. | S |
 | 2.5 | **Pitch envelope** for drums-from-synth and for 909-style toms. | S |
 | 2.6 | **Oversampling** of the saw and the shaper, to take the fizz off very bright patches. | L |
 | 2.7 | ✓ **Done.** **Crush on the synth channel**, in front of the delay and reverb, so the repeats carry what the crusher left; the Drive knob was already the channel own dirt. The Performance FX strip of the same name crushes the whole mix, drums and all; this one only what the synth plays. | — |

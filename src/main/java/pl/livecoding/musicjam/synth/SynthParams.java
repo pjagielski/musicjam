@@ -18,7 +18,7 @@ public record SynthParams(
         float filterAttackSeconds, float filterDecaySeconds, float filterSustainLevel,
         float filterReleaseSeconds,
         float drive, float outputTrim, float unisonGain, float resonanceCompensation,
-        Saturation shape, FilterKind filter) {
+        Saturation shape, FilterKind filter, int unisonVoices) {
 
     /**
      * A patch whose filter follows the level's envelope, as every patch did before the filter had
@@ -43,14 +43,13 @@ public record SynthParams(
             float filterAttackSeconds, float filterDecaySeconds, float filterSustainLevel,
             float filterReleaseSeconds,
             float drive, float outputTrim) {
-        float detuneCorrelation = clamp(detuneCents / 30.0f, 0.0f, 1.0f);
-        float unisonGain = (0.82f + detuneCorrelation * 0.18f) / (float) Math.sqrt(NovasawVoice.UNISON_VOICES);
+        float unisonGain = unisonGainFor(detuneCents, NovasawVoice.UNISON_VOICES);
         return new SynthParams(attackSeconds, decaySeconds, sustainLevel, releaseSeconds,
                 detuneCents, subLevel, vibratoCents, motionRateHz, motion,
                 clamp(cutoffHz, 80.0f, 18000.0f), resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
                 filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
                 drive, outputTrim, unisonGain, 1.0f / (1.0f + resonance * 0.38f),
-                Saturation.DIODE, FilterKind.TWO_POLE);
+                Saturation.DIODE, FilterKind.TWO_POLE, NovasawVoice.UNISON_VOICES);
     }
 
     /**
@@ -60,7 +59,39 @@ public record SynthParams(
      * next thing added to a patch has one place to be added to.
      */
     private SynthParams keeping(SynthParams rebuilt) {
-        return rebuilt.withShape(shape).withFilter(filter);
+        return rebuilt.withShape(shape).withFilter(filter).withVoices(unisonVoices);
+    }
+
+    /**
+     * How much the saws are turned down for being several: they sum, so the more of them there are
+     * the quieter each must be. The square root is the sum of things that do not quite line up, and
+     * the detune term nudges it because at a wide detune they line up less than at a narrow one.
+     */
+    private static float unisonGainFor(float detuneCents, int voices) {
+        float correlation = clamp(detuneCents / 30.0f, 0.0f, 1.0f);
+        float atSeven = (0.82f + correlation * 0.18f) / (float) Math.sqrt(NovasawVoice.UNISON_VOICES);
+        // seven saws are not seven times a saw, nor even the root of seven: spread evenly across the
+        // cycle they cancel as much as they add, and how much depends on how far apart they are
+        // tuned. Measured on the patches - at 1.7 cents the seven are only 2.2 dB above one, at 16
+        // they are 6.0 - and fitted; at seven voices this comes to exactly the gain it always was,
+        // so no patch changes.
+        float together = clamp(0.12f + 0.0145f * detuneCents, 0.0f, 0.5f);
+        return atSeven * (float) Math.pow((double) NovasawVoice.UNISON_VOICES / Math.max(1, voices), together);
+    }
+
+    /**
+     * The same patch with {@code next} saws instead of seven. Seven is a lead; a bass wants one to
+     * three, and one is the only honest number for an acid line. The gain that holds them together
+     * is worked out again for the new count, so the patch does not change loudness with it.
+     */
+    public SynthParams withVoices(int next) {
+        int voices = Math.max(1, Math.min(NovasawVoice.UNISON_VOICES, next));
+        return new SynthParams(attackSeconds, decaySeconds, sustainLevel, releaseSeconds,
+                detuneCents, subLevel, vibratoCents, motionRateHz, motion,
+                cutoffHz, resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
+                filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
+                drive, outputTrim, unisonGainFor(detuneCents, voices), resonanceCompensation,
+                shape, filter, voices);
     }
 
     /** The same patch through the other filter: two poles or four. */
@@ -69,7 +100,7 @@ public record SynthParams(
                 detuneCents, subLevel, vibratoCents, motionRateHz, motion,
                 cutoffHz, resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
                 filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
-                drive, outputTrim, unisonGain, resonanceCompensation, shape, next);
+                drive, outputTrim, unisonGain, resonanceCompensation, shape, next, unisonVoices);
     }
 
     /** The same patch driven into another shape: the drive says how hard, this says what kind. */
@@ -78,7 +109,7 @@ public record SynthParams(
                 detuneCents, subLevel, vibratoCents, motionRateHz, motion,
                 cutoffHz, resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
                 filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
-                drive, outputTrim, unisonGain, resonanceCompensation, next, filter);
+                drive, outputTrim, unisonGain, resonanceCompensation, next, filter, unisonVoices);
     }
 
     public SynthParams withCutoff(float hz) {
