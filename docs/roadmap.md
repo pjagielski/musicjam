@@ -324,6 +324,10 @@ is worth doing for its own sake, as a seam and as tests that need no audio devic
 - Freeverb `tuning.h` (Jezar at Dreampoint, 2000, public domain) — the comb and allpass lengths.
 - Strudel documentation — *Audio effects* (the signal chain, orbits, `duck`) and *Mini-notation*
   (the pattern language our parser covers a corner of).
+- Strudel pull request 1561, *waveshaping algorithms* (codeberg.org/uzu/strudel/pulls/1561, AGPL-3.0)
+  — the family of saturation curves, and in particular the two-diode construction: a pair of soft
+  diodes across a small bias, divided by the slope at zero. The rest of the shapes are textbook and
+  are written here from the usual formulations.
 - Ableton Live 12 reference manual, *Session View* — clips, tracks, scenes and launch behaviour.
 - Ableton Link repository — header-only C++, dual GPLv2+/proprietary licence.
 - MIDI Association, *MIDI 2.0* — MIDI-CI, UMP, and why this stays out of scope.
