@@ -662,9 +662,12 @@ public final class SynthControls {
         Label header = new Label(name.toUpperCase());
         headers.put(header, accent);
         // the groups of a row are as tall as its tallest, and their knobs sit along the bottom of it,
-        // one line across the row however tall each picture is
-        VBox box = picture == null ? new VBox(10, header, row)
-                : controls.length == 0 ? new VBox(10, header, picture)
+        // one line across the row however tall each picture is. A group with no picture needs the
+        // filler just as much as one with: without it its knobs stay up under the header and sit
+        // higher than every other group's, which is what a picture-less group next to a picture-ful
+        // one looked like.
+        VBox box = controls.length == 0 && picture != null ? new VBox(10, header, picture)
+                : picture == null ? new VBox(10, header, filler(), row)
                 : new VBox(10, header, picture, filler(), row);
         if (controls.length == 0 && picture != null) {
             VBox.setVgrow(picture, Priority.ALWAYS);
