@@ -91,6 +91,21 @@ final class TrackList {
         selected = tracks.size() - 1;
     }
 
+    /** Puts a track in just below {@code index} and selects it: what duplicating one does. */
+    void insertAfter(int index, StudioTrack track) {
+        checkIndex(index);
+        tracks.add(index + 1, track);
+        selected = index + 1;
+    }
+
+    /**
+     * Whether a track can be copied. The same ones that can be taken out can be: the drum track
+     * plays the grid, and there is one grid, so two of them could never come apart.
+     */
+    boolean canDuplicate(int index) {
+        return canRemove(index);
+    }
+
     boolean canRemove(int index) {
         return index >= 0 && index < tracks.size() && !(tracks.get(index) instanceof StudioTrack.Drums);
     }

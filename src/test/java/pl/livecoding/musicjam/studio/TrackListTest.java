@@ -64,6 +64,27 @@ class TrackListTest {
     }
 
     @Test
+    void aCopyGoesInJustBelowTheOneItCameFromAndIsSelected() {
+        TrackList tracks = TrackList.startingWith("Lead", LEAD);
+        tracks.add(new StudioTrack.Melody("Bass", 1.0f, false, BASS));
+        tracks.select(1);
+
+        tracks.insertAfter(1, new StudioTrack.Melody("Lead 2", 1.0f, false, LEAD));
+
+        assertEquals(List.of("Drums", "Lead", "Lead 2", "Bass"),
+                tracks.tracks().stream().map(StudioTrack::name).toList());
+        assertEquals(2, tracks.selectedIndex(), "the hand lands on the copy");
+    }
+
+    @Test
+    void theDrumTrackCannotBeCopiedAnyMoreThanItCanBeTakenOut() {
+        TrackList tracks = TrackList.startingWith("Lead", LEAD);
+
+        assertFalse(tracks.canDuplicate(0), "the grid is the jam's, and there is one grid");
+        assertTrue(tracks.canDuplicate(1));
+    }
+
+    @Test
     void aMutedTrackIsHandedOverSilent() {
         TrackList tracks = TrackList.startingWith("Lead", LEAD);
         tracks.replace(1, tracks.get(1).withGain(0.6f).withMuted(true));

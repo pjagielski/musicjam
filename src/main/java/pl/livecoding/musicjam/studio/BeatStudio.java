@@ -143,7 +143,7 @@ public final class BeatStudio extends Application {
     private final Label codeError = new Label();
     private final VBox codeColumn = new VBox(8, code, row(runCode, codeError));
     private final HBox drumEditor = new HBox(18, grid, codeColumn);
-    private final TrackPanel trackPanel = new TrackPanel(this::newMelody, this::newLoop);
+    private final TrackPanel trackPanel = new TrackPanel(this::newMelody, this::newLoop, this::duplicate);
     // the selected track's editor: the grid and its code, or a melody's window
     private final VBox editor = new VBox();
     private final TextField device = new TextField();
@@ -667,6 +667,31 @@ public final class BeatStudio extends Application {
         // an empty line to write in the roll; a MIDI file can be read into it from the editor
         return new StudioTrack.Melody(unusedName("Melody"), 1.0f, false,
                 new MelodySource.OwnNotes(List.of(), null), instrument);
+    }
+
+    /**
+     * What "Duplicate" makes of a track: the same line or the same audio, under a name of its own,
+     * to work on without losing what it was copied from. A melody's instrument is copied rather
+     * than shared, and the copy is sent out on a channel nothing else is using - two tracks on one
+     * channel would reach an external synth as one part. Null for the drum track, which plays the
+     * grid, there being one grid.
+     */
+    private StudioTrack duplicate(StudioTrack track) {
+        // "Bass copy", not "Bass 2": a track named for the MIDI track it came from would otherwise
+        // be copied into a name that reads like another track of the file
+        String name = unusedName(track.name() + " copy");
+        return switch (track) {
+            case StudioTrack.Melody melody -> {
+                Instrument copy = melody.instrument() == null ? null : melody.instrument().copy();
+                if (copy != null) {
+                    copy.setMidi(unusedChannel(), copy.controller(), copy.filter());
+                }
+                yield new StudioTrack.Melody(name, melody.gain(), melody.muted(), melody.source(), copy);
+            }
+            case StudioTrack.Loop loop -> new StudioTrack.Loop(name, loop.gain(), loop.muted(), loop.file(),
+                    loop.bars(), loop.audio(), loop.slicing());
+            case StudioTrack.Drums drums -> null;
+        };
     }
 
     /**

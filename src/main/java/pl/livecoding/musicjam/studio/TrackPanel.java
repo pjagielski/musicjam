@@ -18,6 +18,7 @@ import pl.livecoding.musicjam.studio.knobs.StudioPanels;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 
 /**
  * The jam's tracks, one row each: what kind of track it is, its name, a mute and a gain. A click on
@@ -32,6 +33,7 @@ final class TrackPanel {
     private final List<HBox> rowNodes = new ArrayList<>();
     private final Button addMelody = new Button("+ Melody");
     private final Button addLoop = new Button("+ Loop");
+    private final Button duplicate = new Button("Duplicate");
     private final Button remove = new Button("Remove");
     private final Button up = new Button("Up");
     private final Button down = new Button("Down");
@@ -46,10 +48,24 @@ final class TrackPanel {
 
     /**
      * {@code newMelody} is what "+ Melody" adds: a track with a window already chosen. {@code
-     * newLoop} is what "+ Loop" adds, or null when nothing was chosen to play.
+     * newLoop} is what "+ Loop" adds, or null when nothing was chosen to play. {@code copyOf} is
+     * what "Duplicate" makes of the selected track, or null for one that cannot be copied.
      */
-    TrackPanel(Supplier<StudioTrack.Melody> newMelody, Supplier<StudioTrack.Loop> newLoop) {
+    TrackPanel(Supplier<StudioTrack.Melody> newMelody, Supplier<StudioTrack.Loop> newLoop,
+               UnaryOperator<StudioTrack> copyOf) {
         this.newMelody = newMelody;
+        duplicate.setOnAction(event -> {
+            StudioTrack copy = copyOf.apply(tracks.selected());
+            if (copy == null) {
+                return;
+            }
+            onStructural.run();
+            // just below the one it came from, and selected, so the hand is already on the copy
+            tracks.insertAfter(tracks.selectedIndex(), copy);
+            rebuild();
+            onEdit.run();
+            onSelect.run();
+        });
         addLoop.setOnAction(event -> {
             StudioTrack.Loop loop = newLoop.get();
             if (loop == null) {
@@ -77,7 +93,8 @@ final class TrackPanel {
         });
         up.setOnAction(event -> move(-1));
         down.setOnAction(event -> move(1));
-        node = StudioPanels.frame("Tracks", rows, StudioPanels.row(addMelody, addLoop, remove, up, down));
+        node = StudioPanels.frame("Tracks", rows,
+                StudioPanels.row(addMelody, addLoop, duplicate, remove, up, down));
     }
 
     VBox node() {
@@ -192,6 +209,7 @@ final class TrackPanel {
                     + " -fx-background-radius: 6; -fx-border-radius: 6;");
         }
         int selected = tracks.selectedIndex();
+        duplicate.setDisable(!tracks.canDuplicate(selected));
         remove.setDisable(!tracks.canRemove(selected));
         up.setDisable(!tracks.canMove(selected, -1));
         down.setDisable(!tracks.canMove(selected, 1));

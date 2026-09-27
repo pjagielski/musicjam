@@ -19,6 +19,8 @@ import pl.livecoding.musicjam.synth.PitchSynth;
  * from the same patch are two instruments, with two sets of knobs and two delays.
  */
 final class Instrument {
+    // the patch it was made from, kept so another of the same kind can be made from it
+    private final String patch;
     private final PitchSynth synth;
     private final LiveNovasawSynth live;
     private SynthControls.Setting setting;
@@ -28,7 +30,8 @@ final class Instrument {
     private int controller = 74;
     private int filter = 64;
 
-    private Instrument(PitchSynth synth, LiveNovasawSynth live, SynthControls.Setting setting) {
+    private Instrument(String patch, PitchSynth synth, LiveNovasawSynth live, SynthControls.Setting setting) {
+        this.patch = patch;
         this.synth = synth;
         this.live = live;
         this.setting = setting;
@@ -37,11 +40,27 @@ final class Instrument {
     /** A fresh instrument from the patch {@code name} names: "pluck", "anthem" and so on. */
     static Instrument of(String name) {
         PitchSynth named = BeatApp.resolveSynth(name);
-        if (named instanceof NovasawSynth patch) {
-            LiveNovasawSynth live = new LiveNovasawSynth(patch);
-            return new Instrument(live, live, SynthControls.Setting.initial(name, live.params()));
+        if (named instanceof NovasawSynth ported) {
+            LiveNovasawSynth live = new LiveNovasawSynth(ported);
+            return new Instrument(name, live, live, SynthControls.Setting.initial(name, live.params()));
         }
-        return new Instrument(named, null, null);
+        return new Instrument(name, named, null, null);
+    }
+
+    /**
+     * Another instrument of the same patch, turned the same way and going out the same way, but its
+     * own: two tracks made from one patch are two instruments, with two sets of knobs and two
+     * delays, and a copy that shared them would not be a copy of the track but a second view of it.
+     * The channel comes with it and is the caller's to move, since only the jam knows what is free.
+     */
+    Instrument copy() {
+        Instrument next = of(patch);
+        if (setting != null) {
+            next.set(setting);
+        }
+        next.setMidi(channel, controller, filter);
+        next.setExternal(external);
+        return next;
     }
 
     PitchSynth synth() {
