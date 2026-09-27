@@ -59,7 +59,7 @@ public final class StudioPanels {
     /** A knob on a linear scale, drawn and handled exactly like the synth panel's. */
     public static PanelKnob knob(String label, double min, double max, String unit, int decimals,
                                  double initial) {
-        return new PanelKnob(new Knob(new Param(label, min, max, unit, false, false, decimals, initial),
+        return new PanelKnob(new Knob(Param.linear(label, min, max, unit, decimals, initial),
                 Theme.Accent.FILTER, 62, Theme.LIGHT));
     }
 }

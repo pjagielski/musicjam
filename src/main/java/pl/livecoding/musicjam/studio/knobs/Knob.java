@@ -97,7 +97,9 @@ final class Knob extends VBox {
     }
 
     double value() {
-        return param.valueOf(position.get());
+        double turned = param.valueOf(position.get());
+        // a stepped knob is a selector switch: it reads out the thing it is pointing nearest to
+        return param.stepped() ? param.step(turned) : turned;
     }
 
     void setValue(double value) {
@@ -116,6 +118,10 @@ final class Knob extends VBox {
 
     private void nudge(double by) {
         position.set(clamp(position.get() + by));
+        if (param.stepped()) {
+            // and it clicks into that thing rather than resting between two of them
+            position.set(clamp(param.positionOf(param.step(param.valueOf(position.get())))));
+        }
     }
 
     private static double clamp(double value) {
