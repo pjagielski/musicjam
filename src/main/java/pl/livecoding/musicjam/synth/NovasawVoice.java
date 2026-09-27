@@ -9,7 +9,6 @@ import static pl.livecoding.musicjam.synth.NovasawDsp.LowpassFilter;
 import static pl.livecoding.musicjam.synth.NovasawDsp.clamp;
 import static pl.livecoding.musicjam.synth.NovasawDsp.deterministicPhaseJitter;
 import static pl.livecoding.musicjam.synth.NovasawDsp.polyBlepSaw;
-import static pl.livecoding.musicjam.synth.NovasawDsp.shapeDiodeLevelled;
 import static pl.livecoding.musicjam.synth.NovasawDsp.wrapTwoPi;
 import static pl.livecoding.musicjam.synth.NovasawDsp.wrapUnitPhase;
 
@@ -104,7 +103,7 @@ public final class NovasawVoice implements VoiceSource {
         }
 
         float voiceSample = mono * envelope * deClick;
-        float shaped = shapeDiodeLevelled(voiceSample * current.unisonGain() * 0.55f, current.drive())
+        float shaped = current.shape().levelled(voiceSample * current.unisonGain() * 0.55f, current.drive())
                 * MAX_OUTPUT_GAIN * current.outputTrim();
         float dynamicCutoff = clamp(
                 current.cutoffHz() + filterLevel * current.filterEnvAmountHz()

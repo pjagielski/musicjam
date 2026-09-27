@@ -17,7 +17,8 @@ public record SynthParams(
         float cutoffHz, float resonance, float filterEnvAmountHz, float keyTrackHzPerSemitone,
         float filterAttackSeconds, float filterDecaySeconds, float filterSustainLevel,
         float filterReleaseSeconds,
-        float drive, float outputTrim, float unisonGain, float resonanceCompensation) {
+        float drive, float outputTrim, float unisonGain, float resonanceCompensation,
+        Saturation shape) {
 
     /**
      * A patch whose filter follows the level's envelope, as every patch did before the filter had
@@ -48,41 +49,50 @@ public record SynthParams(
                 detuneCents, subLevel, vibratoCents, motionRateHz, motion,
                 clamp(cutoffHz, 80.0f, 18000.0f), resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
                 filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
-                drive, outputTrim, unisonGain, 1.0f / (1.0f + resonance * 0.38f));
+                drive, outputTrim, unisonGain, 1.0f / (1.0f + resonance * 0.38f), Saturation.DIODE);
+    }
+
+    /** The same patch driven into another shape: the drive says how hard, this says what kind. */
+    public SynthParams withShape(Saturation next) {
+        return new SynthParams(attackSeconds, decaySeconds, sustainLevel, releaseSeconds,
+                detuneCents, subLevel, vibratoCents, motionRateHz, motion,
+                cutoffHz, resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
+                filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
+                drive, outputTrim, unisonGain, resonanceCompensation, next);
     }
 
     public SynthParams withCutoff(float hz) {
         return of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, subLevel,
                 vibratoCents, motionRateHz, motion, hz, resonance, filterEnvAmountHz,
                 keyTrackHzPerSemitone, filterAttackSeconds, filterDecaySeconds, filterSustainLevel,
-                filterReleaseSeconds, drive, outputTrim);
+                filterReleaseSeconds, drive, outputTrim).withShape(shape);
     }
 
     public SynthParams withDrive(float amount) {
         return of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, subLevel,
                 vibratoCents, motionRateHz, motion, cutoffHz, resonance, filterEnvAmountHz,
                 keyTrackHzPerSemitone, filterAttackSeconds, filterDecaySeconds, filterSustainLevel,
-                filterReleaseSeconds, amount, outputTrim);
+                filterReleaseSeconds, amount, outputTrim).withShape(shape);
     }
 
     public SynthParams withResonance(float amount) {
         return of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, subLevel,
                 vibratoCents, motionRateHz, motion, cutoffHz, amount, filterEnvAmountHz,
                 keyTrackHzPerSemitone, filterAttackSeconds, filterDecaySeconds, filterSustainLevel,
-                filterReleaseSeconds, drive, outputTrim);
+                filterReleaseSeconds, drive, outputTrim).withShape(shape);
     }
 
     public SynthParams withSub(float level) {
         return of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, level,
                 vibratoCents, motionRateHz, motion, cutoffHz, resonance, filterEnvAmountHz,
                 keyTrackHzPerSemitone, filterAttackSeconds, filterDecaySeconds, filterSustainLevel,
-                filterReleaseSeconds, drive, outputTrim);
+                filterReleaseSeconds, drive, outputTrim).withShape(shape);
     }
 
     /** The same patch with the filter's envelope set apart from the level's. */
     public SynthParams withFilterEnvelope(float attack, float decay, float sustain, float release) {
         return of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, subLevel,
                 vibratoCents, motionRateHz, motion, cutoffHz, resonance, filterEnvAmountHz,
-                keyTrackHzPerSemitone, attack, decay, sustain, release, drive, outputTrim);
+                keyTrackHzPerSemitone, attack, decay, sustain, release, drive, outputTrim).withShape(shape);
     }
 }

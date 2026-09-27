@@ -66,6 +66,8 @@ mixer is the thing that makes the studio feel like a studio rather than a demo.
 | Step | What | Effort |
 | --- | --- | --- |
 | 2.1 | ✓ **Done.** ★ **A filter envelope of its own.** Today `Env→Filt` reuses the amplitude envelope; a separate ADSR for the filter is what separates a preset from an instrument. Strudel keeps `lpenv` apart from the amp envelope for the same reason. | M |
+| 2.6 | ✓ **Done.** ★ **A shape to drive into.** Drive said how hard and there was one curve; there are nine now, chosen per patch beside the knob — the exponential diode we had, a soft clip, a rational S, a hard clip, a cubic, a pair of soft diodes across a bias, that pair leaning one way, and two folds. Every shape is levelled by measurement, at the same reference the old diode's fit was made at, so the knob and the picker both change the sound and not the loudness; the old diode keeps its fit exactly, so nothing made before sounds different. What separates them once levelled is how much they lift what is quiet — a fold only turns the peaks round, the diode bends the whole curve — and the measured table is in the class. | M |
+| 2.7 | **A shape for Dirty too.** The strip is the diode and only the diode. The shapes are there now; what is missing is where the choice lives, a Performance FX strip being a zone to slide rather than a thing with settings. | S |
 | 2.2 | **Glide (portamento)**, so a mono bass line slides between notes. The acid patch is half-finished without it. | M |
 | 2.3 | **Highpass and bandpass** alongside the lowpass, chosen per patch. | S |
 | 2.4 | **Unison voice count** as a parameter (7 is a lead; a bass wants 1–3). | S |

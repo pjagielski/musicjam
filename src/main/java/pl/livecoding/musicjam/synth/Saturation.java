@@ -66,6 +66,11 @@ public enum Saturation {
         return label;
     }
 
+    @Override
+    public String toString() {
+        return label;
+    }
+
     /** {@code input} driven into this shape at {@code drive}, before its level is taken back off. */
     public float shape(float input, float drive) {
         if (this == DIODE) {
