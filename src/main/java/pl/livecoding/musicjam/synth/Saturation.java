@@ -20,16 +20,20 @@ package pl.livecoding.musicjam.synth;
  * at drive 2:
  *
  * <pre>
- *   Fold      1.00  1.35     only the peaks are turned round; the rest is untouched
- *   Hard      1.17  1.78     the same, flattened rather than folded
- *   Sine fold 1.23  1.76
- *   Soft      1.38  1.95     the gentlest of the bending shapes
- *   Cubic     1.55  2.37
- *   S-curve   1.82  2.59
- *   Asym      1.94  2.60     and it leans, so the even harmonics come with it
- *   Tube      1.96  2.55
- *   Diode     2.43  4.13     ours: the most compressive of them by a long way
+ *   Fold      1.35  2.88     only the peaks are turned round; the rest is least touched
+ *   Sine fold 1.76  3.62
+ *   Hard      1.78  3.11     flattened rather than folded
+ *   Soft      1.95  3.24     the gentlest of the bending shapes
+ *   Cubic     2.37  4.16
+ *   Diode     2.43  4.13     ours, and the default
+ *   Tube      2.55  3.11     the one that lifts least once it is driven hard
+ *   S-curve   2.59  4.05
+ *   Asym      2.60  4.03     and it leans, so the even harmonics come with it
  * </pre>
+ *
+ * <p>They are furthest apart in the middle of the drive knob and converge towards its top, because
+ * every one of them is on its way to a square wave by then. The shape is a choice about the middle
+ * of the knob; the top of it is where they all agree.
  */
 public enum Saturation {
 
@@ -52,8 +56,13 @@ public enum Saturation {
     /** The fold run through a sine, so its corners are round and it sings rather than tears. */
     SINEFOLD("Sine fold");
 
-    /** What the drive knob's 0..2 becomes for the shapes that take a gain: 2 is hard driving. */
-    private static final float K = 3.5f;
+    /**
+     * What the drive knob's 0..2 becomes for the shapes that take a gain. Seven, so that a shape is
+     * driven as hard as {@link #DIODE} is at the same setting - that one multiplies its input by
+     * {@code 1 + 7*drive}, and at half of it the others were plainly milder than the default, which
+     * made changing shape feel like nothing had happened.
+     */
+    private static final float K = 7.0f;
 
     private final String label;
 
@@ -162,13 +171,13 @@ public enum Saturation {
     /** Measured by SaturationLevels in the tests, at drive 0, 0.2, 0.4 ... 2. */
     private static final float[][] LEVELS = {
             {}, // DIODE keeps its own fit
-            {0.9783f, 1.5996f, 2.1400f, 2.5931f, 2.9643f, 3.2649f, 3.5075f, 3.7040f, 3.8642f, 3.9960f, 4.1055f},
-            {1.0000f, 1.4492f, 1.7888f, 2.0572f, 2.2762f, 2.4592f, 2.6151f, 2.7500f, 2.8680f, 2.9725f, 3.0658f},
-            {1.0000f, 1.7000f, 2.4000f, 3.0938f, 3.5686f, 3.8618f, 4.0627f, 4.2096f, 4.3217f, 4.4103f, 4.4821f},
-            {0.9783f, 1.7692f, 2.4197f, 2.9307f, 3.3217f, 3.6186f, 3.8453f, 4.0205f, 4.1581f, 4.2681f, 4.3574f},
-            {0.9583f, 1.4497f, 1.7694f, 1.9841f, 2.1482f, 2.2939f, 2.4386f, 2.5921f, 2.7592f, 2.9422f, 3.1407f},
-            {0.9583f, 1.4504f, 1.7728f, 1.9925f, 2.1630f, 2.3144f, 2.4615f, 2.6100f, 2.7600f, 2.9086f, 3.0510f},
-            {1.0000f, 1.3500f, 1.7000f, 2.0500f, 2.4000f, 2.7500f, 3.0877f, 3.2837f, 3.3636f, 3.3720f, 3.3348f},
-            {1.5279f, 2.0160f, 2.4644f, 2.8649f, 3.2110f, 3.4981f, 3.7233f, 3.8859f, 3.9873f, 4.0314f, 4.0242f},
+            {0.9783f, 2.1400f, 2.9643f, 3.5075f, 3.8642f, 4.1055f, 4.2755f, 4.4000f, 4.4946f, 4.5687f, 4.6282f},
+            {1.0000f, 1.7888f, 2.2762f, 2.6151f, 2.8680f, 3.0658f, 3.2257f, 3.3584f, 3.4706f, 3.5671f, 3.6512f},
+            {1.0000f, 2.4000f, 3.5686f, 4.0627f, 4.3217f, 4.4821f, 4.5913f, 4.6706f, 4.7307f, 4.7779f, 4.8160f},
+            {0.9783f, 2.4197f, 3.3217f, 3.8453f, 4.1581f, 4.3574f, 4.4928f, 4.5901f, 4.6632f, 4.7200f, 4.7654f},
+            {0.9583f, 1.7694f, 2.1482f, 2.4386f, 2.7592f, 3.1407f, 3.5730f, 4.0127f, 4.3949f, 4.6660f, 4.8197f},
+            {0.9583f, 1.7728f, 2.1630f, 2.4615f, 2.7600f, 3.0510f, 3.2956f, 3.4630f, 3.5555f, 3.6004f, 3.6243f},
+            {1.0000f, 1.7000f, 2.4000f, 3.0877f, 3.3636f, 3.3348f, 3.1856f, 3.0037f, 2.8466f, 2.7592f, 2.7745f},
+            {1.5279f, 2.4644f, 3.2110f, 3.7233f, 3.9873f, 4.0242f, 3.8915f, 3.6788f, 3.4913f, 3.4143f, 3.4683f},
     };
 }
