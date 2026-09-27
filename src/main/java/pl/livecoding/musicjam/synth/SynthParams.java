@@ -46,7 +46,9 @@ public record SynthParams(
         float unisonGain = unisonGainFor(detuneCents, NovasawVoice.UNISON_VOICES);
         return new SynthParams(attackSeconds, decaySeconds, sustainLevel, releaseSeconds,
                 detuneCents, subLevel, vibratoCents, motionRateHz, motion,
-                clamp(cutoffHz, 80.0f, 18000.0f), resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
+                // forty, the same floor the knob and both filters have. It was eighty here as well
+                // as in the voice, so the knob's bottom octave asked for something it never got
+                clamp(cutoffHz, NovasawVoice.CUTOFF_FLOOR, 18000.0f), resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
                 filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
                 drive, outputTrim, unisonGain, 1.0f / (1.0f + resonance * 0.38f),
                 Saturation.DIODE, FilterKind.TWO_POLE, NovasawVoice.UNISON_VOICES, Waveform.SAW);

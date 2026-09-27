@@ -50,6 +50,8 @@ public final class NovasawVoice implements VoiceSource {
     private static final float MAX_OUTPUT_GAIN = 1.046f;
     /** Loud enough that a sub at 1.0 stands up to the seven saws without swamping them. */
     private static final float SUB_GAIN = 2.2f;
+    /** The lowest the filter is asked for, matching the knob and what the filters themselves take. */
+    static final float CUTOFF_FLOOR = 40.0f;
 
     private final Supplier<SynthParams> params;
     private final int midiNote;
@@ -132,7 +134,10 @@ public final class NovasawVoice implements VoiceSource {
         float dynamicCutoff = clamp(
                 current.cutoffHz() + filterLevel * current.filterEnvAmountHz()
                         + (midiNote - 60) * current.keyTrackHzPerSemitone(),
-                80.0f, 18000.0f);
+                // forty, which is where the knob's bottom is and where both filters will go. It
+                // used to stop at eighty, so the knob's whole bottom octave did the same thing and
+                // a bass note could never be shut out - eighty hertz is a bass note.
+                CUTOFF_FLOOR, 18000.0f);
         frame++;
         return (current.filter() == FilterKind.LADDER
                 ? ladder.process(shaped, dynamicCutoff, current.resonance(), sampleRate)
