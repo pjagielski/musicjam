@@ -19,6 +19,7 @@ import pl.livecoding.musicjam.synth.DelayMode;
 import pl.livecoding.musicjam.synth.EffectParams;
 import pl.livecoding.musicjam.synth.NovasawSynth;
 import pl.livecoding.musicjam.synth.SubBassSynth;
+import pl.livecoding.musicjam.synth.FilterKind;
 import pl.livecoding.musicjam.synth.Saturation;
 import pl.livecoding.musicjam.synth.SynthParams;
 import pl.livecoding.musicjam.synth.TrancePluckSynth;
@@ -185,6 +186,8 @@ public final class SynthControls {
     private final Choice<DelayMode> delayMode;
     // what the drive knob drives into: how hard is the knob, what kind is this
     private final Choice<Saturation> shape;
+    // two poles or four: not one filter at two settings, but two filters
+    private final Choice<FilterKind> filterKind;
     private final DelayDiagram delayDiagram;
     private final ReverbDiagram reverbDiagram;
     private double bpm = 120;
@@ -284,6 +287,9 @@ public final class SynthControls {
         shape = new Choice<>(Choice.Look.CHIPS, List.of(Saturation.values()), Saturation.DIODE,
                 Theme.Accent.AMP, theme);
         shape.setOnChange(next -> publish());
+        filterKind = new Choice<>(Choice.Look.SEGMENTS, List.of(FilterKind.values()), FilterKind.TWO_POLE,
+                Theme.Accent.FILTER, theme);
+        filterKind.setOnChange(next -> publish());
         sync = new Choice<>(Choice.Look.CHIPS, List.of(Sync.values()), Sync.FREE, Theme.Accent.FX, theme);
         sync.setOnChange(division -> applySync());
         HBox syncRow = new HBox(8, syncLabel, sync);
@@ -313,7 +319,8 @@ public final class SynthControls {
         List<VBox> groupBoxes = List.of(
                 section("Oscillator", Theme.Accent.OSC, null, span, detune, sub, vibrato, motionRate, drift),
                 section("Amp · Sidechain", Theme.Accent.AMP, shape, span, drive, trim, crush, duckDepth, duckRecover),
-                section("Filter", Theme.Accent.FILTER, pad, cutoff, resonance, envAmount, keyTrack),
+                section("Filter", Theme.Accent.FILTER, new VBox(6, filterKind, pad),
+                        cutoff, resonance, envAmount, keyTrack),
                 section("Envelope", Theme.Accent.AMP, envelopes),
                 section("Delay", Theme.Accent.FX, delayPicture, delayTime, delayFeedback, delayTone, delayMix),
                 section("Reverb", Theme.Accent.FX, reverbDiagram, reverbSize, reverbDamping, reverbMix));
@@ -424,7 +431,9 @@ public final class SynthControls {
                 (float) envAmount.value(), (float) keyTrack.value(),
                 (float) (filterAttack.value() / 1000), (float) (filterDecay.value() / 1000),
                 (float) filterSustain.value(), (float) (filterRelease.value() / 1000),
-                (float) drive.value(), (float) trim.value()).withShape(shape.value());
+                (float) drive.value(), (float) trim.value())
+                .withShape(shape.value())
+                .withFilter(filterKind.value());
     }
 
     /** The whole panel as it stands, to be put back with {@link #restore}. */
@@ -474,6 +483,7 @@ public final class SynthControls {
 
     private void setKnobs(SynthParams params) {
         shape.select(params.shape());
+        filterKind.select(params.filter());
         detune.setValue(params.detuneCents());
         sub.setValue(params.subLevel());
         vibrato.setValue(params.vibratoCents());
@@ -570,6 +580,7 @@ public final class SynthControls {
         sync.setTheme(next);
         delayMode.setTheme(next);
         shape.setTheme(next);
+        filterKind.setTheme(next);
         delayDiagram.setTheme(next);
         reverbDiagram.setTheme(next);
         preset.setStyle("-fx-background-color: " + Theme.web(next.buttonFace())

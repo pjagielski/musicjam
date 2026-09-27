@@ -18,7 +18,7 @@ public record SynthParams(
         float filterAttackSeconds, float filterDecaySeconds, float filterSustainLevel,
         float filterReleaseSeconds,
         float drive, float outputTrim, float unisonGain, float resonanceCompensation,
-        Saturation shape) {
+        Saturation shape, FilterKind filter) {
 
     /**
      * A patch whose filter follows the level's envelope, as every patch did before the filter had
@@ -49,7 +49,27 @@ public record SynthParams(
                 detuneCents, subLevel, vibratoCents, motionRateHz, motion,
                 clamp(cutoffHz, 80.0f, 18000.0f), resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
                 filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
-                drive, outputTrim, unisonGain, 1.0f / (1.0f + resonance * 0.38f), Saturation.DIODE);
+                drive, outputTrim, unisonGain, 1.0f / (1.0f + resonance * 0.38f),
+                Saturation.DIODE, FilterKind.TWO_POLE);
+    }
+
+    /**
+     * What {@code of} cannot work out from its arguments, put back on a patch it has just rebuilt.
+     * Every {@code with*} goes through {@code of}, which makes a patch of the default shape and the
+     * default filter; without this, turning the cutoff would quietly reset both. One place, so the
+     * next thing added to a patch has one place to be added to.
+     */
+    private SynthParams keeping(SynthParams rebuilt) {
+        return rebuilt.withShape(shape).withFilter(filter);
+    }
+
+    /** The same patch through the other filter: two poles or four. */
+    public SynthParams withFilter(FilterKind next) {
+        return new SynthParams(attackSeconds, decaySeconds, sustainLevel, releaseSeconds,
+                detuneCents, subLevel, vibratoCents, motionRateHz, motion,
+                cutoffHz, resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
+                filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
+                drive, outputTrim, unisonGain, resonanceCompensation, shape, next);
     }
 
     /** The same patch driven into another shape: the drive says how hard, this says what kind. */
@@ -58,41 +78,41 @@ public record SynthParams(
                 detuneCents, subLevel, vibratoCents, motionRateHz, motion,
                 cutoffHz, resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
                 filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
-                drive, outputTrim, unisonGain, resonanceCompensation, next);
+                drive, outputTrim, unisonGain, resonanceCompensation, next, filter);
     }
 
     public SynthParams withCutoff(float hz) {
-        return of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, subLevel,
+        return keeping(of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, subLevel,
                 vibratoCents, motionRateHz, motion, hz, resonance, filterEnvAmountHz,
                 keyTrackHzPerSemitone, filterAttackSeconds, filterDecaySeconds, filterSustainLevel,
-                filterReleaseSeconds, drive, outputTrim).withShape(shape);
+                filterReleaseSeconds, drive, outputTrim));
     }
 
     public SynthParams withDrive(float amount) {
-        return of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, subLevel,
+        return keeping(of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, subLevel,
                 vibratoCents, motionRateHz, motion, cutoffHz, resonance, filterEnvAmountHz,
                 keyTrackHzPerSemitone, filterAttackSeconds, filterDecaySeconds, filterSustainLevel,
-                filterReleaseSeconds, amount, outputTrim).withShape(shape);
+                filterReleaseSeconds, amount, outputTrim));
     }
 
     public SynthParams withResonance(float amount) {
-        return of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, subLevel,
+        return keeping(of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, subLevel,
                 vibratoCents, motionRateHz, motion, cutoffHz, amount, filterEnvAmountHz,
                 keyTrackHzPerSemitone, filterAttackSeconds, filterDecaySeconds, filterSustainLevel,
-                filterReleaseSeconds, drive, outputTrim).withShape(shape);
+                filterReleaseSeconds, drive, outputTrim));
     }
 
     public SynthParams withSub(float level) {
-        return of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, level,
+        return keeping(of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, level,
                 vibratoCents, motionRateHz, motion, cutoffHz, resonance, filterEnvAmountHz,
                 keyTrackHzPerSemitone, filterAttackSeconds, filterDecaySeconds, filterSustainLevel,
-                filterReleaseSeconds, drive, outputTrim).withShape(shape);
+                filterReleaseSeconds, drive, outputTrim));
     }
 
     /** The same patch with the filter's envelope set apart from the level's. */
     public SynthParams withFilterEnvelope(float attack, float decay, float sustain, float release) {
-        return of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, subLevel,
+        return keeping(of(attackSeconds, decaySeconds, sustainLevel, releaseSeconds, detuneCents, subLevel,
                 vibratoCents, motionRateHz, motion, cutoffHz, resonance, filterEnvAmountHz,
-                keyTrackHzPerSemitone, attack, decay, sustain, release, drive, outputTrim).withShape(shape);
+                keyTrackHzPerSemitone, attack, decay, sustain, release, drive, outputTrim));
     }
 }

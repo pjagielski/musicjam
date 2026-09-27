@@ -42,6 +42,7 @@ public final class NovasawVoice implements VoiceSource {
     private final double[] phase = new double[UNISON_VOICES];
     private final double[] driftPhase = new double[UNISON_VOICES];
     private final LowpassFilter filter = new LowpassFilter();
+    private final DiodeLadder ladder = new DiodeLadder();
     private final Adsr amplitude = new Adsr();
     private final Adsr filterEnvelope = new Adsr();
     private final float deClickStep;
@@ -110,7 +111,9 @@ public final class NovasawVoice implements VoiceSource {
                         + (midiNote - 60) * current.keyTrackHzPerSemitone(),
                 80.0f, 18000.0f);
         frame++;
-        return filter.process(shaped, dynamicCutoff, current.resonance(), sampleRate)
+        return (current.filter() == FilterKind.LADDER
+                ? ladder.process(shaped, dynamicCutoff, current.resonance(), sampleRate)
+                : filter.process(shaped, dynamicCutoff, current.resonance(), sampleRate))
                 * current.resonanceCompensation();
     }
 
