@@ -18,7 +18,7 @@ public record SynthParams(
         float filterAttackSeconds, float filterDecaySeconds, float filterSustainLevel,
         float filterReleaseSeconds,
         float drive, float outputTrim, float unisonGain, float resonanceCompensation,
-        Saturation shape, FilterKind filter, int unisonVoices) {
+        Saturation shape, FilterKind filter, int unisonVoices, Waveform waveform) {
 
     /**
      * A patch whose filter follows the level's envelope, as every patch did before the filter had
@@ -49,7 +49,7 @@ public record SynthParams(
                 clamp(cutoffHz, 80.0f, 18000.0f), resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
                 filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
                 drive, outputTrim, unisonGain, 1.0f / (1.0f + resonance * 0.38f),
-                Saturation.DIODE, FilterKind.TWO_POLE, NovasawVoice.UNISON_VOICES);
+                Saturation.DIODE, FilterKind.TWO_POLE, NovasawVoice.UNISON_VOICES, Waveform.SAW);
     }
 
     /**
@@ -59,7 +59,7 @@ public record SynthParams(
      * next thing added to a patch has one place to be added to.
      */
     private SynthParams keeping(SynthParams rebuilt) {
-        return rebuilt.withShape(shape).withFilter(filter).withVoices(unisonVoices);
+        return rebuilt.withShape(shape).withFilter(filter).withVoices(unisonVoices).withWaveform(waveform);
     }
 
     /**
@@ -91,7 +91,16 @@ public record SynthParams(
                 cutoffHz, resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
                 filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
                 drive, outputTrim, unisonGainFor(detuneCents, voices), resonanceCompensation,
-                shape, filter, voices);
+                shape, filter, voices, waveform);
+    }
+
+    /** The same patch on another waveform: a saw, a square or a sine. */
+    public SynthParams withWaveform(Waveform next) {
+        return new SynthParams(attackSeconds, decaySeconds, sustainLevel, releaseSeconds,
+                detuneCents, subLevel, vibratoCents, motionRateHz, motion,
+                cutoffHz, resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
+                filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
+                drive, outputTrim, unisonGain, resonanceCompensation, shape, filter, unisonVoices, next);
     }
 
     /** The same patch through the other filter: two poles or four. */
@@ -100,7 +109,7 @@ public record SynthParams(
                 detuneCents, subLevel, vibratoCents, motionRateHz, motion,
                 cutoffHz, resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
                 filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
-                drive, outputTrim, unisonGain, resonanceCompensation, shape, next, unisonVoices);
+                drive, outputTrim, unisonGain, resonanceCompensation, shape, next, unisonVoices, waveform);
     }
 
     /** The same patch driven into another shape: the drive says how hard, this says what kind. */
@@ -109,7 +118,7 @@ public record SynthParams(
                 detuneCents, subLevel, vibratoCents, motionRateHz, motion,
                 cutoffHz, resonance, filterEnvAmountHz, keyTrackHzPerSemitone,
                 filterAttackSeconds, filterDecaySeconds, filterSustainLevel, filterReleaseSeconds,
-                drive, outputTrim, unisonGain, resonanceCompensation, next, filter, unisonVoices);
+                drive, outputTrim, unisonGain, resonanceCompensation, next, filter, unisonVoices, waveform);
     }
 
     public SynthParams withCutoff(float hz) {

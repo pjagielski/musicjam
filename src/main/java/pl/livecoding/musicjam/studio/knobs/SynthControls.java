@@ -22,6 +22,7 @@ import pl.livecoding.musicjam.synth.SubBassSynth;
 import pl.livecoding.musicjam.synth.FilterKind;
 import pl.livecoding.musicjam.synth.Saturation;
 import pl.livecoding.musicjam.synth.SynthParams;
+import pl.livecoding.musicjam.synth.Waveform;
 import pl.livecoding.musicjam.synth.TrancePluckSynth;
 import pl.livecoding.musicjam.synth.WidePadSynth;
 
@@ -189,6 +190,8 @@ public final class SynthControls {
     private final Choice<Saturation> shape;
     // two poles or four: not one filter at two settings, but two filters
     private final Choice<FilterKind> filterKind;
+    // what each oscillator puts out before anything is done to it
+    private final Choice<Waveform> waveform;
     private final DelayDiagram delayDiagram;
     private final ReverbDiagram reverbDiagram;
     private double bpm = 120;
@@ -293,6 +296,9 @@ public final class SynthControls {
         filterKind = new Choice<>(Choice.Look.SEGMENTS, List.of(FilterKind.values()), FilterKind.TWO_POLE,
                 Theme.Accent.FILTER, theme);
         filterKind.setOnChange(next -> publish());
+        waveform = new Choice<>(Choice.Look.SEGMENTS, List.of(Waveform.values()), Waveform.SAW,
+                Theme.Accent.OSC, theme);
+        waveform.setOnChange(next -> publish());
         sync = new Choice<>(Choice.Look.CHIPS, List.of(Sync.values()), Sync.FREE, Theme.Accent.FX, theme);
         sync.setOnChange(division -> applySync());
         HBox syncRow = new HBox(8, syncLabel, sync);
@@ -320,7 +326,7 @@ public final class SynthControls {
         // across a window the two groups without a picture take two columns each, in a row of their own
         int span = columns >= 4 ? 2 : 1;
         List<VBox> groupBoxes = List.of(
-                section("Oscillator", Theme.Accent.OSC, null, span,
+                section("Oscillator", Theme.Accent.OSC, waveform, span,
                         voices, detune, sub, vibrato, motionRate, drift),
                 section("Amp · Sidechain", Theme.Accent.AMP, shape, span, drive, trim, crush, duckDepth, duckRecover),
                 section("Filter", Theme.Accent.FILTER, new VBox(6, filterKind, pad),
@@ -438,7 +444,8 @@ public final class SynthControls {
                 (float) drive.value(), (float) trim.value())
                 .withShape(shape.value())
                 .withFilter(filterKind.value())
-                .withVoices((int) Math.round(voices.value()));
+                .withVoices((int) Math.round(voices.value()))
+                .withWaveform(waveform.value());
     }
 
     /** The whole panel as it stands, to be put back with {@link #restore}. */
@@ -490,6 +497,7 @@ public final class SynthControls {
         shape.select(params.shape());
         filterKind.select(params.filter());
         voices.setValue(params.unisonVoices());
+        waveform.select(params.waveform());
         detune.setValue(params.detuneCents());
         sub.setValue(params.subLevel());
         vibrato.setValue(params.vibratoCents());
@@ -587,6 +595,7 @@ public final class SynthControls {
         delayMode.setTheme(next);
         shape.setTheme(next);
         filterKind.setTheme(next);
+        waveform.setTheme(next);
         delayDiagram.setTheme(next);
         reverbDiagram.setTheme(next);
         preset.setStyle("-fx-background-color: " + Theme.web(next.buttonFace())

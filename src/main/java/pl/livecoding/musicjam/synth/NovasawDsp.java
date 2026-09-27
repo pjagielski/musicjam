@@ -36,6 +36,19 @@ public final class NovasawDsp {
     }
 
     /**
+     * A square as the difference of two saws half a cycle apart. A square has two steps in it where
+     * a saw has one, and this gets both corrected for nothing extra: each saw brings its own
+     * correction to its own step. High for the first half of the cycle, low for the second.
+     */
+    static float polyBlepSquare(float phase, float phaseIncrement) {
+        float opposite = phase + 0.5f;
+        if (opposite >= 1.0f) {
+            opposite -= 1.0f;
+        }
+        return polyBlepSaw(opposite, phaseIncrement) - polyBlepSaw(phase, phaseIncrement);
+    }
+
+    /**
      * The diode shaper with its level taken out of it: what comes out is about as loud as what went
      * in, whatever the drive, so the knob adds dirt rather than volume. The shaper alone runs from
      * about 0.7 times the level at no drive to seven times it at full, which is most of what a drive

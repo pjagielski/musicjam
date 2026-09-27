@@ -9,6 +9,7 @@ import static pl.livecoding.musicjam.synth.NovasawDsp.LowpassFilter;
 import static pl.livecoding.musicjam.synth.NovasawDsp.clamp;
 import static pl.livecoding.musicjam.synth.NovasawDsp.deterministicPhaseJitter;
 import static pl.livecoding.musicjam.synth.NovasawDsp.polyBlepSaw;
+import static pl.livecoding.musicjam.synth.NovasawDsp.polyBlepSquare;
 import static pl.livecoding.musicjam.synth.NovasawDsp.wrapTwoPi;
 import static pl.livecoding.musicjam.synth.NovasawDsp.wrapUnitPhase;
 
@@ -104,7 +105,11 @@ public final class NovasawVoice implements VoiceSource {
             double detuneRatio = Math.pow(
                     2.0, (offsets[unison] * current.detuneCents() + vibrato + driftCents) / 1200.0);
             float phaseIncrement = (float) (frequency * detuneRatio / sampleRate);
-            mono += polyBlepSaw((float) phase[unison], phaseIncrement);
+            mono += switch (current.waveform()) {
+                case SAW -> polyBlepSaw((float) phase[unison], phaseIncrement);
+                case SQUARE -> polyBlepSquare((float) phase[unison], phaseIncrement);
+                case SINE -> (float) Math.sin(2.0 * Math.PI * phase[unison]);
+            };
 
             phase[unison] += phaseIncrement;
             if (phase[unison] >= 1.0) {
@@ -121,7 +126,7 @@ public final class NovasawVoice implements VoiceSource {
             subPhase = wrapTwoPi(subPhase + Math.PI * frequency / sampleRate);
         }
 
-        float voiceSample = mono * envelope * deClick;
+        float voiceSample = mono * current.waveform().level() * envelope * deClick;
         float shaped = current.shape().levelled(voiceSample * current.unisonGain() * 0.55f, current.drive())
                 * MAX_OUTPUT_GAIN * current.outputTrim();
         float dynamicCutoff = clamp(
