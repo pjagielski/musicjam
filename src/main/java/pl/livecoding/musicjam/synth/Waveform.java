@@ -16,6 +16,12 @@ package pl.livecoding.musicjam.synth;
  * and is not: a square is odd harmonics only, so a closed filter keeps less of it than of a saw and
  * an open one keeps more, which leaves about two decibels either way across the patches. That is
  * the waveform being a different sound, not the levelling being wrong.
+ *
+ * <p>The sine is the exception and is deliberately three decibels above where measuring puts it. By
+ * root-mean-square it is already the loudest of the three; by ear it is the quietest, because it
+ * puts everything it has in one band where a saw spreads the same energy across a dozen, and
+ * loudness is summed across bands rather than over the waveform. Matching what is measured would be
+ * matching the wrong thing.
  */
 public enum Waveform {
 
@@ -24,7 +30,7 @@ public enum Waveform {
     /** Odd harmonics only, falling at the same rate: hollow, and a third lower in the low end. */
     SQUARE("Square", 0.64f),
     /** One harmonic. Nothing to filter and nothing to fold; a fundamental and no more. */
-    SINE("Sine", 0.88f);
+    SINE("Sine", 1.24f);
 
     private final String label;
     private final float level;

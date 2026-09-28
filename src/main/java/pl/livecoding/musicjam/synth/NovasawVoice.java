@@ -78,8 +78,12 @@ public final class NovasawVoice implements VoiceSource {
         this.sampleRate = sampleRate;
         this.frequency = 440.0 * Math.pow(2.0, (midiNote - 69) / 12.0);
         this.deClickStep = (float) (1.0 / (0.006 * sampleRate));
+        // spread across the cycle by however many are going to be used, not by however many there
+        // could be: at three saws, dividing by seven left all three inside the first third of it,
+        // so their steps nearly coincided and what should be a chorus came out as one hard edge
+        int spread = Math.max(1, Math.min(UNISON_VOICES, params.get().unisonVoices()));
         for (int unison = 0; unison < UNISON_VOICES; unison++) {
-            double evenPhase = (double) unison / UNISON_VOICES;
+            double evenPhase = (double) (unison % spread) / spread;
             phase[unison] = wrapUnitPhase(evenPhase + deterministicPhaseJitter(midiNote, unison, heldFrames) * 0.19);
             driftPhase[unison] = deterministicPhaseJitter(midiNote + 17, unison, heldFrames) * 2.0 * Math.PI;
         }

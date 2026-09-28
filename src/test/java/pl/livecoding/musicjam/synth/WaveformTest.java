@@ -87,11 +87,19 @@ class WaveformTest {
         for (NovasawSynth patch : new NovasawSynth[] {
                 new AcidBassSynth(), new SubBassSynth(), new AnthemLeadSynth(), new TrancePluckSynth()}) {
             double saw = voiceLevel(patch.params().withWaveform(Waveform.SAW));
-            for (Waveform wave : Waveform.values()) {
-                double off = 20 * Math.log10(voiceLevel(patch.params().withWaveform(wave)) / saw);
-                assertTrue(Math.abs(off) < 3.0,
-                        patch.getClass().getSimpleName() + " on " + wave + " was " + off + " dB off the saw");
-            }
+            double square = 20 * Math.log10(voiceLevel(patch.params().withWaveform(Waveform.SQUARE)) / saw);
+            assertTrue(Math.abs(square) < 3.0,
+                    patch.getClass().getSimpleName() + " on a square was " + square + " dB off the saw");
+
+            // the sine is deliberately above where measuring puts it: all its energy is in one band
+            // where a saw spreads the same across a dozen, and the ear adds loudness across bands,
+            // so matching root-mean-square would be matching the wrong thing
+            double sine = 20 * Math.log10(voiceLevel(patch.params().withWaveform(Waveform.SINE)) / saw);
+            // how far over varies with the patch: one with a big sub under it dilutes the waveform's
+            // share of the whole, so the window is loose on purpose
+            assertTrue(sine > 0.0 && sine < 5.0,
+                    patch.getClass().getSimpleName() + " on a sine should sit a few dB over the saw by "
+                            + "measurement so that it matches it by ear, and was " + sine);
         }
     }
 

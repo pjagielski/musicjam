@@ -4,9 +4,9 @@ package pl.livecoding.musicjam.synth;
  * The shapes a signal can be driven into. Drive has always said how hard; this says what kind.
  *
  * <p>{@link #DIODE} is the one every patch here was levelled against and stays the default: an
- * asymmetric exponential diode, which is what a hand reaches for when it wants dirt. The rest are
- * the usual family - a soft clip, a hard one, a rational S, a cubic, a pair of diodes, its
- * asymmetric sibling, and the two folds, which stop being clipping altogether and start adding
+ * asymmetric exponential diode, which is what a hand reaches for when it wants dirt. The other four
+ * are each a different species rather than a different setting - a soft clip, a hard one, a pair of
+ * diodes facing each other, and a fold, which stops being clipping altogether and starts adding
  * partials that were never in the sound.
  *
  * <p>Every shape is levelled, so turning the drive up or changing the shape changes the sound and
@@ -21,15 +21,15 @@ package pl.livecoding.musicjam.synth;
  *
  * <pre>
  *   Fold      1.35  2.88     only the peaks are turned round; the rest is least touched
- *   Sine fold 1.76  3.62
  *   Hard      1.78  3.11     flattened rather than folded
  *   Soft      1.95  3.24     the gentlest of the bending shapes
- *   Cubic     2.37  4.16
  *   Diode     2.43  4.13     ours, and the default
  *   Tube      2.55  3.11     the one that lifts least once it is driven hard
- *   S-curve   2.59  4.05
- *   Asym      2.60  4.03     and it leans, so the even harmonics come with it
  * </pre>
+ *
+ * <p>There were nine of these and there are five. The four that went - a rational S, a cubic, the
+ * leaning diode and a rounded fold - each sat within a decibel or two of one that stayed, and a
+ * knob with nine stops on it that sound like five is worse than a knob with five.
  *
  * <p>They are furthest apart in the middle of the drive knob and converge towards its top, because
  * every one of them is on its way to a square wave by then. The shape is a choice about the middle
@@ -41,20 +41,12 @@ public enum Saturation {
     DIODE("Diode"),
     /** A plain soft clip, tanh: the mildest of them, and the one that never quite gets there. */
     SOFT("Soft"),
-    /** A rational S: softer in the middle than tanh and harder at the edges. */
-    SCURVE("S-curve"),
-    /** Clipped flat. Everything above the line is the line. */
+    /** Clipped flat. Everything above the line is the line, and what is under it is left alone. */
     HARD("Hard"),
-    /** A cubic softened into a tanh: the polite one, with a little of the third harmonic. */
-    CUBIC("Cubic"),
     /** Two soft diodes facing each other across a small bias, as a clipper's pair of them do. */
     TUBE("Tube"),
-    /** The same with one leg held still, so it leans one way and the even harmonics come up. */
-    ASYM("Asym"),
     /** Folded rather than clipped: past the top it comes back down, and keeps coming. */
-    FOLD("Fold"),
-    /** The fold run through a sine, so its corners are round and it sings rather than tears. */
-    SINEFOLD("Sine fold");
+    FOLD("Fold");
 
     /**
      * What the drive knob's 0..2 becomes for the shapes that take a gain. Seven, so that a shape is
@@ -88,13 +80,9 @@ public enum Saturation {
         float k = Math.max(0.0f, drive) * K;
         return switch (this) {
             case SOFT -> soft(input, k);
-            case SCURVE -> (1 + k) * input / (1 + k * Math.abs(input));
             case HARD -> Math.max(-1.0f, Math.min(1.0f, (1 + k) * input));
-            case CUBIC -> cubic(input, k);
             case TUBE -> diode(input, k, false);
-            case ASYM -> diode(input, k, true);
             case FOLD -> fold(input, k);
-            case SINEFOLD -> (float) Math.sin(Math.PI / 2 * fold(input, k));
             case DIODE -> throw new IllegalStateException("handled above");
         };
     }
@@ -172,12 +160,8 @@ public enum Saturation {
     private static final float[][] LEVELS = {
             {}, // DIODE keeps its own fit
             {0.9783f, 2.1400f, 2.9643f, 3.5075f, 3.8642f, 4.1055f, 4.2755f, 4.4000f, 4.4946f, 4.5687f, 4.6282f},
-            {1.0000f, 1.7888f, 2.2762f, 2.6151f, 2.8680f, 3.0658f, 3.2257f, 3.3584f, 3.4706f, 3.5671f, 3.6512f},
             {1.0000f, 2.4000f, 3.5686f, 4.0627f, 4.3217f, 4.4821f, 4.5913f, 4.6706f, 4.7307f, 4.7779f, 4.8160f},
-            {0.9783f, 2.4197f, 3.3217f, 3.8453f, 4.1581f, 4.3574f, 4.4928f, 4.5901f, 4.6632f, 4.7200f, 4.7654f},
             {0.9583f, 1.7694f, 2.1482f, 2.4386f, 2.7592f, 3.1407f, 3.5730f, 4.0127f, 4.3949f, 4.6660f, 4.8197f},
-            {0.9583f, 1.7728f, 2.1630f, 2.4615f, 2.7600f, 3.0510f, 3.2956f, 3.4630f, 3.5555f, 3.6004f, 3.6243f},
             {1.0000f, 1.7000f, 2.4000f, 3.0877f, 3.3636f, 3.3348f, 3.1856f, 3.0037f, 2.8466f, 2.7592f, 2.7745f},
-            {1.5279f, 2.4644f, 3.2110f, 3.7233f, 3.9873f, 4.0242f, 3.8915f, 3.6788f, 3.4913f, 3.4143f, 3.4683f},
     };
 }
