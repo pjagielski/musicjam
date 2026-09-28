@@ -28,6 +28,8 @@ final class Knob extends VBox {
 
     private static final double FULL_TURN_PIXELS = 180;
     private static final double SHIFT_SLOWDOWN = 5;
+    /** How far the hand moves to click a stepped knob on by one, whatever it is stepping between. */
+    private static final double PIXELS_PER_STEP = 28;
     private static final double SWEEP_DEGREES = 270;
     private static final double START_DEGREES = 225;
 
@@ -102,6 +104,18 @@ final class Knob extends VBox {
         return param.stepped() ? param.step(turned) : turned;
     }
 
+    /**
+     * Where the pointer is drawn. A stepped knob shows the thing it has landed on rather than the
+     * place the hand left it, so it looks like it clicks; what the hand actually did stays in
+     * {@code position}, or a drag would be rounded away a pixel at a time and the knob would not
+     * move at all.
+     */
+    private double shownPosition() {
+        return param.stepped()
+                ? clamp(param.positionOf(param.step(param.valueOf(position.get()))))
+                : position.get();
+    }
+
     void setValue(double value) {
         position.set(clamp(param.positionOf(value)));
         draw();
@@ -117,11 +131,13 @@ final class Knob extends VBox {
     }
 
     private void nudge(double by) {
-        position.set(clamp(position.get() + by));
         if (param.stepped()) {
-            // and it clicks into that thing rather than resting between two of them
-            position.set(clamp(param.positionOf(param.step(param.valueOf(position.get())))));
+            // a step every PIXELS_PER_STEP however many steps there are. Without this the travel is
+            // divided among them, so a three-way switch needs ninety pixels to move and a nine-way
+            // one twenty-two - the wrong way round, and the three-way one felt broken.
+            by *= FULL_TURN_PIXELS / (PIXELS_PER_STEP * Math.max(1, param.names().size() - 1));
         }
+        position.set(clamp(position.get() + by));
     }
 
     private static double clamp(double value) {
@@ -134,7 +150,7 @@ final class Knob extends VBox {
         double span = size - 2 * inset;
         double centre = size / 2;
         double radius = span / 2;
-        double turned = position.get();
+        double turned = shownPosition();
         double angle = START_DEGREES - SWEEP_DEGREES * turned;
         Color accentColour = theme.accent(accent);
 
