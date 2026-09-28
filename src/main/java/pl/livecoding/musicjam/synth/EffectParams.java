@@ -51,6 +51,13 @@ public record EffectParams(
                 reverbSize, reverbDamping, reverbMix, depth, millis, crush);
     }
 
+    /** The same effects with the delay heard at {@code mix}: nothing at 0, a wash at 1. */
+    public EffectParams withDelayMix(float mix) {
+        return new EffectParams(delayMode, delayMillis, delayFeedback, delayTone,
+                Math.max(0.0f, Math.min(1.0f, mix)), reverbSize, reverbDamping, reverbMix,
+                duckDepth, duckMillis, crush);
+    }
+
     public EffectParams withCrush(float crush) {
         return new EffectParams(delayMode, delayMillis, delayFeedback, delayTone, delayMix,
                 reverbSize, reverbDamping, reverbMix, duckDepth, duckMillis, crush);

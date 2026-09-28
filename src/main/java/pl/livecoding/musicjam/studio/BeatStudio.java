@@ -587,6 +587,13 @@ public final class BeatStudio extends Application {
         PitchSynth nextSynth = BeatApp.resolveSynth(next.synth());
         Instrument nextInstrument = Instrument.of(next.synth());
         nextInstrument.setMidi(next.midiChannelIndex(), 74, 64);
+        if (next.delayMix() > 0 && nextInstrument.setting() != null) {
+            // a jam can ask for its delay to be heard from the start, rather than leaving it at
+            // nothing until a hand finds the knob
+            SynthControls.Setting starting = nextInstrument.setting();
+            nextInstrument.set(new SynthControls.Setting(starting.preset(), starting.params(),
+                    starting.effects().withDelayMix((float) next.delayMix()), starting.delaySync()));
+        }
         List<DrumTrack> pattern = BeatApp.drumPatterns().get(next.drums().toLowerCase(Locale.ROOT));
         if (pattern == null) {
             throw new IllegalArgumentException("Unknown drums \"" + next.drums() + "\", expected one of "

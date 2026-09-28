@@ -242,7 +242,11 @@ public final class BeatApp {
         double endBeat = startBeat + patternLength;
         List<Note> notes = MidiFileReader.readTrack(sequence, trackIndex).stream()
                 .filter(note -> note.beat() >= startBeat && note.beat() < endBeat)
-                .map(note -> new Note(note.beat() - startBeat, note.voice(), note.durationBeats(), note.velocity()))
+                // cut to the end of the window, because this is a loop: a note held past the end
+                // would go on sounding over the next pass, on top of that pass's own notes, and a
+                // file's last note is often held for a long time
+                .map(note -> new Note(note.beat() - startBeat, note.voice(),
+                        Math.min(note.durationBeats(), endBeat - note.beat()), note.velocity()))
                 .toList();
         return new MelodyTrack(notes, patternLength, 1.0f);
     }

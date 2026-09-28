@@ -19,7 +19,7 @@ import java.util.Properties;
  */
 public record PhraseRequest(
         Path file, int trackIndex, int startBar, int bars, int loops, String synth, String drums,
-        String midiDevice, String midiSync, int midiLatencyMillis, int midiChannel) {
+        String midiDevice, String midiSync, int midiLatencyMillis, int midiChannel, double delayMix) {
 
     /**
      * How long an external synth takes to sound a note, in milliseconds: measured for Surge XT on
@@ -88,6 +88,10 @@ public record PhraseRequest(
         if (midiSync != null) {
             builder.midiSync(midiSync.trim());
         }
+        String delay = properties.getProperty("delay");
+        if (delay != null) {
+            builder.delayMix(Double.parseDouble(delay.trim()));
+        }
         applyIfPresent(properties, "midiLatency", builder::midiLatency);
         applyIfPresent(properties, "midiChannel", builder::midiChannel);
         return builder.build();
@@ -120,6 +124,8 @@ public record PhraseRequest(
         private String midiDevice;
         private String midiSync = "loop";
         private int midiLatencyMillis = DEFAULT_MIDI_LATENCY_MILLIS;
+        // how much of the delay is heard from the start; a jam can ask for a little without a hand
+        private double delayMix;
         private int midiChannel = 1;
 
         private Builder(Path file) {
@@ -166,6 +172,12 @@ public record PhraseRequest(
             return this;
         }
 
+        /** How loud the delay starts, 0 to 1. A jam that wants a little of it can say so. */
+        public Builder delayMix(double mix) {
+            this.delayMix = Math.max(0.0, Math.min(1.0, mix));
+            return this;
+        }
+
         public Builder midiLatency(int millis) {
             this.midiLatencyMillis = millis;
             return this;
@@ -182,7 +194,7 @@ public record PhraseRequest(
 
         public PhraseRequest build() {
             return new PhraseRequest(file, trackIndex, startBar, bars, loops, synth, drums, midiDevice, midiSync,
-                    midiLatencyMillis, midiChannel);
+                    midiLatencyMillis, midiChannel, delayMix);
         }
 
         public void playJam() throws Exception {
